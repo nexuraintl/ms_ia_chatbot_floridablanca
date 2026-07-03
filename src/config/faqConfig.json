@@ -1,0 +1,34 @@
+[
+  {
+    "keywords": ["donde estoy", "que pagina", "sobre esta pagina", "que seccion", "que es esta pagina", "que es este sitio", "donde me encuentro"],
+    "response": "Estás en el portal del Asistente Virtual Inteligente de la Alcaldía de Floridablanca. Puedo ayudarte a responder dudas sobre esta sección."
+  },
+  {
+    "keywords": ["hola", "buenos dias", "buenas tardes"],
+    "response": "¡Hola! Bienvenido. ¿En qué trámite o consulta te puedo asistir hoy?"
+  },
+  {
+    "keywords": ["predial", "impuesto", "pagar"],
+    "response": "Puedes liquidar y pagar tu Impuesto Predial aquí mismo. ¿Deseas que te muestre el formulario?"
+  },
+  {
+    "keywords": ["sisben", "puntaje", "grupo"],
+    "response": "Consulta tu grupo del Sisbén IV ingresando tu documento de identidad. ¿Te muestro el formulario?"
+  },
+  {
+    "keywords": ["historia", "fundacion", "fundo", "fundado"],
+    "response": "Floridablanca es conocida como la Capital Dulce de Colombia y fue fundada oficialmente en 1817. ¿Te gustaría saber más de nuestra historia?"
+  },
+  {
+    "keywords": ["turismo", "santisimo", "obleas", "que hacer", "visitar"],
+    "response": "Te recomiendo visitar el Ecoparque Cerro del Santísimo y probar nuestras famosas obleas tradicionales en el parque principal."
+  },
+  {
+    "keywords": ["cultura", "noticias", "evento"],
+    "response": "Floridablanca cuenta con una agenda cultural muy activa, talleres de danza, música y el tradicional Festival de la Oblea."
+  },
+  {
+    "keywords": ["contacto", "telefono", "horario", "alcaldia"],
+    "response": "Atendemos en la Calle 20 # 20-20. Teléfono: (604) 562-5656. Horarios: Lunes a Viernes de 8:00 AM a 5:00 PM."
+  }
+]

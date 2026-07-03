@@ -1,3 +1,5 @@
+import faqData from "../config/faqConfig.json";
+
 // Configuración de la API de Gemini y System Prompt optimizado
 const SYSTEM_PROMPT = `
 Eres el asistente virtual de la Alcaldía de Floridablanca, Santander. Tu labor es responder a los ciudadanos.
@@ -71,34 +73,27 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "") => {
 const queryMockGemini = async (userMessage, pageContext = "") => {
   await new Promise((resolve) => setTimeout(resolve, 800));
   
-  const text = userMessage.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const cleanText = userMessage.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   let reply = "";
   
-  if (text.includes("donde estoy") || text.includes("que pagina") || text.includes("sobre esta pagina") || text.includes("que seccion")) {
-    if (pageContext) {
-      // Intentar extraer el título de la página del string de contexto
+  // Buscar coincidencia en las intenciones del archivo JSON de FAQs
+  const matchedFaq = faqData.find(item => 
+    item.keywords.some(keyword => cleanText.includes(keyword))
+  );
+
+  if (matchedFaq) {
+    reply = matchedFaq.response;
+
+    // Caso especial para preguntas de ubicación ("donde estoy")
+    if (matchedFaq.keywords.includes("donde estoy") && pageContext) {
       const matchTitle = pageContext.match(/- Título: "([^"]+)"/);
-      const title = matchTitle ? matchTitle[1] : "Página Desconocida";
-      reply = `Estás en la página "${title}". Puedo ayudarte a responder dudas sobre el contenido de esta sección.`;
-    } else {
-      reply = "Estás en el portal del Asistente Virtual Inteligente de la Alcaldía de Floridablanca.";
+      const title = matchTitle ? matchTitle[1] : null;
+      if (title) {
+        reply = `Estás en la sección "${title}". Puedo ayudarte a responder dudas sobre la información de esta página.`;
+      }
     }
-  } else if (text.includes("hola") || text.includes("buenos dias") || text.includes("buenas tardes")) {
-    reply = "¡Hola! Bienvenido. ¿En qué trámite o consulta te puedo asistir hoy?";
-  } else if (text.includes("predial") || text.includes("impuesto") || text.includes("pagar")) {
-    reply = "Puedes liquidar y pagar tu Impuesto Predial aquí mismo. ¿Deseas que te redirija al formulario?";
-  } else if (text.includes("sisben") || text.includes("puntaje") || text.includes("grupo")) {
-    reply = "Consulta tu grupo del Sisbén IV ingresando tu documento. ¿Te llevo a la sección del Sisbén?";
-  } else if (text.includes("historia") || text.includes("fundacion") || text.includes("fundó")) {
-    reply = "Floridablanca es la Capital Dulce de Colombia, fundada en 1817. Es famosa por el Cerro del Santísimo. ¿Deseas saber más de historia?";
-  } else if (text.includes("turismo") || text.includes("santisimo") || text.includes("obleas") || text.includes("que hacer")) {
-    reply = "Descubre el Cerro del Santísimo y prueba nuestras famosas obleas tradicionales en el centro.";
-  } else if (text.includes("cultura") || text.includes("noticias") || text.includes("evento")) {
-    reply = "Floridablanca cuenta con una agenda cultural muy activa, talleres artísticos y festivales de la oblea y el dulce.";
-  } else if (text.includes("contacto") || text.includes("telefono") || text.includes("horario") || text.includes("alcaldia")) {
-    reply = "Atendemos en la Calle 20 # 20-20. Teléfono: (604) 562-5656. ¿Cargamos el directorio?";
   } else {
-    reply = "Entendido. Como asistente de Floridablanca, ¿te gustaría consultar sobre trámites, turismo o historia del municipio?";
+    reply = "Entendido. Como tu asistente virtual, ¿te gustaría consultar sobre trámites (Sisbén, Predial), turismo o la historia de Floridablanca?";
   }
 
   const completionTokens = Math.floor(reply.length / 4);
@@ -106,6 +101,6 @@ const queryMockGemini = async (userMessage, pageContext = "") => {
   return {
     text: reply,
     tokensUsed: 40 + completionTokens,
-    savedTokens: 120 // Simulación de tokens ahorrados por el prompt corto
+    savedTokens: 120
   };
 };

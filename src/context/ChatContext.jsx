@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { queryGemini } from "../services/gemini";
 import { getPredialInfo, getSisbenInfo, runRpaProcess } from "../services/apiMock";
+import { getSemanticRoute } from "../services/intentRouter";
+import config from "../config/chatbotConfig.json";
 
 const ChatContext = createContext();
 
@@ -26,32 +28,30 @@ export const ChatProvider = ({ children }) => {
   const [isGeminiEnabled, setIsGeminiEnabled] = useState(true);
   const [isServicesEnabled, setIsServicesEnabled] = useState(true);
 
-  // Inicializar chat con mensajes de bienvenida adaptados
+  // Inicializar chat con mensajes de bienvenida adaptados desde JSON
   const initChat = () => {
     setIsTextInputEnabled(true);
     
     const replies = [];
     if (isServicesEnabled) {
-      replies.push(
-        "🟡 Consultar Trámite de Sisbén",
-        "🟡 Pagar Impuesto Predial",
-        "🟡 Generar Reporte Municipal (RPA)"
-      );
+      config.quickReplies.forEach(reply => {
+        replies.push(reply.label);
+      });
     }
 
     setMessages([
       {
         id: "welcome-1",
         sender: "bot",
-        text: "¡Hola! Te doy la bienvenida a la Alcaldía de Floridablanca.",
+        text: config.welcome.message1,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       },
       {
         id: "welcome-2",
         sender: "bot",
         text: isServicesEnabled 
-          ? "Soy tu asistente virtual. Puedes escribirme tu duda directamente o seleccionar una de estas opciones sugeridas:" 
-          : "Soy tu asistente virtual de Floridablanca. Escribe tu duda o pregunta y te responderé con gusto.",
+          ? config.welcome.message2_services
+          : config.welcome.message2_no_services,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         quickReplies: replies.length > 0 ? replies : null
       }
@@ -162,23 +162,23 @@ export const ChatProvider = ({ children }) => {
     });
   };
 
-  // Enrutador semántico de intenciones por palabras clave
+  // Enrutador semántico de intenciones
   const handleSemanticRouting = async (text) => {
-    const cleanText = text.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const route = getSemanticRoute(text);
     
-    if (cleanText.includes("sisben") || cleanText.includes("puntaje") || cleanText.includes("grupo") || cleanText.includes("afiliacion")) {
+    if (route === "sisben") {
       startSisbenFlow();
       setIsLoading(false);
       return true;
     }
     
-    if (cleanText.includes("predial") || cleanText.includes("impuesto") || cleanText.includes("pagar") || cleanText.includes("catastro") || cleanText.includes("catastral")) {
+    if (route === "predial") {
       startPredialFlow();
       setIsLoading(false);
       return true;
     }
     
-    if (cleanText.includes("rpa") || cleanText.includes("reporte") || cleanText.includes("automatizacion") || cleanText.includes("robot")) {
+    if (route === "rpa") {
       startRpaFlow();
       setIsLoading(false);
       return true;
@@ -368,11 +368,9 @@ export const ChatProvider = ({ children }) => {
       setIsLoading(false);
       // Siempre devolver las opciones rápidas al finalizar un flujo de formulario
       setTimeout(() => {
-        const replies = isServicesEnabled ? [
-          "🟡 Consultar Trámite de Sisbén",
-          "🟡 Pagar Impuesto Predial",
-          "🟡 Generar Reporte Municipal (RPA)"
-        ] : null;
+        const replies = isServicesEnabled 
+          ? config.quickReplies.map(reply => reply.label)
+          : null;
 
         addMessage({
           sender: "bot",

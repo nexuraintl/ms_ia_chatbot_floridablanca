@@ -1,0 +1,33 @@
+{
+  "municipality": {
+    "name": "Floridablanca",
+    "slogan": "Capital Dulce",
+    "icon": "🌸",
+    "address": "Calle 20 # 20-20, Floridablanca",
+    "phone": "(604) 562-5656"
+  },
+  "welcome": {
+    "message1": "¡Hola! Te doy la bienvenida a la Alcaldía de Floridablanca.",
+    "message2_services": "Soy tu asistente virtual. Puedes escribirme tu duda directamente o seleccionar una de estas opciones sugeridas:",
+    "message2_no_services": "Soy tu asistente virtual de Floridablanca. Escribe tu duda o pregunta y te responderé con gusto."
+  },
+  "quickReplies": [
+    {
+      "label": "🟡 Consultar Trámite de Sisbén",
+      "flow": "sisben"
+    },
+    {
+      "label": "🟡 Pagar Impuesto Predial",
+      "flow": "predial"
+    },
+    {
+      "label": "🟡 Generar Reporte Municipal (RPA)",
+      "flow": "rpa"
+    }
+  ],
+  "routing": {
+    "sisben": ["sisben", "puntaje", "grupo", "afiliacion"],
+    "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],
+    "rpa": ["rpa", "reporte", "automatizacion", "robot"]
+  }
+}
