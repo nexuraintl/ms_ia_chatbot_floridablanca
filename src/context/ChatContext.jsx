@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { queryGemini } from "../services/gemini";
 import { getPredialInfo, getSisbenInfo, runRpaProcess } from "../services/apiMock";
+import { containsFuzzyKeyword } from "../utils/stringUtils";
 import { getSemanticRoute } from "../services/intentRouter";
 import config from "../config/chatbotConfig.json";
 
@@ -23,6 +24,8 @@ export const ChatProvider = ({ children }) => {
   const [tokensUsedTotal, setTokensUsedTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [lastSuggestedAction, setLastSuggestedAction] = useState(null);
+  const [lastServiceMentioned, setLastServiceMentioned] = useState(null);
+  const [activeContext, setActiveContext] = useState(null);
 
   // Toggles de Módulos (Habilitar/Deshabilitar en caliente desde la consola)
   const [isGeminiEnabled, setIsGeminiEnabled] = useState(true);
@@ -162,48 +165,83 @@ export const ChatProvider = ({ children }) => {
     });
   };
 
+  // Palabras clave de activación del flujo interactivo
+  const ACTIVATION_KEYWORDS = [
+    "nuevamente",
+    "otra vez",
+    "de nuevo",
+    "iniciar",
+    "ejecutar",
+    "formulario",
+    "comenzar",
+    "procesar",
+    "abrir"
+  ];
+
   // Enrutador semántico de intenciones
   const handleSemanticRouting = async (text) => {
     const route = getSemanticRoute(text);
+    const cleanText = text.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     
-    if (route === "sisben") {
+    // Validar si el texto contiene alguna palabra de activación usando Fuzzy Match
+    const hasActivationKeyword = containsFuzzyKeyword(cleanText, ACTIVATION_KEYWORDS);
+    
+    // Caso 1: Se detecta la intención del servicio pero NO tiene palabra clave de activación (primera consulta)
+    if (route && !hasActivationKeyword) {
+      setLastServiceMentioned(route);
+      return { routed: false, pendingRoute: route }; // Permite pasar a FAQ / Gemini pero informa la ruta pendiente
+    }
+    
+    // Caso 2: Se detecta palabra clave de activación y hay un servicio previo o actual coincidente
+    const serviceToTrigger = route || (hasActivationKeyword ? lastServiceMentioned : null);
+    
+    if (serviceToTrigger === "sisben") {
       startSisbenFlow();
+      setLastServiceMentioned(null);
       setIsLoading(false);
-      return true;
+      return { routed: true };
     }
     
-    if (route === "predial") {
+    if (serviceToTrigger === "predial") {
       startPredialFlow();
+      setLastServiceMentioned(null);
       setIsLoading(false);
-      return true;
+      return { routed: true };
     }
     
-    if (route === "rpa") {
+    if (serviceToTrigger === "rpa") {
       startRpaFlow();
+      setLastServiceMentioned(null);
       setIsLoading(false);
-      return true;
+      return { routed: true };
     }
     
-    return false;
+    return { routed: false };
   };
 
   // Enviar mensaje de texto libre
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, skipAddUserMessage = false) => {
     if (!text || text.trim() === "") return;
 
-    // Añadir mensaje del usuario
-    addMessage({ sender: "user", text });
+    // Añadir mensaje del usuario (a menos que ya se haya añadido en el Quick Reply)
+    if (!skipAddUserMessage) {
+      addMessage({ sender: "user", text });
+    }
     setIsLoading(true);
 
     try {
+      let currentPendingRoute = null;
+
       // 1. Intentar enrutamiento semántico local (solo si servicios están habilitados)
       if (isServicesEnabled) {
-        const wasRouted = await handleSemanticRouting(text);
-        if (wasRouted) return;
+        const routeResult = await handleSemanticRouting(text);
+        if (routeResult.routed) return;
+        if (routeResult.pendingRoute) currentPendingRoute = routeResult.pendingRoute;
       } else {
         // Si servicios están deshabilitados pero el usuario pregunta por un trámite
         const cleanText = text.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const isServiceKeyword = ["sisben", "predial", "rpa", "impuesto", "pagar", "reporte", "robot"].some(k => cleanText.includes(k));
+        const serviceKeywords = ["sisben", "predial", "rpa", "impuesto", "pagar", "reporte", "robot"];
+        const isServiceKeyword = containsFuzzyKeyword(cleanText, serviceKeywords);
         if (isServiceKeyword) {
           addMessage({
             sender: "bot",
@@ -214,7 +252,7 @@ export const ChatProvider = ({ children }) => {
         }
       }
 
-      // 2. Si no es un trámite, verificar si la IA de Gemini está habilitada
+      // 2. Si no es un trámite directo, verificar si la IA de Gemini está habilitada
       if (isGeminiEnabled) {
         const pageContext = getPageContext();
 
@@ -224,11 +262,27 @@ export const ChatProvider = ({ children }) => {
         
         conversationHistory.push({ sender: "user", text });
 
-        const geminiResponse = await queryGemini(conversationHistory, apiKey, pageContext);
+        const geminiResponse = await queryGemini(conversationHistory, apiKey, pageContext, activeContext);
         
+        // Actualizar la memoria de contexto si la respuesta tiene una intención
+        if (geminiResponse.contextIntent) {
+          setActiveContext(geminiResponse.contextIntent);
+        }
+
+        let replyText = geminiResponse.text;
+        
+        // Si el usuario acaba de preguntar por el servicio (sin activarlo) y guardamos la intención
+        const serviceToCheck = currentPendingRoute;
+        if (serviceToCheck) {
+          const serviceName = serviceToCheck === "predial" 
+            ? "Impuesto Predial" 
+            : (serviceToCheck === "sisben" ? "Sisbén" : "reporte RPA");
+          replyText += `\n\n*(Escribe "iniciar" o "consultar nuevamente" para realizar el trámite interactivo de ${serviceName} aquí mismo)*`;
+        }
+
         addMessage({
           sender: "bot",
-          text: geminiResponse.text
+          text: replyText
         });
 
         // Registrar en el archivo log y actualizar contadores de tokens (Req 3)
@@ -272,10 +326,10 @@ export const ChatProvider = ({ children }) => {
     }
 
     // Ejecutar enrutamiento semántico para la opción seleccionada
-    const wasRouted = await handleSemanticRouting(option);
-    if (!wasRouted) {
-      // Si no coincide con un trámite local, enviar a flujo normal de Gemini
-      sendMessage(option);
+    const routeResult = await handleSemanticRouting(option);
+    if (!routeResult.routed) {
+      // Si no coincide con un trámite local directo, enviar a flujo normal de Gemini
+      sendMessage(option, true); // Pasar true para no duplicar el mensaje del usuario
     }
   };
 

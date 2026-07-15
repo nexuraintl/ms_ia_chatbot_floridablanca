@@ -1,4 +1,5 @@
 import config from "../config/chatbotConfig.json";
+import { containsFuzzyKeyword } from "../utils/stringUtils";
 
 /**
  * Evalúa semánticamente el mensaje del usuario basándose en palabras clave configuradas.
@@ -12,9 +13,9 @@ export const getSemanticRoute = (text) => {
   // Normalizar entrada del usuario (minúsculas, sin acentos)
   const cleanText = text.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // Evaluar las intenciones mapeadas en chatbotConfig.json
+  // Evaluar las intenciones mapeadas en chatbotConfig.json usando Fuzzy Matching
   for (const [flow, keywords] of Object.entries(config.routing)) {
-    if (keywords.some(keyword => cleanText.includes(keyword))) {
+    if (containsFuzzyKeyword(cleanText, keywords)) {
       return flow;
     }
   }

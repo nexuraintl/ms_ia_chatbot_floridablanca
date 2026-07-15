@@ -1,0 +1,141 @@
+[
+  {
+    "intencion": "impuesto_predial",
+    "categoria": "Impuestos",
+    "palabras_clave": [
+      "pagar predial",
+      "descargar factura",
+      "codigo predial",
+      "consultar deuda",
+      "fechas predial",
+      "descuentos pronto pago",
+      "cambiar propietario",
+      "actualizacion catastral",
+      "acuerdo de pago",
+      "facilidades pago",
+      "reclamaciones predial",
+      "intereses de mora",
+      "hacienda predial"
+    ],
+    "respuestas_base": {
+      "concepto_obligados": "El Impuesto Predial Unificado es un gravamen de orden municipal que recae sobre los bienes raíces (casas, lotes, apartamentos, locales) ubicados en Floridablanca, y debe ser cancelado por los propietarios, poseedores o usufructuarios de los inmuebles.",
+      "consulta_pago_linea": "Para consultar tu deuda actual, históricos de pago, descargar tu factura en formato PDF o pagar en línea mediante PSE, debes ingresar al portal oficial de la Alcaldía de Floridablanca. Ten a la mano tu código predial.",
+      "codigo_predial": "El código predial es el identificador único de tu inmueble. Lo puedes encontrar en la esquina superior derecha de cualquier factura física de años anteriores. Si no dispones de una, puedes consultar e identificar el número ingresando tu cédula en el Geoportal municipal.",
+      "fechas_descuentos": "Las fechas límite de pago y los descuentos por 'pronto pago' cambian cada año según el Calendario Tributario aprobado por la Alcaldía. Te sugerimos descargar tu factura actual, ya que allí se desglosan automáticamente los porcentajes de descuento vigentes y la fecha a partir de la cual se generan intereses de mora.",
+      "actualizacion_propietario": "Si los datos del dueño están desactualizados (por ejemplo, si compraste el inmueble hace poco), no te preocupes: el cobro igual se genera sobre el predio. Sin embargo, para corregir el nombre en el sistema, debes radicar una solicitud de actualización catastral adjuntando la copia de la nueva Escritura Pública y el Certificado de Tradición y Libertad reciente a través del módulo de correspondencia virtual (PQRSD).",
+      "acuerdos_pago": "Si tienes deudas de vigencias anteriores y requieres facilidades, la Secretaría de Hacienda permite realizar Acuerdos de Pago. Debes acercarte presencialmente a la Alcaldía (Calle 5 No. 8 - 25 Casco Urbano) con tu cédula y una propuesta formal de pago, o verificar en línea los requisitos para radicar la solicitud."
+    }
+  },
+  {
+    "intencion": "impuesto_ica",
+    "categoria": "Impuestos",
+    "palabras_clave": [
+      "ica",
+      "declarar ica",
+      "pagar ica",
+      "estado cuenta ica",
+      "regimen simplificado",
+      "regimen comun",
+      "actividad industrial",
+      "actividad comercial",
+      "actividad servicios",
+      "contraseña rit",
+      "industria y comercio",
+      "autorretenciones ica"
+    ],
+    "respuestas_base": {
+      "concepto_obligados": "El Impuesto de Industria y Comercio (ICA) es un gravamen municipal obligatorio que se genera por realizar actividades industriales, comerciales o de servicios en Floridablanca (ya sea de forma permanente u ocasional, con o sin local físico). Deben declarar todas las personas naturales, jurídicas o sociedades de hecho que ejecuten estas actividades.",
+      "consulta_estado_cuenta": "Para consultar tu estado de cuenta, revisar históricos de declaraciones presentadas y pagos anteriores, ingresa al portal de Industria y Comercio (https://portal.floridablanca.suiteneptuno.com/IndustriaComercio/Index), digita el NIT de la empresa o persona natural y escribe tu Contraseña RIT asignada.",
+      "clasificacion_contribuyentes": "Los contribuyentes sujetos al impuesto ICA en Floridablanca se clasifican legalmente en dos grandes grupos según el volumen de sus ingresos y las condiciones fiscales vigentes: Régimen Simplificado y Régimen Común.",
+      "actividades_gravadas": "El ICA se aplica sobre tres frentes: 1) Actividad Industrial: Producción, extracción, fabricación o transformación de bienes. 2) Actividad Comercial: Expendio, compraventa o distribución de mercancías al por mayor o detal. 3) Actividad de Servicios: Labores independientes donde predomina el factor intelectual o material sin relación laboral."
+    }
+  },
+  {
+    "intencion": "retencion_reteica",
+    "categoria": "Impuestos",
+    "palabras_clave": [
+      "reteica",
+      "agente retenedor",
+      "declarar reteica",
+      "pagar reteica",
+      "periodo sin movimiento",
+      "declaracion en ceros",
+      "retenciones terceros"
+    ],
+    "respuestas_base": {
+      "funcionamiento_reteica": "El ReteICA es un mecanismo de recaudo anticipado del Impuesto de Industria y Comercio. Cuando un agente retenedor realiza un pago o abono en cuenta a un proveedor por bienes o servicios gravados en el municipio, debe retenerle un porcentaje para luego declararlo y entregarlo a la Alcaldía.",
+      "obligados_retener": "Están obligadas todas las personas naturales, jurídicas o sociedades de hecho catalogadas o designadas por el estatuto tributario municipal como Agentes Retenedores al momento de realizar compras en la jurisdicción.",
+      "declaracion_sin_movimiento": "De acuerdo con las normativas locales, si eres agente retenedor estás obligado a presentar la declaración en los plazos fijados por el calendario tributario. Si en un periodo específico no practicaste retenciones a terceros, deberás presentar la declaración seleccionando el periodo respectivo en ceros ($0) para evitar sanciones por extemporaneidad u omisión.",
+      "portal_virtual": "Para realizar consultas de estados de cuenta, registrar la declaración del periodo correspondiente o efectuar el pago mediante PSE, debes ingresar al portal oficial de ReteICA (https://portal.floridablanca.suiteneptuno.com/Reteica/Index) con el NIT de la empresa y la contraseña asignada."
+    }
+  },
+  {
+    "intencion": "cancelacion_rit",
+    "categoria": "Impuestos",
+    "palabras_clave": [
+      "rit",
+      "cancelar rit",
+      "inactivar rit",
+      "cerrar negocio",
+      "cese actividades",
+      "requisitos rit",
+      "deudas rit",
+      "hacienda rit"
+    ],
+    "respuestas_base": {
+      "inactivacion_cese": "Si cerraste tu negocio o dejaste de prestar servicios en Floridablanca, debes tramitar la Cancelación del RIT por Cese de Actividades para evitar que la Alcaldía te siga generando cobros de impuestos y posibles sanciones por no declarar.",
+      "requisitos_obligatorios": "Para la cancelación requieres en PDF: 1) Formulario Oficial de cese de actividades diligenciado y firmado. 2) Certificado de Cámara de Comercio vigente donde conste la cancelación definitiva del establecimiento (si aplica). 3) Fotocopia de la cédula del propietario o representante legal. 4) Soportes de pago de los últimos periodos.",
+      "procedimiento_radicacion": "El procedimiento consta de 3 pasos: 1) Ponte al día: Liquida y paga el impuesto ICA proporcional a los meses operados en el año actual. 2) Reúne los papeles de la sección de requisitos. 3) Radica de forma Virtual en el módulo de Correspondencia PQRSD (https://portal.floridablanca.suiteneptuno.com/Correspondencia/Index) o de forma Presencial en el primer piso del Palacio Municipal (Calle 5 No. 8 - 25 Casco Urbano).",
+      "politica_deudas": "No es posible cancelar el RIT si registras deudas de años anteriores. El sistema tributario local requiere que estés completamente al día con tus obligaciones de ICA y Avisos para aceptar y procesar el trámite de cese definitivo."
+    }
+  },
+  {
+    "intencion": "atencion_pqrsd",
+    "categoria": "Atención al Ciudadano",
+    "palabras_clave": [
+      "radicar pqrs",
+      "peticiones",
+      "quejas",
+      "reclamos",
+      "tramites transito",
+      "multas",
+      "comparendos",
+      "sisben",
+      "certificado estrato",
+      "empleo",
+      "emprendimiento",
+      "fotomultas",
+      "prescripcion"
+    ],
+    "respuestas_base": {
+      "transito_multas": "Todo requerimiento relacionado con prescripciones de comparendos, multas de tránsito, fotomultas o trámites vehiculares NO se radica en la Alcaldía. Debes dirigirlos directamente a la Sede Electrónica de la Dirección de Tránsito y Transporte de Floridablanca (Calle 9 No. 8-14 / Teléfono de contacto: 6187919 / Portal: https://portaltransitoflorida.suiteneptuno.com/Correspondencia/Index).",
+      "sisben_tramites": "Para solicitar una nueva encuesta por cambio de dirección, modificación del núcleo familiar o porque tu vivienda no ha sido censada, debes radicar la solicitud adjuntando copia de los documentos de identidad de todo el grupo familiar y un recibo de servicio público. La atención presencial se brinda en la Transversal 29 N° 5 - 33 Lagos II.",
+      "certificado_estrato": "El Certificado de Estratificación Socioeconómica es emitido por la Secretaría de Planeación para confirmar el estrato oficial de un predio. Se solicita radicando una petición formal con el número de cuenta predial o dirección exacta para la verificación técnica en el Geoportal y el POT.",
+      "desarrollo_economico": "La Secretaría de Turismo y Desarrollo Económico (Calle 6 N° 10-36 Piso 3) cuenta con un Banco de Empleo Local para conectar ciudadanos con ofertas laborales vigentes, además de ofrecer capacitaciones, talleres técnicos y asesorías para la formalización de microempresas."
+    }
+  },
+  {
+    "intencion": "preguntas_frecuentes_generales",
+    "categoria": "FAQ",
+    "palabras_clave": [
+      "concurso docente",
+      "planta profesores",
+      "runt",
+      "actualizacion catastral",
+      "programas sociales",
+      "subsidios",
+      "estrategia digital",
+      "suit",
+      "directorios turisticos",
+      "tramites terceros",
+      "poder notarial",
+      "plazos respuesta"
+    ],
+    "respuestas_base": {
+      "planta_docente": "Para vincularse como docente oficial se requiere título de licenciado, profesional universitario o normalista superior, y superar el concurso de méritos. Actualmente la planta se encuentra provista; los procesos de selección y audiencias son administrados con exclusividad por la Comisión Nacional del Servicio Civil (CNSC - https://www.cnsc.gov.co).",
+      "tramites_terceros": "Si no puedes realizar tus trámites de tránsito o alcaldía personalmente, puedes otorgar un poder formal. Para Tránsito, el poder debe estar debidamente autenticado ante Notaría (con huella dactilar) y el apoderado debe estar inscrito en el RUNT (http://www.runt.com.co).",
+      "directorio_turistico": "Si eres propietario de un negocio formalizado (hotel, restaurante, asadero, artesanías, etc.) y deseas aparecer en la web municipal, puedes solicitar tu espacio de promoción acercándote a la Oficina de Sistemas (Primer Piso del Palacio Municipal) con los datos, descripción y fotografías de tu negocio.",
+      "plazos_legales": "Por normatividad del Estado Colombiano, los derechos de petición de interés general o particular tienen un plazo legal máximo de respuesta de 15 días hábiles por parte de la administración municipal."
+    }
+  }
+]
