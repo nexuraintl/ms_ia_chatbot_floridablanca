@@ -5,10 +5,12 @@ import { ChatWindow } from "./components/organisms/ChatWindow";
 
 function App() {
   return (
-    <ChatProvider>
-      <ChatbotConsole />
-      <ChatWindow />
-    </ChatProvider>
+    <div className="antigravity-chatbot-root">
+      <ChatProvider>
+        <ChatbotConsole />
+        <ChatWindow />
+      </ChatProvider>
+    </div>
   );
 }
 
