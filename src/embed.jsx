@@ -9,6 +9,7 @@ const initEmbeddableChatbot = () => {
   if (!chatRoot) {
     chatRoot = document.createElement("div");
     chatRoot.id = "chatbot-service-root";
+    chatRoot.className = "antigravity-chatbot-root";
     document.body.appendChild(chatRoot);
   }
 
