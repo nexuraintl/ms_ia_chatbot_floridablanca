@@ -1,10 +1,9 @@
-import React, { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useChat } from "../../context/ChatContext";
 import { ChatBubble } from "../molecules/ChatBubble";
 import { QuickReplies } from "../molecules/QuickReplies";
 import { StatusDot } from "../atoms/StatusDot";
-import { Badge } from "../atoms/Badge";
-import { Send, X, MessageSquare, RefreshCw, HelpCircle } from "lucide-react";
+import { Send, X, MessageSquare, RefreshCw, Sun, Moon } from "lucide-react";
 
 export const ChatWindow = () => {
   const {
@@ -14,11 +13,14 @@ export const ChatWindow = () => {
     isLoading,
     openChat,
     closeChat,
-    toggleChat,
     sendMessage,
     selectQuickReply,
     submitChatForm,
-    resetChat
+    handlePredialFormSubmit,
+    handleSelectPredio,
+    resetChat,
+    theme,
+    toggleTheme
   } = useChat();
 
   const [inputText, setInputText] = useState("");
@@ -36,7 +38,8 @@ export const ChatWindow = () => {
   const handleSend = (e) => {
     e.preventDefault();
     if (inputText.trim() === "") return;
-    sendMessage(inputText);
+    const sanitized = inputText.substring(0, 1000).trim();
+    sendMessage(sanitized);
     setInputText("");
   };
 
@@ -44,18 +47,19 @@ export const ChatWindow = () => {
     return (
       <button
         onClick={openChat}
+        title="Abrir Chat de Atención Virtual"
         style={{
           position: "fixed",
           bottom: "24px",
           right: "24px",
-          width: "60px",
-          height: "60px",
+          width: "64px",
+          height: "64px",
           borderRadius: "50%",
           backgroundColor: "#15803d",
           color: "#ffffff",
-          border: "2px solid rgba(74, 222, 128, 0.4)",
+          border: "2px solid rgba(255, 255, 255, 0.4)",
           cursor: "pointer",
-          boxShadow: "0 8px 30px rgba(0, 0, 0, 0.3)",
+          boxShadow: "0 10px 30px rgba(21, 128, 61, 0.4)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -64,17 +68,17 @@ export const ChatWindow = () => {
         }}
         className="floating-chat-trigger"
       >
-        <MessageSquare size={26} />
+        <MessageSquare size={28} />
         <span
           style={{
             position: "absolute",
-            top: "0",
-            right: "0",
-            width: "12px",
-            height: "12px",
+            top: "2px",
+            right: "2px",
+            width: "14px",
+            height: "14px",
             borderRadius: "50%",
             backgroundColor: "#22c55e",
-            border: "2px solid #0f172a"
+            border: "2px solid #ffffff"
           }}
         />
       </button>
@@ -86,109 +90,120 @@ export const ChatWindow = () => {
   const quickReplies = lastMessage?.quickReplies || null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        bottom: "24px",
-        right: "24px",
-        width: "380px",
-        height: "560px",
-        maxHeight: "calc(100vh - 48px)",
-        maxWidth: "calc(100vw - 48px)",
-        borderRadius: "16px",
-        border: "1px solid rgba(255, 255, 255, 0.08)",
-        backgroundColor: "rgba(15, 23, 42, 0.8)", // Slate 900 con transparencia
-        backdropFilter: "blur(20px)",
-        boxShadow: "0 12px 40px rgba(0, 0, 0, 0.4)",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 9999,
-        overflow: "hidden",
-        fontFamily: "inherit"
-      }}
-      className="animate-slide-up"
-    >
+    <div className="floating-chat-window animate-slide-up">
       {/* Cabecera del Chat */}
       <div
         style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid rgba(255, 255, 255, 0.06)",
-          background: "linear-gradient(135deg, rgba(21, 128, 61, 0.2), rgba(15, 23, 42, 0.4))",
+          padding: "16px 20px",
+          borderBottom: "1px solid var(--border-color)",
+          background: "var(--chat-header-bg)",
+          color: "var(--chat-header-text)",
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center"
+          alignItems: "center",
+          flexShrink: 0
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div
             style={{
-              width: "36px",
-              height: "36px",
+              width: "42px",
+              height: "42px",
               borderRadius: "50%",
-              backgroundColor: "rgba(74, 222, 128, 0.1)",
+              backgroundColor: "rgba(255, 255, 255, 0.2)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "1px solid rgba(74, 222, 128, 0.2)"
+              border: "1px solid rgba(255, 255, 255, 0.3)"
             }}
           >
-            <span style={{ fontSize: "1.2rem" }}>🌲</span>
+            <span style={{ fontSize: "1.3rem" }}>🌲</span>
           </div>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: "600", color: "#f8fafc" }}>
-                Asistente
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <h4 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "700", color: "#ffffff", letterSpacing: "0.3px" }}>
+                Atención Ciudadana
               </h4>
               <StatusDot online={true} />
             </div>
-            <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Respuesta rápida con Gemini</span>
+            <span style={{ fontSize: "0.78rem", color: "rgba(255, 255, 255, 0.85)" }}>Floridablanca • Gemini AI</span>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {/* Botón de Cambiar Tema Light / Dark */}
+          <button
+            onClick={toggleTheme}
+            title={theme === "light" ? "Cambiar a Modo Oscuro" : "Cambiar a Modo Claro"}
+            style={{
+              background: "rgba(255, 255, 255, 0.15)",
+              border: "none",
+              borderRadius: "8px",
+              cursor: "pointer",
+              color: "#ffffff",
+              padding: "6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background-color 0.2s"
+            }}
+          >
+            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+
           {/* Botón de reset */}
           <button
             onClick={resetChat}
             title="Reiniciar conversación"
             style={{
-              background: "transparent",
+              background: "rgba(255, 255, 255, 0.15)",
               border: "none",
+              borderRadius: "8px",
               cursor: "pointer",
-              color: "#94a3b8",
-              padding: "4px"
+              color: "#ffffff",
+              padding: "6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background-color 0.2s"
             }}
           >
-            <RefreshCw size={16} />
+            <RefreshCw size={18} />
           </button>
 
           {/* Botón de cerrar */}
           <button
             onClick={closeChat}
+            title="Cerrar chat"
             style={{
-              background: "transparent",
+              background: "rgba(255, 255, 255, 0.15)",
               border: "none",
+              borderRadius: "8px",
               cursor: "pointer",
-              color: "#94a3b8",
-              padding: "4px"
+              color: "#ffffff",
+              padding: "6px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background-color 0.2s"
             }}
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
       </div>
-
-
 
       {/* Área de Mensajes */}
       <div
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "16px",
+          padding: "18px 18px",
           display: "flex",
           flexDirection: "column",
-          gap: "4px",
-          scrollBehavior: "smooth"
+          gap: "6px",
+          scrollBehavior: "smooth",
+          backgroundColor: "var(--chat-body-bg)"
         }}
         className="chat-messages-area"
       >
@@ -197,6 +212,8 @@ export const ChatWindow = () => {
             key={message.id}
             message={message}
             onSubmitForm={submitChatForm}
+            onSubmitPredialForm={handlePredialFormSubmit}
+            onSelectPredio={(index) => handleSelectPredio(index, message.sessionId, message.predialContext)}
           />
         ))}
 
@@ -211,13 +228,14 @@ export const ChatWindow = () => {
           >
             <div
               style={{
-                backgroundColor: "rgba(255, 255, 255, 0.06)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                padding: "10px 14px",
-                borderRadius: "16px 16px 16px 2px",
+                backgroundColor: "var(--bot-bubble-bg)",
+                border: "1px solid var(--bot-bubble-border)",
+                padding: "12px 16px",
+                borderRadius: "18px 18px 18px 2px",
                 display: "flex",
                 alignItems: "center",
-                gap: "4px"
+                gap: "6px",
+                boxShadow: "var(--bot-bubble-shadow)"
               }}
             >
               <div className="typing-dot" />
@@ -227,30 +245,32 @@ export const ChatWindow = () => {
           </div>
         )}
 
+        {/* Botones de Opciones Rápidas dentro de los mensajes */}
+        {quickReplies && !isLoading && (
+          <QuickReplies replies={quickReplies} onSelect={selectQuickReply} />
+        )}
+
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Botones de Opciones Rápidas */}
-      {quickReplies && (
-        <QuickReplies replies={quickReplies} onSelect={selectQuickReply} />
-      )}
 
       {/* Pie del Chat / Entrada de Mensaje */}
       <form
         onSubmit={handleSend}
         style={{
-          padding: "12px 16px",
-          borderTop: "1px solid rgba(255, 255, 255, 0.06)",
-          backgroundColor: "rgba(15, 23, 42, 0.5)",
+          padding: "12px 16px 8px 16px",
+          borderTop: "1px solid var(--border-color)",
+          backgroundColor: "var(--input-container-bg)",
           display: "flex",
-          gap: "8px",
-          alignItems: "center"
+          gap: "10px",
+          alignItems: "center",
+          flexShrink: 0
         }}
       >
         <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center" }}>
           <input
             type="text"
             value={inputText}
+            maxLength={1000}
             onChange={(e) => setInputText(e.target.value)}
             disabled={!isTextInputEnabled}
             placeholder={
@@ -260,14 +280,12 @@ export const ChatWindow = () => {
             }
             style={{
               width: "100%",
-              padding: "10px 40px 10px 14px",
-              borderRadius: "20px",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              backgroundColor: isTextInputEnabled
-                ? "rgba(255, 255, 255, 0.04)"
-                : "rgba(255, 255, 255, 0.01)",
-              color: isTextInputEnabled ? "#ffffff" : "#64748b",
-              fontSize: "0.85rem",
+              padding: "12px 16px",
+              borderRadius: "24px",
+              border: "1px solid var(--input-border)",
+              backgroundColor: "var(--input-bg)",
+              color: "var(--input-text)",
+              fontSize: "0.95rem",
               outline: "none",
               transition: "all 0.2s",
               boxSizing: "border-box",
@@ -279,30 +297,47 @@ export const ChatWindow = () => {
           type="submit"
           disabled={!isTextInputEnabled || inputText.trim() === ""}
           style={{
-            width: "36px",
-            height: "36px",
+            width: "42px",
+            height: "42px",
             borderRadius: "50%",
-            backgroundColor: isTextInputEnabled && inputText.trim() !== "" ? "#15803d" : "rgba(255, 255, 255, 0.02)",
-            color: isTextInputEnabled && inputText.trim() !== "" ? "#ffffff" : "#475569",
-            border: "none",
+            backgroundColor: isTextInputEnabled && inputText.trim() !== "" ? "#15803d" : "var(--input-bg)",
+            color: isTextInputEnabled && inputText.trim() !== "" ? "#ffffff" : "var(--text-muted)",
+            border: isTextInputEnabled && inputText.trim() !== "" ? "none" : "1px solid var(--input-border)",
             cursor: isTextInputEnabled && inputText.trim() !== "" ? "pointer" : "not-allowed",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            transition: "all 0.2s"
+            transition: "all 0.2s",
+            boxShadow: isTextInputEnabled && inputText.trim() !== "" ? "0 4px 12px rgba(21, 128, 61, 0.3)" : "none"
           }}
         >
-          <Send size={16} />
+          <Send size={18} />
         </button>
       </form>
+
+      {/* Pie Legal: Tratamiento de Datos Personales */}
+      <div
+        style={{
+          padding: "4px 16px 10px 16px",
+          backgroundColor: "var(--input-container-bg)",
+          fontSize: "0.72rem",
+          color: "var(--text-muted)",
+          textAlign: "center",
+          lineHeight: "1.35",
+          flexShrink: 0
+        }}
+        className="data-privacy-notice"
+      >
+        🔒 Al enviar tu mensaje o seleccionar una opción, aceptas los <strong>Términos y Condiciones</strong> y el <strong>Tratamiento de Datos Personales</strong> (Ley 1581 de 2012).
+      </div>
 
       {/* Estilos locales para las animaciones */}
       <style>{`
         .typing-dot {
-          width: 6px;
-          height: 6px;
+          width: 7px;
+          height: 7px;
           border-radius: 50%;
-          backgroundColor: #94a3b8;
+          background-color: var(--text-muted);
           animation: bounce-typing 1.4s infinite ease-in-out both;
         }
         @keyframes bounce-typing {

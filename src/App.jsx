@@ -1,16 +1,23 @@
-import React from "react";
-import { ChatProvider } from "./context/ChatContext";
+import { ChatProvider, useChat } from "./context/ChatContext";
 import { ChatbotConsole } from "./components/organisms/ChatbotConsole";
 import { ChatWindow } from "./components/organisms/ChatWindow";
 
+function MainApp() {
+  const { theme } = useChat();
+
+  return (
+    <div className="antigravity-chatbot-root" data-theme={theme}>
+      <ChatbotConsole />
+      <ChatWindow />
+    </div>
+  );
+}
+
 function App() {
   return (
-    <div className="antigravity-chatbot-root">
-      <ChatProvider>
-        <ChatbotConsole />
-        <ChatWindow />
-      </ChatProvider>
-    </div>
+    <ChatProvider>
+      <MainApp />
+    </ChatProvider>
   );
 }
 

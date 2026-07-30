@@ -1,21 +1,33 @@
 /**
+ * Módulo de utilidades de cadena con protección contra algoritmos de alta complejidad (DoS).
+ */
+
+const MAX_STRING_LEN = 100; // Límite máximo de seguridad para cálculo Levenshtein
+
+/**
  * Calcula la distancia de edición (Levenshtein) entre dos cadenas.
  * Representa el número mínimo de operaciones requeridas para transformar 'a' en 'b'.
  */
 export const getLevenshteinDistance = (a, b) => {
+  if (typeof a !== "string" || typeof b !== "string") return Infinity;
+  
+  // Truncar para prevenir DoS por consumo excesivo de CPU (O(N*M))
+  const strA = a.length > MAX_STRING_LEN ? a.substring(0, MAX_STRING_LEN) : a;
+  const strB = b.length > MAX_STRING_LEN ? b.substring(0, MAX_STRING_LEN) : b;
+
   const matrix = [];
 
-  for (let i = 0; i <= b.length; i++) {
+  for (let i = 0; i <= strB.length; i++) {
     matrix[i] = [i];
   }
 
-  for (let j = 0; j <= a.length; j++) {
+  for (let j = 0; j <= strA.length; j++) {
     matrix[0][j] = j;
   }
 
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+  for (let i = 1; i <= strB.length; i++) {
+    for (let j = 1; j <= strA.length; j++) {
+      if (strB.charAt(i - 1) === strA.charAt(j - 1)) {
         matrix[i][j] = matrix[i - 1][j - 1];
       } else {
         matrix[i][j] = Math.min(
@@ -27,7 +39,7 @@ export const getLevenshteinDistance = (a, b) => {
     }
   }
 
-  return matrix[b.length][a.length];
+  return matrix[strB.length][strA.length];
 };
 
 /**
@@ -35,7 +47,9 @@ export const getLevenshteinDistance = (a, b) => {
  * permitiendo un margen de error tipográfico (Fuzzy Match).
  */
 export const isFuzzyMatch = (userWord, keyword, maxDistance = 1) => {
-  // Las palabras muy cortas no deberían tener margen de error para evitar falsos positivos ridículos (ej. 'si' vs 'no')
+  if (!userWord || !keyword) return false;
+
+  // Las palabras muy cortas no deberían tener margen de error para evitar falsos positivos ridículos
   if (keyword.length <= 3) {
     return userWord === keyword;
   }
@@ -61,7 +75,8 @@ export const isFuzzyMatch = (userWord, keyword, maxDistance = 1) => {
 export const containsFuzzyKeyword = (text, keywordsArray, maxDistance = 1) => {
   if (!text || !keywordsArray || keywordsArray.length === 0) return false;
   
-  const userWords = text.split(/\s+/).filter(w => w.length > 0);
+  // Límite de seguridad en la cantidad de palabras a evaluar (máximo 100 palabras por texto)
+  const userWords = text.substring(0, 2000).split(/\s+/).filter(w => w.length > 0).slice(0, 100);
   
   return keywordsArray.some(keyword => {
     // Si la palabra clave es una frase
@@ -80,3 +95,4 @@ export const containsFuzzyKeyword = (text, keywordsArray, maxDistance = 1) => {
     return userWords.some(userWord => isFuzzyMatch(userWord, keyword, maxDistance));
   });
 };
+

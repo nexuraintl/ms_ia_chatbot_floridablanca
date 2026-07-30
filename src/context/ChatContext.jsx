@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { queryGemini } from "../services/gemini";
 import { getPredialInfo, getSisbenInfo, runRpaProcess } from "../services/apiMock";
+import {
+  generarFacturaAsync,
+  listenJobStream,
+  seleccionarPredio,
+  formatPesos,
+  getFacturaPdfUrl
+} from "../services/rpaPredialService";
 import { containsFuzzyKeyword } from "../utils/stringUtils";
 import { getSemanticRoute } from "../services/intentRouter";
 import config from "../config/chatbotConfig.json";
@@ -15,17 +23,60 @@ export const useChat = () => {
   return context;
 };
 
+const getInitialWelcomeMessages = (isServicesEnabled) => {
+  const replies = [];
+  if (isServicesEnabled) {
+    config.quickReplies.forEach(reply => {
+      replies.push(reply.label);
+    });
+  }
+
+  const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  return [
+    {
+      id: "welcome-privacy",
+      sender: "system",
+      text: config.welcome.privacyNotice || "🔒 Aviso de Privacidad: Al enviar tu primer mensaje o seleccionar una opción, autorizas el Tratamiento de Datos Personales (Ley 1581 de 2012) y aceptas los Términos y Condiciones.",
+      timestamp: now
+    },
+    {
+      id: "welcome-1",
+      sender: "bot",
+      text: config.welcome.message1,
+      timestamp: now
+    },
+    {
+      id: "welcome-2",
+      sender: "bot",
+      text: isServicesEnabled 
+        ? config.welcome.message2_services
+        : config.welcome.message2_no_services,
+      timestamp: now,
+      quickReplies: replies.length > 0 ? replies : null
+    }
+  ];
+};
+
 export const ChatProvider = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => getInitialWelcomeMessages(true));
   const [isTextInputEnabled, setIsTextInputEnabled] = useState(true); // Teclado siempre habilitado por defecto
   const [apiKey, setApiKeyState] = useState(localStorage.getItem("gemini_api_key") || "");
   const [tokensSavedTotal, setTokensSavedTotal] = useState(0);
   const [tokensUsedTotal, setTokensUsedTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastSuggestedAction, setLastSuggestedAction] = useState(null);
   const [lastServiceMentioned, setLastServiceMentioned] = useState(null);
   const [activeContext, setActiveContext] = useState(null);
+
+  // Theme (light | dark) defaulting to 'light'
+  const [theme, setTheme] = useState(localStorage.getItem("chatbot_theme") || "light");
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "light" ? "dark" : "light";
+    setTheme(nextTheme);
+    localStorage.setItem("chatbot_theme", nextTheme);
+  };
 
   // Toggles de Módulos (Habilitar/Deshabilitar en caliente desde la consola)
   const [isGeminiEnabled, setIsGeminiEnabled] = useState(true);
@@ -34,36 +85,18 @@ export const ChatProvider = ({ children }) => {
   // Inicializar chat con mensajes de bienvenida adaptados desde JSON
   const initChat = () => {
     setIsTextInputEnabled(true);
-    
-    const replies = [];
-    if (isServicesEnabled) {
-      config.quickReplies.forEach(reply => {
-        replies.push(reply.label);
-      });
-    }
-
-    setMessages([
-      {
-        id: "welcome-1",
-        sender: "bot",
-        text: config.welcome.message1,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      },
-      {
-        id: "welcome-2",
-        sender: "bot",
-        text: isServicesEnabled 
-          ? config.welcome.message2_services
-          : config.welcome.message2_no_services,
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        quickReplies: replies.length > 0 ? replies : null
-      }
-    ]);
+    setMessages(getInitialWelcomeMessages(isServicesEnabled));
   };
 
   // Reiniciar el chat si cambia el estado de algún módulo para refrescar las sugerencias
+  const isFirstRender = useRef(true);
   useEffect(() => {
-    initChat();
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setIsTextInputEnabled(true);
+    setMessages(getInitialWelcomeMessages(isServicesEnabled));
   }, [isServicesEnabled, isGeminiEnabled]);
 
   // Actualizar API Key
@@ -87,14 +120,23 @@ export const ChatProvider = ({ children }) => {
 
   // Helper para añadir mensaje
   const addMessage = (msg) => {
+    const id = msg.id || Math.random().toString(36).substr(2, 9);
     setMessages((prev) => [
       ...prev.map(m => ({ ...m, quickReplies: null })), // Quitar botones de mensajes antiguos
       {
-        id: Math.random().toString(36).substr(2, 9),
+        id,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         ...msg
       }
     ]);
+    return id;
+  };
+
+  // Helper para actualizar dinámicamente un mensaje existente (Opción A)
+  const updateMessage = (id, updates) => {
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === id ? { ...msg, ...updates } : msg))
+    );
   };
 
   // Obtener contexto de la página principal donde está embebido el chatbot
@@ -143,25 +185,218 @@ export const ChatProvider = ({ children }) => {
   const startPredialFlow = () => {
     addMessage({
       sender: "bot",
-      text: "Para liquidar tu Impuesto Predial de Floridablanca, digita la cédula del propietario:",
-      form: {
-        type: "predial",
-        fields: [{ name: "documento", placeholder: "Cédula del propietario (ej. 12345678)", type: "text", required: true }]
-      }
+      text: "Diligencia los siguientes datos para consultar y generar la factura del Impuesto Predial en Floridablanca:",
+      customComponent: "predial_form"
     });
   };
 
-  const startRpaFlow = () => {
+  const handlePredialStreamEvent = (evt, contextData = {}, statusMsgId) => {
+    const { event, outcome, amount, filename, payment_url, payment_qr, message, session_id, predios } = evt;
+
+    const MENSAJES_PROGRESO = {
+      started: "🔍 Consultando la información de tu predio...",
+      portal_ready: "📑 Verificando registros...",
+      invoice_ready: "📊 Calculando impuestos y vigencias..."
+    };
+
+    if (MENSAJES_PROGRESO[event] && statusMsgId) {
+      updateMessage(statusMsgId, { text: MENSAJES_PROGRESO[event] });
+      return;
+    }
+
+    if (event === "search_done") {
+      if (outcome === "predio_unico" && statusMsgId) {
+        updateMessage(statusMsgId, { text: "✅ Predio ubicado. Solicitando estado de cuenta..." });
+      } else if (outcome === "multiples_predios" && statusMsgId) {
+        const rawPredios = predios || evt.result?.predios || [];
+        const rawSession = session_id || evt.result?.session_id;
+
+        updateMessage(statusMsgId, {
+          text: `🏢 Se encontraron ${rawPredios.length} predios registrados para esta consulta. Selecciona tu inmueble a continuación:`,
+          customComponent: "predial_multiples",
+          sessionId: rawSession,
+          predios: rawPredios,
+          predialContext: contextData
+        });
+      } else if (outcome === "no_encontrado") {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (event === "pdf_ready") {
+      const montoFormateado = amount ? formatPesos(amount) : "monto liquidado";
+      const pdfUrl = getFacturaPdfUrl(filename);
+
+      if (statusMsgId) {
+        updateMessage(statusMsgId, {
+          text: `📄 ¡Listo! Tu factura fue generada exitosamente por un total de ${montoFormateado}. Te la adjunto a continuación:`,
+          attachment: {
+            type: "file",
+            fileUrl: pdfUrl,
+            fileLabel: `📥 Descargar Factura PDF (${filename || "Factura.pdf"})`
+          }
+        });
+      }
+      return;
+    }
+
+    if (event === "payment_ready") {
+      if (payment_url) {
+        addMessage({
+          sender: "bot",
+          text: "Y acá tienes el enlace oficial para pagar en línea mediante PSE:",
+          buttonUrl: payment_url,
+          buttonText: "💳 Ir a Pagar en Línea (PSE)"
+        });
+      }
+      if (payment_qr) {
+        addMessage({
+          sender: "bot",
+          text: "También puedes escanear este código QR directamente para realizar tu pago:",
+          attachment: {
+            type: "image",
+            src: payment_qr,
+            label: "Código QR para Pago PSE"
+          }
+        });
+      }
+      return;
+    }
+
+    if (event === "done") {
+      setIsLoading(false);
+      return;
+    }
+
+    if (event === "error") {
+      setIsLoading(false);
+      let humanMsg = message || "Error durante la generación de la factura.";
+      if (humanMsg.includes("pasarela de pago")) {
+        humanMsg = "Ya hay un pago en proceso para este predio. Si acabas de generar la factura, usa ese link; si no, intenta en 1 hora.";
+      } else if (humanMsg.includes("Generar Factura' no se habilitó")) {
+        humanMsg = "¡Buenas noticias! Este predio se encuentra al día (Paz y Salvo), no registra deuda pendiente.";
+      } else if (humanMsg.includes("No se encontró el valor")) {
+        humanMsg = "No encontré ese predio en Floridablanca. Por favor verifica el número o intenta por otro dato.";
+      }
+
+      if (statusMsgId) {
+        updateMessage(statusMsgId, { text: `⚠️ ${humanMsg}` });
+      } else {
+        addMessage({ sender: "bot", text: `⚠️ ${humanMsg}` });
+      }
+    }
+  };
+
+  const handlePredialFormSubmit = async ({ searchType, searchValue, phone, email, cliente = "floridablanca" }) => {
+    addMessage({
+      sender: "user",
+      text: `Consulta Predial (${searchType}: ${searchValue})`
+    });
+
+    setIsLoading(true);
+
+    const statusMsgId = addMessage({
+      sender: "bot",
+      text: "🔍 Consultando la información de tu predio..."
+    });
+
+    try {
+      const resp = await generarFacturaAsync({
+        searchType,
+        searchValue,
+        phone,
+        email,
+        cliente
+      });
+
+      if (resp && resp.job_id) {
+        listenJobStream(
+          resp.job_id,
+          (evt) => handlePredialStreamEvent(evt, { phone, email }, statusMsgId),
+          (err) => {
+            console.error("Error en SSE Stream Predial:", err);
+            setIsLoading(false);
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Error iniciando trámite Predial:", error);
+      setIsLoading(false);
+
+      let humanMsg = error.message;
+      if (humanMsg.includes("pasarela de pago")) {
+        humanMsg = "Ya hay una transacción PSE en proceso para este predio. Si acabas de generar la factura, usa ese link; si no, intenta nuevamente en 1 hora.";
+      } else if (humanMsg.includes("Generar Factura' no se habilitó")) {
+        humanMsg = "¡Buenas noticias! Este predio se encuentra al día (Paz y Salvo), no registra deuda pendiente.";
+      } else if (humanMsg.includes("No se encontró el valor de búsqueda")) {
+        humanMsg = `No se encontró el predio con ${searchType}: "${searchValue}" en Floridablanca.`;
+      }
+
+      updateMessage(statusMsgId, { text: `⚠️ ${humanMsg}` });
+    }
+  };
+
+  const handleSelectPredio = async (index, sessionId, contextData = {}) => {
+    setIsLoading(true);
+
+    const statusMsgId = addMessage({
+      sender: "bot",
+      text: `📊 Calculando impuestos y vigencias para el predio #${index + 1}...`
+    });
+
+    try {
+      const resp = await seleccionarPredio({
+        sessionId,
+        index,
+        phone: contextData.phone || "3000000000",
+        email: contextData.email || "correo@ejemplo.com",
+        mode: "async"
+      });
+
+      if (resp && resp.job_id) {
+        listenJobStream(
+          resp.job_id,
+          (evt) => handlePredialStreamEvent(evt, contextData, statusMsgId),
+          (err) => {
+            console.error("Error en SSE Stream Selección Predial:", err);
+            setIsLoading(false);
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Error seleccionando predio:", error);
+      setIsLoading(false);
+      updateMessage(statusMsgId, { text: `⚠️ ${error.message}` });
+    }
+  };
+
+
+
+  const startPqrsdCreateFlow = () => {
     addMessage({
       sender: "bot",
-      text: "Configura el reporte municipal que el robot RPA de Floridablanca procesará:",
-      form: {
-        type: "rpa",
-        fields: [
-          { name: "periodo", placeholder: "Año/Mes (ej: Vigencia 2025)", type: "text", required: true },
-          { name: "email", placeholder: "Correo receptor del reporte", type: "email", required: true }
-        ]
-      }
+      text: "Diligencia el siguiente formulario para radicar tu PQRSD en la Alcaldía de Floridablanca:",
+      customComponent: "pqrsd_crear"
+    });
+  };
+
+  const startPqrsdConsultFlow = () => {
+    addMessage({
+      sender: "bot",
+      text: "Digita tu número de radicado y tu código de seguridad suministrado al radicar la PQRSD.",
+      customComponent: "pqrsd_consult"
+    });
+  };
+
+  const startPqrsdGeneralFlow = () => {
+    addMessage({
+      sender: "bot",
+      text: "¿Qué trámite de PQRSD deseas realizar en la Alcaldía de Floridablanca?",
+      quickReplies: [
+        "📑 Radicar PQRSD",
+        "🔍 Consultar PQRSD"
+      ]
     });
   };
 
@@ -186,13 +421,7 @@ export const ChatProvider = ({ children }) => {
     // Validar si el texto contiene alguna palabra de activación usando Fuzzy Match
     const hasActivationKeyword = containsFuzzyKeyword(cleanText, ACTIVATION_KEYWORDS);
     
-    // Caso 1: Se detecta la intención del servicio pero NO tiene palabra clave de activación (primera consulta)
-    if (route && !hasActivationKeyword) {
-      setLastServiceMentioned(route);
-      return { routed: false, pendingRoute: route }; // Permite pasar a FAQ / Gemini pero informa la ruta pendiente
-    }
-    
-    // Caso 2: Se detecta palabra clave de activación y hay un servicio previo o actual coincidente
+    // Determinar qué servicio activar (ruta directa detectada o servicio pendiente si dice "iniciar")
     const serviceToTrigger = route || (hasActivationKeyword ? lastServiceMentioned : null);
     
     if (serviceToTrigger === "sisben") {
@@ -209,8 +438,22 @@ export const ChatProvider = ({ children }) => {
       return { routed: true };
     }
     
-    if (serviceToTrigger === "rpa") {
-      startRpaFlow();
+    if (serviceToTrigger === "pqrsd_crear") {
+      startPqrsdCreateFlow();
+      setLastServiceMentioned(null);
+      setIsLoading(false);
+      return { routed: true };
+    }
+
+    if (serviceToTrigger === "pqrsd_consultar") {
+      startPqrsdConsultFlow();
+      setLastServiceMentioned(null);
+      setIsLoading(false);
+      return { routed: true };
+    }
+
+    if (serviceToTrigger === "pqrsd" || serviceToTrigger === "rpa") {
+      startPqrsdGeneralFlow();
       setLastServiceMentioned(null);
       setIsLoading(false);
       return { routed: true };
@@ -276,8 +519,8 @@ export const ChatProvider = ({ children }) => {
         if (serviceToCheck) {
           const serviceName = serviceToCheck === "predial" 
             ? "Impuesto Predial" 
-            : (serviceToCheck === "sisben" ? "Sisbén" : "reporte RPA");
-          replyText += `\n\n*(Escribe "iniciar" o "consultar nuevamente" para realizar el trámite interactivo de ${serviceName} aquí mismo)*`;
+            : (serviceToCheck === "sisben" ? "Sisbén" : "PQRSD");
+          replyText += `\n\n*(Escribe "iniciar" para realizar el trámite interactivo de ${serviceName} aquí mismo)*`;
         }
 
         addMessage({
@@ -298,7 +541,7 @@ export const ChatProvider = ({ children }) => {
         });
       }
 
-    } catch (error) {
+    } catch {
       addMessage({
         sender: "bot",
         text: "⚠️ Hubo un inconveniente al procesar tu solicitud. Por favor intenta de nuevo."
@@ -457,12 +700,17 @@ export const ChatProvider = ({ children }) => {
         sendMessage,
         selectQuickReply,
         submitChatForm,
+        handlePredialFormSubmit,
+        handleSelectPredio,
         updateApiKey,
         resetChat: initChat,
         isGeminiEnabled,
         setIsGeminiEnabled,
         isServicesEnabled,
-        setIsServicesEnabled
+        setIsServicesEnabled,
+        theme,
+        toggleTheme,
+        setTheme
       }}
     >
       {children}

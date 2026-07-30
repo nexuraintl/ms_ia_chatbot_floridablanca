@@ -1,5 +1,3 @@
-import React from "react";
-
 export const Badge = ({ children, variant = "primary" }) => {
   const getStyles = () => {
     switch (variant) {

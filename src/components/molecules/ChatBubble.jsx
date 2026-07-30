@@ -1,9 +1,13 @@
-import React from "react";
 import { ChatForm } from "../organisms/ChatForm";
-import { FileText, Download, Image as ImageIcon } from "lucide-react";
+import { PqrsdCreateCard } from "./PqrsdCreateCard";
+import { PqrsdConsultCard } from "./PqrsdConsultCard";
+import { PredialForm } from "./PredialForm";
+import { PredioCardList } from "./PredioCardList";
+import { FileText, Download, Image as ImageIcon, ExternalLink } from "lucide-react";
+import { sanitizeUrl } from "../../utils/securityUtils";
 
-export const ChatBubble = ({ message, onSubmitForm }) => {
-  const { sender, text, timestamp, form, attachment } = message;
+export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelectPredio }) => {
+  const { sender, text, timestamp, form, attachment, customComponent, sessionId, predios, buttonUrl, buttonText } = message;
 
   // Estilos según el remitente
   const isUser = sender === "user";
@@ -15,7 +19,7 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
         style={{
           display: "flex",
           justifyContent: "center",
-          margin: "8px 0",
+          margin: "4px 0",
           width: "100%",
           boxSizing: "border-box"
         }}
@@ -42,12 +46,15 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
     );
   }
 
+  const safeButtonUrl = buttonUrl ? sanitizeUrl(buttonUrl) : null;
+  const safeFileUrl = attachment?.fileUrl ? sanitizeUrl(attachment.fileUrl) : null;
+
   return (
     <div
       style={{
         display: "flex",
         justifyContent: isUser ? "flex-end" : "flex-start",
-        margin: "8px 0",
+        margin: "2px 0",
         width: "100%",
         boxSizing: "border-box"
       }}
@@ -55,27 +62,78 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
     >
       <div
         style={{
-          maxWidth: "80%",
-          padding: "10px 14px",
-          borderRadius: isUser ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
-          backgroundColor: isUser ? "#14532d" : "rgba(255, 255, 255, 0.06)",
-          color: isUser ? "#f3f4f6" : "#e5e7eb",
-          border: isUser ? "1px solid rgba(74, 222, 128, 0.2)" : "1px solid rgba(255, 255, 255, 0.08)",
-          backdropFilter: isUser ? "none" : "blur(12px)",
-          boxShadow: "0 4px 15px rgba(0, 0, 0, 0.15)",
+          maxWidth: customComponent ? "100%" : (isUser ? "82%" : "90%"),
+          padding: customComponent ? "6px 6px" : "12px 16px",
+          borderRadius: isUser ? "18px 18px 2px 18px" : "18px 18px 18px 2px",
+          backgroundColor: isUser ? "var(--user-bubble-bg)" : "var(--bot-bubble-bg)",
+          color: isUser ? "var(--user-bubble-text)" : "var(--bot-bubble-text)",
+          border: isUser ? "1px solid var(--user-bubble-border)" : "1px solid var(--bot-bubble-border)",
+          boxShadow: isUser ? "var(--user-bubble-shadow)" : "var(--bot-bubble-shadow)",
           display: "flex",
           flexDirection: "column",
-          gap: "6px",
+          gap: "8px",
           position: "relative",
           boxSizing: "border-box"
         }}
       >
         {/* Texto del mensaje */}
-        <span style={{ fontSize: "0.9rem", lineHeight: "1.4", wordBreak: "break-word" }}>
-          {text}
-        </span>
+        {text && (
+          <span style={{ fontSize: "0.98rem", lineHeight: "1.5", wordBreak: "break-word" }}>
+            {text}
+          </span>
+        )}
 
-        {/* Formulario adjunto */}
+        {/* Componentes personalizados de PQRSD */}
+        {customComponent === "pqrsd_crear" && (
+          <PqrsdCreateCard />
+        )}
+
+        {customComponent === "pqrsd_consult" && (
+          <PqrsdConsultCard />
+        )}
+
+        {/* Componente interactivo de Impuesto Predial */}
+        {customComponent === "predial_form" && (
+          <PredialForm onSubmit={onSubmitPredialForm} />
+        )}
+
+        {/* Múltiples predios encontrados */}
+        {customComponent === "predial_multiples" && (
+          <PredioCardList
+            sessionId={sessionId}
+            predios={predios}
+            onSelectPredio={onSelectPredio}
+          />
+        )}
+
+        {/* Botón de Enlace Externo (ej: Pago PSE) */}
+        {safeButtonUrl && safeButtonUrl !== "#" && (
+          <a
+            href={safeButtonUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              padding: "10px 16px",
+              marginTop: "4px",
+              borderRadius: "8px",
+              background: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
+              color: "#ffffff",
+              fontWeight: 700,
+              fontSize: "0.85rem",
+              textDecoration: "none",
+              boxShadow: "0 4px 12px rgba(16, 185, 129, 0.3)"
+            }}
+          >
+            <ExternalLink size={16} />
+            <span>{buttonText || "Ir a Pagar en Línea (PSE)"}</span>
+          </a>
+        )}
+
+        {/* Formulario adjunto anterior */}
         {form && (
           <ChatForm
             formType={form.type}
@@ -84,7 +142,7 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
           />
         )}
 
-        {/* Archivos / Imágenes adjuntos (Req 5) */}
+        {/* Archivos / Imágenes adjuntos */}
         {attachment && (
           <div
             style={{
@@ -101,11 +159,13 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
               <>
                 <img
                   src={attachment.src}
-                  alt={attachment.label}
+                  alt={attachment.label || "Imagen adjunta"}
                   style={{
                     width: "100%",
-                    maxHeight: "130px",
-                    objectFit: "cover"
+                    maxHeight: "220px",
+                    objectFit: "contain",
+                    backgroundColor: "#ffffff",
+                    padding: "8px"
                   }}
                 />
                 <div
@@ -119,18 +179,22 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
                   }}
                 >
                   <ImageIcon size={12} />
-                  <span>{attachment.label}</span>
+                  <span>{attachment.label || "Código QR para pago"}</span>
                 </div>
               </>
             )}
 
             {/* Enlace de descarga de archivo */}
-            {attachment.fileUrl && (
+            {safeFileUrl && (
               <a
-                href={attachment.fileUrl}
+                href={safeFileUrl}
+                target={safeFileUrl.startsWith("#") ? "_self" : "_blank"}
+                rel="noopener noreferrer"
                 onClick={(e) => {
-                  e.preventDefault();
-                  alert(`Simulando la descarga del archivo: ${attachment.fileLabel || "documento.pdf"}`);
+                  if (safeFileUrl.startsWith("#")) {
+                    e.preventDefault();
+                    alert(`Simulando la descarga del archivo: ${attachment.fileLabel || "documento.pdf"}`);
+                  }
                 }}
                 style={{
                   display: "flex",
@@ -165,6 +229,7 @@ export const ChatBubble = ({ message, onSubmitForm }) => {
         >
           {timestamp}
         </span>
+
       </div>
     </div>
   );

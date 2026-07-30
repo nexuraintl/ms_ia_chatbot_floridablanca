@@ -1,5 +1,5 @@
 import faqData from "../config/NewFaqConfig.json" with { type: "json" };
-import { containsFuzzyKeyword } from "../utils/stringUtils.js";
+import { sanitizeText } from "../utils/securityUtils.js";
 
 // Configuración de la API de Gemini y System Prompt optimizado
 const SYSTEM_PROMPT = `
@@ -12,28 +12,13 @@ REGLAS CRÍTICAS DE TOKENIZACIÓN Y AHORRO:
 `;
 
 const getFaqContext = (userMessage) => {
-  const cleanText = userMessage
+  const safeUserMsg = sanitizeText(userMessage).substring(0, 1000);
+  const cleanText = safeUserMsg
     .toLowerCase()
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?¿¡]/g, "");
-
-  // Función auxiliar para verificar si un término/palabra clave coincide flexiblemente
-  const matchesKeyword = (text, keyword) => {
-    const cleanKeyword = keyword.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    if (text.includes(cleanKeyword)) return true;
-    
-    const kwWords = cleanKeyword.split(/\s+/).filter(w => w.length > 2);
-    if (kwWords.length === 0) return false;
-    
-    return kwWords.every(kwWord => {
-      if (kwWord.length <= 4) {
-        return text.includes(kwWord);
-      }
-      return text.includes(kwWord.substring(0, 4));
-    });
-  };
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?¿¡]/g, "");
 
   let bestMatchedFaq = null;
   let maxIntentScore = 0;
@@ -203,9 +188,9 @@ const queryMockGemini = async (userMessage, pageContext = "", activeContext = nu
     .trim()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?¿¡]/g, "");
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?¿¡]/g, "");
   
-  let reply = "";
+  let reply;
   let bestMatchedFaq = null;
 
   // 1. Manejo de saludos generales

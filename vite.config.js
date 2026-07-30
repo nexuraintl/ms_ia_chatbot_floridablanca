@@ -19,19 +19,44 @@ export default defineConfig({
         server.middlewares.use((req, res, next) => {
           if (req.method === 'POST' && req.url === '/api/log-tokens') {
             let body = '';
+            let bodyTooLarge = false;
+
             req.on('data', chunk => {
               body += chunk.toString();
+              // Límite de seguridad: Máximo 10 KB por solicitud para prevenir DoS por agotamiento de memoria
+              if (body.length > 10240) {
+                bodyTooLarge = true;
+                req.destroy();
+              }
             });
+
             req.on('end', () => {
+              if (bodyTooLarge) {
+                res.writeHead(413, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Payload Too Large' }));
+                return;
+              }
+
               try {
                 const data = JSON.parse(body);
-                const logMessage = `[${new Date().toLocaleString()}] Mensaje: "${data.prompt}" | Tokens Usados: ${data.used} | Tokens Ahorrados: ${data.saved}\n`;
+                // Saneamiento de CRLF / Log Injection
+                const cleanPrompt = String(data.prompt || '')
+                  .replace(/[\r\n\t]/g, ' ')
+                  // eslint-disable-next-line no-control-regex
+                  .replace(/[\u0000-\u001F]/g, '')
+                  .substring(0, 300);
+
+                const used = Math.max(0, parseInt(data.used, 10) || 0);
+                const saved = Math.max(0, parseInt(data.saved, 10) || 0);
+
+                const logMessage = `[${new Date().toISOString()}] Mensaje: "${cleanPrompt}" | Tokens Usados: ${used} | Tokens Ahorrados: ${saved}\n`;
                 fs.appendFileSync(path.join(__dirname, 'token_usage.log'), logMessage);
+                
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true }));
-              } catch (e) {
-                res.writeHead(500, { 'Content-Type': 'text/plain' });
-                res.end('Error al escribir log: ' + e.message);
+              } catch {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Invalid JSON payload' }));
               }
             });
           } else {

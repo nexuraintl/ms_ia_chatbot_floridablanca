@@ -1,4 +1,3 @@
-import React from "react";
 import { Button } from "../atoms/Button";
 
 export const QuickReplies = ({ replies, onSelect }) => {
@@ -10,9 +9,11 @@ export const QuickReplies = ({ replies, onSelect }) => {
         display: "flex",
         flexDirection: "column",
         gap: "8px",
-        padding: "8px 12px",
+        padding: "6px 0",
+        margin: "6px 0",
         width: "100%",
-        boxSizing: "border-box"
+        boxSizing: "border-box",
+        backgroundColor: "transparent"
       }}
       className="quick-replies-container animate-fade-in"
     >
@@ -24,11 +25,14 @@ export const QuickReplies = ({ replies, onSelect }) => {
           style={{
             justifyContent: "flex-start",
             textAlign: "left",
-            fontSize: "0.85rem",
-            padding: "8px 12px",
-            border: "1px solid rgba(74, 222, 128, 0.15)", // Acento verde sutil
-            backgroundColor: "rgba(21, 128, 61, 0.05)",
-            color: "#e2e8f0"
+            fontSize: "0.92rem",
+            fontWeight: "500",
+            padding: "10px 14px",
+            borderRadius: "12px",
+            border: "1.5px solid var(--quick-reply-border)",
+            backgroundColor: "transparent",
+            color: "var(--quick-reply-text)",
+            boxShadow: "none"
           }}
         >
           {reply}

@@ -9,7 +9,8 @@
   "welcome": {
     "message1": "¡Hola! Te doy la bienvenida a la Alcaldía de Floridablanca.",
     "message2_services": "Soy tu asistente virtual. Puedes escribirme tu duda directamente o seleccionar una de estas opciones sugeridas:",
-    "message2_no_services": "Soy tu asistente virtual de Floridablanca. Escribe tu duda o pregunta y te responderé con gusto."
+    "message2_no_services": "Soy tu asistente virtual de Floridablanca. Escribe tu duda o pregunta y te responderé con gusto.",
+    "privacyNotice": "🔒 Aviso de Privacidad: Al interactuar, enviar un mensaje o seleccionar una opción, autorizas el Tratamiento de Datos Personales (Ley 1581 de 2012) y aceptas los Términos y Condiciones oficiales."
   },
   "quickReplies": [
     {
@@ -21,13 +22,19 @@
       "flow": "predial"
     },
     {
-      "label": "🟡 Generar Reporte Municipal (RPA)",
-      "flow": "rpa"
+      "label": "📑 Radicar PQRSD",
+      "flow": "pqrsd_crear"
+    },
+    {
+      "label": "🔍 Consultar PQRSD",
+      "flow": "pqrsd_consultar"
     }
   ],
   "routing": {
     "sisben": ["sisben", "puntaje", "grupo", "afiliacion"],
     "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],
-    "rpa": ["rpa", "reporte", "automatizacion", "robot"]
+    "pqrsd_crear": ["radicar", "peticion", "queja", "reclamo", "sugerencia", "denuncia", "crear pqrsd", "hacer pqrsd", "poner queja", "radicar pqrsd", "radicar pqrs", "nueva pqrsd"],
+    "pqrsd_consultar": ["consultar radicado", "estado radicado", "buscar radicado", "trazabilidad", "mi radicado", "consultar pqrsd", "consultar mi pqrsd", "consultar estado", "consultarlo", "consultar pqrs"],
+    "pqrsd": ["pqrsd", "pqrs", "robot", "radicado", "neptuno"]
   }
 }

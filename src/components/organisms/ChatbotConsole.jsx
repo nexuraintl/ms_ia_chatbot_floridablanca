@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useChat } from "../../context/ChatContext";
-import { Terminal as TerminalIcon, Cpu, Key, Code, Copy, Check, TrendingDown, Sparkles, Globe, ShieldAlert, Award, Settings } from "lucide-react";
+import { Terminal as TerminalIcon, Cpu, Key, Code, Copy, Check, TrendingDown, Sparkles, Globe, Award, Settings, Sun, Moon } from "lucide-react";
+import { isValidGeminiApiKey, sanitizeLogString, maskPhone, maskEmail, maskIdentification } from "../../utils/securityUtils";
 
 export const ChatbotConsole = () => {
   const { 
@@ -12,16 +13,20 @@ export const ChatbotConsole = () => {
     isGeminiEnabled,
     setIsGeminiEnabled,
     isServicesEnabled,
-    setIsServicesEnabled
+    setIsServicesEnabled,
+    theme,
+    toggleTheme
   } = useChat();
   const [copied, setCopied] = useState(false);
   const [localKey, setLocalKey] = useState(apiKey);
+  const [prevApiKey, setPrevApiKey] = useState(apiKey);
   const terminalEndRef = useRef(null);
 
-  // Sincronizar localKey cuando la apiKey cambia en el contexto
-  useEffect(() => {
+  // Sincronizar localKey cuando la apiKey cambia en el contexto sin re-renders en cascada
+  if (apiKey !== prevApiKey) {
+    setPrevApiKey(apiKey);
     setLocalKey(apiKey);
-  }, [apiKey]);
+  }
 
   // Auto-scroll en la terminal de logs
   useEffect(() => {
@@ -37,6 +42,9 @@ export const ChatbotConsole = () => {
 
   const handleSaveKey = (e) => {
     e.preventDefault();
+    if (localKey && !isValidGeminiApiKey(localKey)) {
+      alert("⚠️ La API Key ingresada no coincide con el formato oficial de Google AI Studio (AIzaSy...). Por favor verícala.");
+    }
     updateApiKey(localKey);
     alert("API Key de Gemini actualizada exitosamente.");
   };
@@ -46,23 +54,25 @@ export const ChatbotConsole = () => {
 
   return (
     <div
+      className="chatbot-console-container"
       style={{
         display: "flex",
         flexDirection: "row",
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        backgroundColor: "#090d16",
-        color: "#cbd5e1",
+        backgroundColor: "var(--bg-color)",
+        color: "var(--text-main)",
         fontFamily: "'Outfit', 'Inter', sans-serif"
       }}
     >
       {/* PANEL LATERAL DE CONFIGURACIÓN */}
       <div
+        className="console-sidebar"
         style={{
           width: "320px",
-          backgroundColor: "rgba(15, 23, 42, 0.45)",
-          borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+          backgroundColor: "var(--sidebar-bg)",
+          borderRight: "1px solid var(--border-color)",
           backdropFilter: "blur(20px)",
           padding: "28px 24px",
           display: "flex",
@@ -75,38 +85,60 @@ export const ChatbotConsole = () => {
         }}
       >
         {/* Marca Municipal */}
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: "20px" }}>
-          <div
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div
+              style={{
+                width: "42px",
+                height: "42px",
+                borderRadius: "10px",
+                backgroundColor: "#15803d",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 14px rgba(21, 128, 61, 0.4)"
+              }}
+            >
+              <span style={{ fontSize: "1.4rem" }}>🌸</span>
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "1.15rem", fontWeight: "800", color: "var(--text-main)", letterSpacing: "0.5px" }}>
+                FLORIDABLANCA
+              </h2>
+              <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "600", textTransform: "uppercase", letterSpacing: "1px" }}>
+                Capital Dulce
+              </span>
+            </div>
+          </div>
+
+          {/* Botón Switcher Light / Dark */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={theme === "light" ? "Cambiar a Modo Oscuro" : "Cambiar a Modo Claro"}
             style={{
-              width: "42px",
-              height: "42px",
-              borderRadius: "10px",
-              backgroundColor: "#15803d",
+              background: "var(--input-bg)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "8px",
+              padding: "8px",
+              cursor: "pointer",
+              color: "var(--text-main)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 4px 14px rgba(21, 128, 61, 0.4)"
+              justifyContent: "center"
             }}
           >
-            <span style={{ fontSize: "1.4rem" }}>🌸</span>
-          </div>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "1.15rem", fontWeight: "800", color: "#f8fafc", letterSpacing: "0.5px" }}>
-              FLORIDABLANCA
-            </h2>
-            <span style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: "600", textTransform: "uppercase", letterSpacing: "1px" }}>
-              Capital Dulce
-            </span>
-          </div>
+            {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
         </div>
 
         {/* Sección 1: API Key Manager */}
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <Key size={18} style={{ color: "#d97706" }} />
-            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "#f1f5f9" }}>Google Gemini Key</h3>
+            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "var(--text-main)" }}>Google Gemini Key</h3>
           </div>
-          <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748b", lineHeight: "1.4" }}>
+          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
             Ingresa tu credencial para habilitar las consultas inteligentes reales del Chatbot.
           </p>
           <form onSubmit={handleSaveKey} style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
@@ -119,9 +151,9 @@ export const ChatbotConsole = () => {
                 width: "100%",
                 padding: "10px 14px",
                 borderRadius: "8px",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                backgroundColor: "rgba(0, 0, 0, 0.25)",
-                color: "#ffffff",
+                border: "1px solid var(--input-border)",
+                backgroundColor: "var(--input-bg)",
+                color: "var(--input-text)",
                 fontSize: "0.85rem",
                 outline: "none",
                 transition: "all 0.2s",
@@ -159,7 +191,7 @@ export const ChatbotConsole = () => {
                     padding: "8px 12px",
                     borderRadius: "6px",
                     backgroundColor: "rgba(239, 68, 68, 0.15)",
-                    color: "#f87171",
+                    color: "#dc2626",
                     border: "1px solid rgba(239, 68, 68, 0.3)",
                     fontWeight: "600",
                     fontSize: "0.8rem",
@@ -173,23 +205,23 @@ export const ChatbotConsole = () => {
               )}
             </div>
           </form>
-          <span style={{ fontSize: "0.72rem", color: "#475569" }}>
-            ¿No tienes clave? Consíguela en <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer" style={{ color: "#22c55e", textDecoration: "underline" }}>Google AI Studio</a>.
+          <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+            ¿No tienes clave? Consíguela en <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" style={{ color: "#16a34a", textDecoration: "underline" }}>Google AI Studio</a>.
           </span>
         </div>
 
         {/* Sección de Módulos (Habilitar/Deshabilitar características del chatbot) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "16px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", borderTop: "1px solid var(--border-color)", paddingTop: "16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Settings size={18} style={{ color: "#10b981" }} />
-            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "#f1f5f9" }}>Módulos Habilitados</h3>
+            <Settings size={18} style={{ color: "#16a34a" }} />
+            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "var(--text-main)" }}>Módulos Habilitados</h3>
           </div>
           
           {/* Toggle: FAQ / Gemini IA */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#e2e8f0" }}>Preguntas Frecuentes (IA)</span>
-              <span style={{ fontSize: "0.7rem", color: "#64748b" }}>Respuesta libre con Gemini</span>
+              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-main)" }}>Preguntas Frecuentes (IA)</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Respuesta libre con Gemini</span>
             </div>
             <button
               onClick={() => setIsGeminiEnabled(!isGeminiEnabled)}
@@ -198,7 +230,7 @@ export const ChatbotConsole = () => {
                 width: "44px",
                 height: "22px",
                 borderRadius: "11px",
-                backgroundColor: isGeminiEnabled ? "#15803d" : "#334155",
+                backgroundColor: isGeminiEnabled ? "#15803d" : "#cbd5e1",
                 border: "none",
                 cursor: "pointer",
                 position: "relative",
@@ -216,7 +248,7 @@ export const ChatbotConsole = () => {
                   top: "2px",
                   left: isGeminiEnabled ? "24px" : "2px",
                   transition: "left 0.2s",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.3)"
                 }}
               />
             </button>
@@ -225,8 +257,8 @@ export const ChatbotConsole = () => {
           {/* Toggle: Servicios / Trámites */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#e2e8f0" }}>Trámites y Servicios</span>
-              <span style={{ fontSize: "0.7rem", color: "#64748b" }}>Sisbén, Predial y RPA</span>
+              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-main)" }}>Trámites y Servicios</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Sisbén, Predial y RPA</span>
             </div>
             <button
               onClick={() => setIsServicesEnabled(!isServicesEnabled)}
@@ -235,7 +267,7 @@ export const ChatbotConsole = () => {
                 width: "44px",
                 height: "22px",
                 borderRadius: "11px",
-                backgroundColor: isServicesEnabled ? "#15803d" : "#334155",
+                backgroundColor: isServicesEnabled ? "#15803d" : "#cbd5e1",
                 border: "none",
                 cursor: "pointer",
                 position: "relative",
@@ -253,7 +285,7 @@ export const ChatbotConsole = () => {
                   top: "2px",
                   left: isServicesEnabled ? "24px" : "2px",
                   transition: "left 0.2s",
-                  boxShadow: "0 1px 3px rgba(0,0,0,0.4)"
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.3)"
                 }}
               />
             </button>
@@ -261,24 +293,24 @@ export const ChatbotConsole = () => {
         </div>
 
         {/* Sección 2: Integración (Embed) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "auto", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "20px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "auto", borderTop: "1px solid var(--border-color)", paddingTop: "20px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Code size={18} style={{ color: "#3b82f6" }} />
-            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "#f1f5f9" }}>Script de Integración</h3>
+            <Code size={18} style={{ color: "#0284c7" }} />
+            <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "var(--text-main)" }}>Script de Integración</h3>
           </div>
-          <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748b", lineHeight: "1.4" }}>
+          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: "1.4" }}>
             Copia este script para inyectar el chatbot en cualquier sitio web externo:
           </p>
           <div
             style={{
               padding: "10px",
               borderRadius: "8px",
-              backgroundColor: "rgba(0, 0, 0, 0.3)",
-              border: "1px solid rgba(255, 255, 255, 0.05)",
+              backgroundColor: "var(--input-bg)",
+              border: "1px solid var(--border-color)",
               fontSize: "0.72rem",
               fontFamily: "monospace",
               wordBreak: "break-all",
-              color: "#cbd5e1",
+              color: "var(--text-main)",
               position: "relative",
               userSelect: "all"
             }}
@@ -291,19 +323,19 @@ export const ChatbotConsole = () => {
                 position: "absolute",
                 top: "6px",
                 right: "6px",
-                background: "rgba(255, 255, 255, 0.08)",
-                border: "none",
+                background: "var(--card-bg)",
+                border: "1px solid var(--border-color)",
                 borderRadius: "4px",
                 padding: "4px",
                 cursor: "pointer",
-                color: copied ? "#22c55e" : "#94a3b8"
+                color: copied ? "#16a34a" : "var(--text-muted)"
               }}
               title="Copiar código"
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </button>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.72rem", color: "#64748b" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.72rem", color: "var(--text-muted)" }}>
             <Globe size={12} />
             <span>Soporta Cross-Origin completo (CORS)</span>
           </div>
@@ -312,6 +344,7 @@ export const ChatbotConsole = () => {
 
       {/* ÁREA PRINCIPAL: MÉTRICAS Y TERMINAL */}
       <div
+        className="console-main-area"
         style={{
           flex: 1,
           padding: "32px 40px",
@@ -324,12 +357,12 @@ export const ChatbotConsole = () => {
         }}
       >
         {/* Cabecera Principal */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: "1.8rem", fontWeight: "800", color: "#ffffff", letterSpacing: "-0.5px" }}>
+            <h1 style={{ margin: 0, fontSize: "1.8rem", fontWeight: "800", color: "var(--text-main)", letterSpacing: "-0.5px" }}>
               Panel de Control del Asistente Virtual
             </h1>
-            <p style={{ margin: "4px 0 0 0", fontSize: "0.9rem", color: "#64748b" }}>
+            <p style={{ margin: "4px 0 0 0", fontSize: "0.9rem", color: "var(--text-muted)" }}>
               Monitorea el consumo de la API de Gemini, logs del sistema y simulación de automatizaciones RPA.
             </p>
           </div>
@@ -338,8 +371,8 @@ export const ChatbotConsole = () => {
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              backgroundColor: "rgba(34, 197, 94, 0.1)",
-              border: "1px solid rgba(34, 197, 94, 0.2)",
+              backgroundColor: "rgba(21, 128, 61, 0.1)",
+              border: "1px solid rgba(21, 128, 61, 0.25)",
               padding: "6px 14px",
               borderRadius: "20px"
             }}
@@ -349,11 +382,11 @@ export const ChatbotConsole = () => {
                 width: "8px",
                 height: "8px",
                 borderRadius: "50%",
-                backgroundColor: "#22c55e",
-                boxShadow: "0 0 8px #22c55e"
+                backgroundColor: "#16a34a",
+                boxShadow: "0 0 8px #16a34a"
               }}
             />
-            <span style={{ fontSize: "0.78rem", color: "#4ade80", fontWeight: "600", letterSpacing: "0.5px" }}>
+            <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: "600", letterSpacing: "0.5px" }}>
               WIDGET EMBEBIBLE ACTIVO
             </span>
           </div>
@@ -365,23 +398,23 @@ export const ChatbotConsole = () => {
           <div
             style={{
               padding: "20px",
-              backgroundColor: "rgba(30, 41, 59, 0.25)",
-              border: "1px solid rgba(255, 255, 255, 0.06)",
-              borderRadius: "12px",
+              backgroundColor: "var(--card-bg)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "14px",
               display: "flex",
               flexDirection: "column",
               gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.1)"
+              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#64748b" }}>TOKENS CONSUMIDOS</span>
-              <Cpu size={16} style={{ color: "#3b82f6" }} />
+              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>TOKENS CONSUMIDOS</span>
+              <Cpu size={18} style={{ color: "#0284c7" }} />
             </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#ffffff" }}>
+            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "var(--text-main)" }}>
               {tokensUsedTotal.toLocaleString()}
             </span>
-            <span style={{ fontSize: "0.72rem", color: "#475569" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
               Consumo real en peticiones Gemini
             </span>
           </div>
@@ -390,23 +423,23 @@ export const ChatbotConsole = () => {
           <div
             style={{
               padding: "20px",
-              backgroundColor: "rgba(30, 41, 59, 0.25)",
-              border: "1px solid rgba(255, 255, 255, 0.06)",
-              borderRadius: "12px",
+              backgroundColor: "var(--card-bg)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "14px",
               display: "flex",
               flexDirection: "column",
               gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.1)"
+              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#64748b" }}>TOKENS AHORRADOS</span>
-              <TrendingDown size={16} style={{ color: "#22c55e" }} />
+              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>TOKENS AHORRADOS</span>
+              <TrendingDown size={18} style={{ color: "#16a34a" }} />
             </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#22c55e" }}>
+            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#16a34a" }}>
               {tokensSavedTotal.toLocaleString()}
             </span>
-            <span style={{ fontSize: "0.72rem", color: "#475569" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
               Optimizados por respuestas cortas
             </span>
           </div>
@@ -415,23 +448,23 @@ export const ChatbotConsole = () => {
           <div
             style={{
               padding: "20px",
-              backgroundColor: "rgba(30, 41, 59, 0.25)",
-              border: "1px solid rgba(255, 255, 255, 0.06)",
-              borderRadius: "12px",
+              backgroundColor: "var(--card-bg)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "14px",
               display: "flex",
               flexDirection: "column",
               gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.1)"
+              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#64748b" }}>EFICIENCIA DE COSTOS</span>
-              <Sparkles size={16} style={{ color: "#eab308" }} />
+              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>EFICIENCIA DE COSTOS</span>
+              <Sparkles size={18} style={{ color: "#d97706" }} />
             </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#eab308" }}>
+            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#d97706" }}>
               ${usdSaved}
             </span>
-            <span style={{ fontSize: "0.72rem", color: "#475569" }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
               USD estimados ahorrados por diseño
             </span>
           </div>
@@ -444,15 +477,15 @@ export const ChatbotConsole = () => {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              backgroundColor: "#0f172a",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              backgroundColor: theme === "light" ? "#1e293b" : "#0f172a",
+              border: "1px solid var(--border-color)",
               borderBottom: "none",
               padding: "10px 18px",
               borderRadius: "10px 10px 0 0"
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <TerminalIcon size={16} style={{ color: "#22c55e" }} />
+              <TerminalIcon size={16} style={{ color: "#4ade80" }} />
               <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "#f8fafc", fontFamily: "monospace" }}>
                 TERMINAL DE LOGS DEL CHATBOT
               </span>
@@ -467,26 +500,26 @@ export const ChatbotConsole = () => {
           <div
             style={{
               flex: 1,
-              backgroundColor: "#020617",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              backgroundColor: theme === "light" ? "#0f172a" : "#020617",
+              border: "1px solid var(--border-color)",
               padding: "16px",
               borderRadius: "0 0 10px 10px",
               overflowY: "auto",
               fontFamily: "'Courier New', Courier, monospace",
-              fontSize: "0.78rem",
+              fontSize: "0.8rem",
               lineHeight: "1.5",
               color: "#34d399",
               display: "flex",
               flexDirection: "column",
               gap: "6px",
               maxHeight: "360px",
-              boxShadow: "inset 0 4px 20px rgba(0, 0, 0, 0.8)"
+              boxShadow: "inset 0 4px 20px rgba(0, 0, 0, 0.5)"
             }}
           >
-            <div style={{ color: "#64748b" }}>
+            <div style={{ color: "#94a3b8" }}>
               [SYSTEM_LOG] [{new Date().toLocaleDateString()}] Inicializando terminal de logs...
             </div>
-            <div style={{ color: "#64748b" }}>
+            <div style={{ color: "#94a3b8" }}>
               [SYSTEM_LOG] Escuchando eventos del microservicio de chatbot...
             </div>
             
@@ -503,9 +536,17 @@ export const ChatbotConsole = () => {
                 senderLabel = "SYS-RPA";
               }
 
+              // Enmascarar PII (números de teléfono de 10 dígitos, correos y cédulas)
+              const safeText = sanitizeLogString(
+                (m.text || "")
+                  .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, (em) => maskEmail(em))
+                  .replace(/\b3\d{9}\b/g, (ph) => maskPhone(ph))
+                  .replace(/\b\d{7,10}\b/g, (idNum) => maskIdentification(idNum))
+              );
+
               return (
                 <div key={m.id || idx} style={{ color: logColor }}>
-                  {prefix} [{senderLabel}] {m.text}
+                  {prefix} [{senderLabel}] {safeText}
                   {m.form && ` (Formulario enviado: tipo=${m.form.type})`}
                   {m.attachment && ` (Adjunto inyectado: tipo=${m.attachment.type}, file=${m.attachment.fileLabel || "img"})`}
                 </div>
@@ -520,19 +561,19 @@ export const ChatbotConsole = () => {
         <div
           style={{
             padding: "20px 24px",
-            backgroundColor: "rgba(30, 41, 59, 0.15)",
-            border: "1px solid rgba(255, 255, 255, 0.04)",
-            borderRadius: "12px",
+            backgroundColor: "var(--card-bg)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "14px",
             display: "flex",
             flexDirection: "column",
             gap: "8px"
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Award size={16} style={{ color: "#10b981" }} />
-            <h4 style={{ margin: 0, fontSize: "0.85rem", color: "#f1f5f9" }}>Cómo funciona la IA Contextual</h4>
+            <Award size={18} style={{ color: "#16a34a" }} />
+            <h4 style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-main)", fontWeight: "700" }}>Cómo funciona la IA Contextual</h4>
           </div>
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b", lineHeight: "1.5" }}>
+          <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--text-muted)", lineHeight: "1.5" }}>
             El chatbot ahora detecta de forma automática la estructura, títulos y fragmentos de texto de la página en la cual se encuentra embebido. Cuando conversas con él, se le envía esta información de fondo, lo que le permite responder con precisión a preguntas como <strong>"¿dónde estoy?"</strong> o <strong>"¿qué secciones tiene esta página?"</strong> sin necesidad de bases de datos estáticas externas.
           </p>
         </div>

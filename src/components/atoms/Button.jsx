@@ -1,5 +1,3 @@
-import React from "react";
-
 export const Button = ({
   children,
   onClick,
@@ -27,7 +25,7 @@ export const Button = ({
     };
 
     // Tamaños
-    let sizeStyle = {};
+    let sizeStyle;
     if (size === "sm") {
       sizeStyle = { padding: "6px 12px", fontSize: "0.85rem" };
     } else if (size === "lg") {

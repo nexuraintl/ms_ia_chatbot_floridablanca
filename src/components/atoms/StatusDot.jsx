@@ -1,8 +1,6 @@
-import React from "react";
-
 export const StatusDot = ({ online = true }) => {
   return (
-    <span style={{ display: "relative", display: "flex", alignItems: "center" }}>
+    <span style={{ position: "relative", display: "flex", alignItems: "center" }}>
       <span
         style={{
           width: "8px",
