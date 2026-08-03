@@ -1,6 +1,7 @@
 import { ChatForm } from "../organisms/ChatForm";
 import { PqrsdCreateCard } from "./PqrsdCreateCard";
 import { PqrsdConsultCard } from "./PqrsdConsultCard";
+import { PqrsdResultCard } from "./PqrsdResultCard";
 import { PredialForm } from "./PredialForm";
 import { PredioCardList } from "./PredioCardList";
 import { FileText, Download, Image as ImageIcon, ExternalLink } from "lucide-react";
@@ -90,6 +91,10 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
 
         {customComponent === "pqrsd_consult" && (
           <PqrsdConsultCard />
+        )}
+
+        {customComponent === "pqrsd_result" && (
+          <PqrsdResultCard data={message.pqrsdData} />
         )}
 
         {/* Componente interactivo de Impuesto Predial */}

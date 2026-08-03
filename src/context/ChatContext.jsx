@@ -11,6 +11,7 @@ import {
 } from "../services/rpaPredialService";
 import { containsFuzzyKeyword } from "../utils/stringUtils";
 import { getSemanticRoute } from "../services/intentRouter";
+import { consultarPqrsd } from "../services/pqrsdService";
 import config from "../config/chatbotConfig.json";
 
 const ChatContext = createContext();
@@ -118,8 +119,45 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
+  // Temporizador para mensaje de seguimiento ("¿Te puedo ayudar con algo más?") tras 20s de inactividad
+  const followUpTimerRef = useRef(null);
+
+  const clearFollowUpTimer = () => {
+    if (followUpTimerRef.current) {
+      clearTimeout(followUpTimerRef.current);
+      followUpTimerRef.current = null;
+    }
+  };
+
+  const scheduleFollowUp = (delayMs = 20000) => {
+    clearFollowUpTimer();
+    followUpTimerRef.current = setTimeout(() => {
+      setMessages((prevMessages) => {
+        if (prevMessages.length === 0) return prevMessages;
+        const lastMsg = prevMessages[prevMessages.length - 1];
+        if (lastMsg.sender === "bot" && !lastMsg.text?.includes("¿Te puedo ayudar con algo más?")) {
+          const replies = isServicesEnabled ? config.quickReplies.map(reply => reply.label) : null;
+          const newMsg = {
+            id: Math.random().toString(36).substr(2, 9),
+            sender: "bot",
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            text: isServicesEnabled 
+              ? "¿Te puedo ayudar con algo más? Escribe tu duda o selecciona una opción rápida:"
+              : "¿Te puedo ayudar con algo más?",
+            quickReplies: replies
+          };
+          return [...prevMessages.map(m => ({ ...m, quickReplies: null })), newMsg];
+        }
+        return prevMessages;
+      });
+    }, delayMs);
+  };
+
   // Helper para añadir mensaje
   const addMessage = (msg) => {
+    if (msg.sender === "user") {
+      clearFollowUpTimer();
+    }
     const id = msg.id || Math.random().toString(36).substr(2, 9);
     setMessages((prev) => [
       ...prev.map(m => ({ ...m, quickReplies: null })), // Quitar botones de mensajes antiguos
@@ -130,13 +168,6 @@ export const ChatProvider = ({ children }) => {
       }
     ]);
     return id;
-  };
-
-  // Helper para actualizar dinámicamente un mensaje existente (Opción A)
-  const updateMessage = (id, updates) => {
-    setMessages((prev) =>
-      prev.map((msg) => (msg.id === id ? { ...msg, ...updates } : msg))
-    );
   };
 
   // Obtener contexto de la página principal donde está embebido el chatbot
@@ -190,7 +221,7 @@ export const ChatProvider = ({ children }) => {
     });
   };
 
-  const handlePredialStreamEvent = (evt, contextData = {}, statusMsgId) => {
+  const handlePredialStreamEvent = (evt, contextData = {}) => {
     const { event, outcome, amount, filename, payment_url, payment_qr, message, session_id, predios } = evt;
 
     const MENSAJES_PROGRESO = {
@@ -199,19 +230,20 @@ export const ChatProvider = ({ children }) => {
       invoice_ready: "📊 Calculando impuestos y vigencias..."
     };
 
-    if (MENSAJES_PROGRESO[event] && statusMsgId) {
-      updateMessage(statusMsgId, { text: MENSAJES_PROGRESO[event] });
+    if (MENSAJES_PROGRESO[event]) {
+      addMessage({ sender: "bot", text: MENSAJES_PROGRESO[event] });
       return;
     }
 
     if (event === "search_done") {
-      if (outcome === "predio_unico" && statusMsgId) {
-        updateMessage(statusMsgId, { text: "✅ Predio ubicado. Solicitando estado de cuenta..." });
-      } else if (outcome === "multiples_predios" && statusMsgId) {
+      if (outcome === "predio_unico") {
+        addMessage({ sender: "bot", text: "✅ Predio ubicado. Solicitando estado de cuenta..." });
+      } else if (outcome === "multiples_predios") {
         const rawPredios = predios || evt.result?.predios || [];
         const rawSession = session_id || evt.result?.session_id;
 
-        updateMessage(statusMsgId, {
+        addMessage({
+          sender: "bot",
           text: `🏢 Se encontraron ${rawPredios.length} predios registrados para esta consulta. Selecciona tu inmueble a continuación:`,
           customComponent: "predial_multiples",
           sessionId: rawSession,
@@ -228,16 +260,15 @@ export const ChatProvider = ({ children }) => {
       const montoFormateado = amount ? formatPesos(amount) : "monto liquidado";
       const pdfUrl = getFacturaPdfUrl(filename);
 
-      if (statusMsgId) {
-        updateMessage(statusMsgId, {
-          text: `📄 ¡Listo! Tu factura fue generada exitosamente por un total de ${montoFormateado}. Te la adjunto a continuación:`,
-          attachment: {
-            type: "file",
-            fileUrl: pdfUrl,
-            fileLabel: `📥 Descargar Factura PDF (${filename || "Factura.pdf"})`
-          }
-        });
-      }
+      addMessage({
+        sender: "bot",
+        text: `📄 ¡Listo! Tu factura fue generada exitosamente por un total de ${montoFormateado}. Te la adjunto a continuación:`,
+        attachment: {
+          type: "file",
+          fileUrl: pdfUrl,
+          fileLabel: `📥 Descargar Factura PDF (${filename || "Factura.pdf"})`
+        }
+      });
       return;
     }
 
@@ -266,6 +297,7 @@ export const ChatProvider = ({ children }) => {
 
     if (event === "done") {
       setIsLoading(false);
+      scheduleFollowUp(20000);
       return;
     }
 
@@ -280,11 +312,8 @@ export const ChatProvider = ({ children }) => {
         humanMsg = "No encontré ese predio en Floridablanca. Por favor verifica el número o intenta por otro dato.";
       }
 
-      if (statusMsgId) {
-        updateMessage(statusMsgId, { text: `⚠️ ${humanMsg}` });
-      } else {
-        addMessage({ sender: "bot", text: `⚠️ ${humanMsg}` });
-      }
+      addMessage({ sender: "bot", text: `⚠️ ${humanMsg}` });
+      scheduleFollowUp(20000);
     }
   };
 
@@ -296,7 +325,7 @@ export const ChatProvider = ({ children }) => {
 
     setIsLoading(true);
 
-    const statusMsgId = addMessage({
+    addMessage({
       sender: "bot",
       text: "🔍 Consultando la información de tu predio..."
     });
@@ -313,7 +342,7 @@ export const ChatProvider = ({ children }) => {
       if (resp && resp.job_id) {
         listenJobStream(
           resp.job_id,
-          (evt) => handlePredialStreamEvent(evt, { phone, email }, statusMsgId),
+          (evt) => handlePredialStreamEvent(evt, { phone, email }),
           (err) => {
             console.error("Error en SSE Stream Predial:", err);
             setIsLoading(false);
@@ -333,14 +362,14 @@ export const ChatProvider = ({ children }) => {
         humanMsg = `No se encontró el predio con ${searchType}: "${searchValue}" en Floridablanca.`;
       }
 
-      updateMessage(statusMsgId, { text: `⚠️ ${humanMsg}` });
+      addMessage({ sender: "bot", text: `⚠️ ${humanMsg}` });
     }
   };
 
   const handleSelectPredio = async (index, sessionId, contextData = {}) => {
     setIsLoading(true);
 
-    const statusMsgId = addMessage({
+    addMessage({
       sender: "bot",
       text: `📊 Calculando impuestos y vigencias para el predio #${index + 1}...`
     });
@@ -357,7 +386,7 @@ export const ChatProvider = ({ children }) => {
       if (resp && resp.job_id) {
         listenJobStream(
           resp.job_id,
-          (evt) => handlePredialStreamEvent(evt, contextData, statusMsgId),
+          (evt) => handlePredialStreamEvent(evt, contextData),
           (err) => {
             console.error("Error en SSE Stream Selección Predial:", err);
             setIsLoading(false);
@@ -367,7 +396,7 @@ export const ChatProvider = ({ children }) => {
     } catch (error) {
       console.error("Error seleccionando predio:", error);
       setIsLoading(false);
-      updateMessage(statusMsgId, { text: `⚠️ ${error.message}` });
+      addMessage({ sender: "bot", text: `⚠️ ${error.message}` });
     }
   };
 
@@ -387,6 +416,46 @@ export const ChatProvider = ({ children }) => {
       text: "Digita tu número de radicado y tu código de seguridad suministrado al radicar la PQRSD.",
       customComponent: "pqrsd_consult"
     });
+  };
+
+  const handlePqrsdConsultSubmit = async ({ radicado, codigoAutenticacion }) => {
+    addMessage({
+      sender: "user",
+      text: `🔍 Consulta PQRSD (Radicado: ${radicado})`
+    });
+
+    setIsLoading(true);
+
+    addMessage({
+      sender: "bot",
+      text: `🔍 Buscando la información de la PQRSD radicado #${radicado}...`
+    });
+
+    try {
+      const res = await consultarPqrsd(radicado, codigoAutenticacion);
+
+      if (res && res.found) {
+        addMessage({
+          sender: "bot",
+          text: `📑 Aquí tienes los detalles y la trazabilidad de tu PQRSD (Radicado #${radicado}):`,
+          customComponent: "pqrsd_result",
+          pqrsdData: res
+        });
+      } else {
+        addMessage({
+          sender: "bot",
+          text: `⚠️ ${res?.message || "No se encontró ningún radicado con los datos ingresados. Verifica el número de radicado y el código de seguridad."}`
+        });
+      }
+    } catch (err) {
+      addMessage({
+        sender: "bot",
+        text: `⚠️ Ocurrió un error al consultar la PQRSD radicado #${radicado}: ${err.message || "Error de conexión."}`
+      });
+    } finally {
+      setIsLoading(false);
+      scheduleFollowUp(20000);
+    }
   };
 
   const startPqrsdGeneralFlow = () => {
@@ -548,6 +617,7 @@ export const ChatProvider = ({ children }) => {
       });
     } finally {
       setIsLoading(false);
+      scheduleFollowUp(20000);
     }
   };
 
@@ -663,20 +733,7 @@ export const ChatProvider = ({ children }) => {
       });
     } finally {
       setIsLoading(false);
-      // Siempre devolver las opciones rápidas al finalizar un flujo de formulario
-      setTimeout(() => {
-        const replies = isServicesEnabled 
-          ? config.quickReplies.map(reply => reply.label)
-          : null;
-
-        addMessage({
-          sender: "bot",
-          text: isServicesEnabled 
-            ? "¿Te puedo ayudar con algo más? Escribe tu duda o selecciona una opción rápida:"
-            : "¿Te puedo ayudar con algo más?",
-          quickReplies: replies
-        });
-      }, 1000);
+      scheduleFollowUp(20000);
     }
   };
 
@@ -701,7 +758,10 @@ export const ChatProvider = ({ children }) => {
         selectQuickReply,
         submitChatForm,
         handlePredialFormSubmit,
+        handlePqrsdConsultSubmit,
         handleSelectPredio,
+        scheduleFollowUp,
+        clearFollowUpTimer,
         updateApiKey,
         resetChat: initChat,
         isGeminiEnabled,
