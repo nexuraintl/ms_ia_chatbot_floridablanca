@@ -6,6 +6,76 @@ import { PredioCardList } from "./PredioCardList";
 import { FileText, Download, Image as ImageIcon, ExternalLink } from "lucide-react";
 import { sanitizeUrl } from "../../utils/securityUtils";
 
+const renderFormattedText = (content, isUser) => {
+  if (!content) return null;
+
+  const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+  if (markdownRegex.test(content)) {
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+    const regex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+    while ((match = regex.exec(content)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(content.substring(lastIndex, match.index));
+      }
+      const safeUrl = sanitizeUrl(match[2]);
+      parts.push(
+        <a
+          key={match.index}
+          href={safeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: isUser ? "#ffffff" : "#1d4ed8",
+            fontWeight: 700,
+            textDecoration: "underline",
+            wordBreak: "break-all"
+          }}
+        >
+          {match[1]} 🔗
+        </a>
+      );
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < content.length) {
+      parts.push(content.substring(lastIndex));
+    }
+    return parts;
+  }
+
+  const rawUrlRegex = /(https?:\/\/[^\s]+)/g;
+  if (rawUrlRegex.test(content)) {
+    const parts = content.split(rawUrlRegex);
+    return parts.map((part, idx) => {
+      if (part.match(/^https?:\/\//)) {
+        const safeUrl = sanitizeUrl(part);
+        return (
+          <a
+            key={idx}
+            href={safeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: isUser ? "#ffffff" : "#1d4ed8",
+              fontWeight: 700,
+              textDecoration: "underline",
+              wordBreak: "break-all"
+            }}
+          >
+            {part} 🔗
+          </a>
+        );
+      }
+      return part;
+    });
+  }
+
+  return content;
+};
+
 export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelectPredio }) => {
   const { sender, text, timestamp, form, attachment, customComponent, sessionId, predios, buttonUrl, buttonText } = message;
 
@@ -79,7 +149,7 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
         {/* Texto del mensaje */}
         {text && (
           <span style={{ fontSize: "0.98rem", lineHeight: "1.5", wordBreak: "break-word" }}>
-            {text}
+            {renderFormattedText(text, isUser)}
           </span>
         )}
 

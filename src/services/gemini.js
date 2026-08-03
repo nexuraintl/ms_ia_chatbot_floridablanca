@@ -3,12 +3,13 @@ import { sanitizeText } from "../utils/securityUtils.js";
 
 // Configuración de la API de Gemini y System Prompt optimizado
 const SYSTEM_PROMPT = `
-Eres el asistente virtual de la Alcaldía de Floridablanca, Santander. Tu labor es responder a los ciudadanos.
-REGLAS CRÍTICAS DE TOKENIZACIÓN Y AHORRO:
-1. Responde de forma extremadamente corta y concisa.
-2. Limita tus respuestas a un máximo absoluto de 1 o 2 líneas (máximo 15-20 palabras).
-3. Responde siempre en español de Colombia, con tono institucional pero cercano.
-4. Si la pregunta es sobre trámites como el Predial, Sisbén, Turismo o Historia, sugiérelo brevemente para que el sistema realice la redirección.
+Eres el asistente virtual oficial de atención ciudadana municipal. Tu labor es responder y guiar a los ciudadanos.
+REGLAS CRÍTICAS DE RESPUESTA:
+1. Responde siempre de forma clara, directa y amable en español de Colombia (máximo 2 a 3 líneas).
+2. SÍ ESTÁS COMPLETAMENTE AUTORIZADO A COMPARTIR ENLACES Y URLS. Cuando el usuario pida un link, página, trámite o sección, proporciónale la URL en formato Markdown: [Nombre del Enlace](https://url-del-sitio).
+3. Utiliza la lista de [SECCIONES Y ENLACES EXTRAÍDOS DEL MAPA DEL SITIO] enviados en el contexto para seleccionar y entregar la URL EXACTA del trámite o tema por el que pregunta el usuario.
+4. REGLA DE BÚSQUEDA Y FALLBACK (/buscar/?q=): Si el usuario pregunta por un trámite, sección o tema específico que NO se encuentra listado en el Mapa del Sitio, genera el enlace hacia el buscador oficial del portal usando la plantilla enviada en el contexto: [Buscar "tema" en el portal]({DOMINIO}/buscar/?q={TERMINO_ENCODEADO}).
+5. NUNCA digas "No puedo compartir enlaces directos". Entrega siempre el enlace directo del mapa del sitio o el enlace generado del buscador oficial del portal.
 `;
 
 const getFaqContext = (userMessage) => {
@@ -66,9 +67,14 @@ const getFaqContext = (userMessage) => {
 };
 
 export const queryGemini = async (messageHistory, apiKey, pageContext = "", activeContext = null) => {
+  const userMessage = messageHistory[messageHistory.length - 1]?.text || "";
+
   if (!apiKey || apiKey.trim() === "") {
-    return queryMockGemini(messageHistory[messageHistory.length - 1].text, pageContext, activeContext);
+    console.log("ℹ️ [Chatbot] No se detectó API Key -> Usando respuestas MOCK locales");
+    return queryMockGemini(userMessage, pageContext, activeContext);
   }
+
+  console.log("✨ [Gemini API] Enviando petición a la API de Gemini con el mensaje:", userMessage);
 
   try {
     // Formatear el historial de mensajes para Gemini
@@ -79,7 +85,6 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
     }));
 
     // Obtener contexto de FAQ de Floridablanca si hay alguna coincidencia
-    const userMessage = messageHistory[messageHistory.length - 1].text;
     const faqContext = getFaqContext(userMessage);
 
     let systemPromptWithContext = SYSTEM_PROMPT;
@@ -91,7 +96,7 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
     }
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: {
@@ -103,7 +108,7 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
             parts: [{ text: systemPromptWithContext }]
           },
           generationConfig: {
-            maxOutputTokens: 60,
+            maxOutputTokens: 150,
             temperature: 0.2
           }
         })
@@ -118,6 +123,8 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
     const data = await response.json();
     const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     
+    console.log("🚀 [Gemini API] Respuesta recibida de Gemini:", replyText.trim());
+
     const promptTokens = Math.floor(messageHistory.reduce((acc, m) => acc + m.text.length, 0) / 4) + 120;
     const completionTokens = Math.floor(replyText.length / 4);
     
@@ -127,7 +134,7 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
       savedTokens: 150 - completionTokens
     };
   } catch (error) {
-    console.error("Error al conectar con Gemini:", error);
+    console.error("❌ [Gemini API] Error al conectar con Gemini:", error);
     return {
       text: "⚠️ En este momento presento congestión para responder tu consulta libre. Por favor, intenta de nuevo en unos instantes o selecciona una opción de la lista.",
       tokensUsed: 0,
@@ -139,7 +146,7 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
 
 const SUBKEY_KEYWORDS = {
   // Impuesto Predial
-  concepto_obligados: ["obligado", "obligatorios", "que es", "quien", "concepto", "consiste", "definicion", "significa"],
+  concepto_obligados: ["obligado", "obligatorios", "que is", "quien", "concepto", "consiste", "definicion", "significa"],
   consulta_pago_linea: ["pago en linea", "pagar en linea", "pagar predial", "pago", "linea", "factura", "pse", "descargar", "pagar", "donde", "recibo", "pdf"],
   codigo_predial: ["codigo predial", "codigo", "identificador", "numero", "catastral", "catastro"],
   fechas_descuentos: ["pronto pago", "fecha", "descuento", "limite", "plazo", "vencimiento", "calendario"],
@@ -178,6 +185,7 @@ const SUBKEY_KEYWORDS = {
 
 const queryMockGemini = async (userMessage, pageContext = "", activeContext = null) => {
   await new Promise((resolve) => setTimeout(resolve, 800));
+  console.log("📦 [Mock Service] Generando respuesta local mock para el mensaje:", userMessage);
   
   // Expansión Contextual de Consultas: Añadimos el contexto activo si existe
   const contextString = activeContext ? ` ${activeContext.replace(/_/g, " ")}` : "";
@@ -198,19 +206,65 @@ const queryMockGemini = async (userMessage, pageContext = "", activeContext = nu
   const isGreeting = greetings.some(g => cleanText.includes(g));
   
   if (isGreeting) {
-    reply = "¡Hola! Bienvenido al portal del Asistente Virtual Inteligente de la Alcaldía de Floridablanca. ¿En qué trámite o consulta municipal te puedo colaborar hoy?";
+    reply = "¡Hola! Bienvenido al portal del Asistente Virtual Inteligente. ¿En qué trámite o consulta municipal te puedo colaborar hoy?";
   } 
-  // 2. Caso especial para preguntas de ubicación / contexto de página
+  // 2. Peticiones explícitas de links / enlaces / trámites / buscador
+  else if ((cleanText.includes("link") || cleanText.includes("enlace") || cleanText.includes("url") || cleanText.includes("pasame") || cleanText.includes("dame") || cleanText.includes("donde") || cleanText.includes("redireccion") || cleanText.includes("buscar")) && pageContext) {
+    const matchOrigin = pageContext.match(/- Dominio Origen: ([^\s\n]+)/);
+    const origin = matchOrigin ? matchOrigin[1] : "";
+    
+    // Intentar buscar en las secciones extraídas del mapa del sitio
+    const sitemapSectionMatch = pageContext.match(/\[SECCIONES Y ENLACES EXTRAÍDOS DEL MAPA DEL SITIO\]:\n([\s\S]*?)\n\n-/);
+    const sitemapText = sitemapSectionMatch ? sitemapSectionMatch[1] : "";
+    
+    let matchedLink = null;
+    let matchedTitle = "";
+
+    if (sitemapText) {
+      const lines = sitemapText.split("\n");
+      const cleanUserMsg = userMessage.toLowerCase();
+      
+      for (const line of lines) {
+        const match = line.match(/- "([^"]+)": ([^\s\n]+)/);
+        if (match) {
+          const title = match[1];
+          const url = match[2];
+          const words = title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          if (words.some(w => cleanUserMsg.includes(w))) {
+            matchedLink = url;
+            matchedTitle = title;
+            break;
+          }
+        }
+      }
+    }
+
+    if (matchedLink) {
+      reply = `Aquí tienes el enlace directo para realizar tu consulta: [${matchedTitle}](${matchedLink}).`;
+    } else if (origin) {
+      const searchQuery = encodeURIComponent(userMessage.replace(/(pasame|dame|el|link|enlace|de|por|favor|dónde|donde|está|busco)/gi, "").trim() || "tramites");
+      const searchUrl = `${origin}/buscar/?q=${searchQuery}`;
+      reply = `Puedes consultar los resultados oficiales para tu trámite en el buscador del portal: [Buscar "${userMessage}" en el Portal](${searchUrl}).`;
+    } else {
+      reply = "Puedes consultar todos los enlaces e información en la sección oficial de Trámites de la página principal.";
+    }
+  }
+  // 3. Caso especial para preguntas de ubicación / contexto de página
   else if ((cleanText.includes("donde estoy") || cleanText.includes("que pagina") || cleanText.includes("que seccion") || cleanText.includes("donde me encuentro") || cleanText.includes("que es esta pagina")) && pageContext) {
     const matchTitle = pageContext.match(/- Título: "([^"]+)"/);
+    const matchSitemap = pageContext.match(/- Enlace Mapa del Sitio: ([^\s\n]+)/);
     const title = matchTitle ? matchTitle[1] : null;
-    if (title) {
-      reply = `Te encuentras en la sección "${title}". Puedo ayudarte a responder inquietudes sobre la información contenida en esta página o guiarte en tus trámites municipales.`;
+    const sitemapUrl = matchSitemap ? matchSitemap[1] : null;
+
+    if (title && sitemapUrl) {
+      reply = `Te encuentras en la sección "${title}". Puedes explorar todos los trámites en [Mapa del Sitio](${sitemapUrl}).`;
+    } else if (title) {
+      reply = `Te encuentras en la sección "${title}". Puedo ayudarte a responder inquietudes sobre la información contenida en esta página.`;
     } else {
-      reply = "Estás en el portal del Asistente Virtual Inteligente de la Alcaldía de Floridablanca. Puedo ayudarte a responder dudas sobre esta sección.";
+      reply = "Estás en el portal del Asistente Virtual Inteligente. Puedo ayudarte a responder dudas sobre esta sección.";
     }
   } 
-  // 3. Buscar coincidencia en las intenciones del nuevo archivo JSON de FAQs
+  // 4. Buscar coincidencia en las intenciones del nuevo archivo JSON de FAQs
   else {
     let maxIntentScore = 0;
 

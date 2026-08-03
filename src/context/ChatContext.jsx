@@ -62,7 +62,9 @@ export const ChatProvider = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState(() => getInitialWelcomeMessages(true));
   const [isTextInputEnabled, setIsTextInputEnabled] = useState(true); // Teclado siempre habilitado por defecto
-  const [apiKey, setApiKeyState] = useState(localStorage.getItem("gemini_api_key") || "");
+  const [apiKey, setApiKeyState] = useState(
+    localStorage.getItem("gemini_api_key") || import.meta.env.VITE_GEMINI_API_KEY || ""
+  );
   const [tokensSavedTotal, setTokensSavedTotal] = useState(0);
   const [tokensUsedTotal, setTokensUsedTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,31 +141,173 @@ export const ChatProvider = ({ children }) => {
     );
   };
 
-  // Obtener contexto de la página principal donde está embebido el chatbot
-  const getPageContext = () => {
+  const [sitemapLinks, setSitemapLinks] = useState([]);
+
+  // Cargar silenciosamente en segundo plano los enlaces del mapa del sitio o menú del portal
+  useEffect(() => {
+    const loadSitemapLinks = async () => {
+      try {
+        const origin = window.location.origin;
+        const possiblePaths = [
+          "/mapa-del-sitio",
+          "/mapa-sitio",
+          "/mapa-de-sitio",
+          "/sitemap"
+        ];
+
+        let html = "";
+        let finalSitemapUrl = "";
+
+        for (const path of possiblePaths) {
+          try {
+            const res = await fetch(`${origin}${path}`, { method: "GET" });
+            if (res.ok) {
+              const text = await res.text();
+              if (text.length > 500 && !text.includes("404") && !text.includes("Página no encontrada")) {
+                html = text;
+                finalSitemapUrl = `${origin}${path}`;
+                break;
+              }
+            }
+          } catch {
+            // Probar siguiente ruta
+          }
+        }
+
+        if (!html) {
+          // Fallback a los enlaces navegables del DOM actual
+          const domLinks = Array.from(document.querySelectorAll("nav a[href], header a[href], main a[href], footer a[href], .menu a[href]"))
+            .map(a => ({
+              title: (a.innerText || a.getAttribute("title") || "").trim(),
+              url: a.href
+            }))
+            .filter(item => 
+              item.title.length > 2 && 
+              item.url.startsWith("http") && 
+              !item.url.includes("#") && 
+              !item.url.includes("javascript:")
+            );
+          
+          console.log("ℹ️ [Sitemap] Enlaces extraídos directamente del DOM de la página:", domLinks);
+          setSitemapLinks(domLinks.slice(0, 50));
+          return;
+        }
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const sitemapContainer = doc.querySelector(".mapa-del-sitio, .sitemap, main, #main-content, #content, body");
+        const rawAnchors = Array.from((sitemapContainer || doc).querySelectorAll("a[href]"));
+
+        const links = rawAnchors
+          .map(a => {
+            let href = a.getAttribute("href") || "";
+            if (href.startsWith("/")) {
+              href = `${origin}${href}`;
+            } else if (!href.startsWith("http")) {
+              href = `${origin}/${href.replace(/^\.\//, "")}`;
+            }
+            
+            const title = (a.innerText || a.textContent || a.getAttribute("title") || "").trim().replace(/\s+/g, " ");
+
+            return {
+              title: title,
+              url: href
+            };
+          })
+          .filter(item => 
+            item.title.length > 2 && 
+            item.url.startsWith("http") && 
+            !item.url.includes("#") && 
+            !item.url.includes("javascript:") &&
+            !item.url.endsWith(".png") &&
+            !item.url.endsWith(".jpg")
+          );
+
+        const uniqueLinks = [];
+        const seen = new Set();
+        for (const link of links) {
+          if (!seen.has(link.url)) {
+            seen.add(link.url);
+            uniqueLinks.push(link);
+          }
+        }
+
+        console.log(`🗺️ [Sitemap] Enlaces extraídos exitosamente desde ${finalSitemapUrl}:`, uniqueLinks);
+        setSitemapLinks(uniqueLinks.slice(0, 60));
+      } catch (e) {
+        console.warn("⚠️ [Sitemap] Error al cargar mapa del sitio:", e.message);
+      }
+    };
+
+    loadSitemapLinks();
+  }, []);
+
+  // Filtrar localmente en JS los enlaces más relevantes comparando títulos y slugs de URL
+  const filterRelevantSitemapLinks = (userText, links) => {
+    if (!userText || !links || links.length === 0) return [];
+    
+    const cleanMsg = userText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const stopWords = ["para", "como", "donde", "quiero", "puedo", "hacer", "pasame", "enlace", "link", "buscar", "pagina", "sitio", "favor", "dame", "esta", "este"];
+    const words = cleanMsg.split(/\s+/).filter(w => w.length > 2 && !stopWords.includes(w));
+    
+    if (words.length === 0) return [];
+
+    const matched = [];
+    for (const link of links) {
+      const cleanTitle = link.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const cleanUrl = link.url.toLowerCase();
+      let matchScore = 0;
+
+      for (const w of words) {
+        if (cleanTitle.includes(w)) matchScore += w.length * 2;
+        if (cleanUrl.includes(w)) matchScore += w.length;
+      }
+      
+      if (matchScore > 0) {
+        matched.push({ ...link, score: matchScore });
+      }
+    }
+    return matched.sort((a, b) => b.score - a.score).slice(0, 3);
+  };
+
+  // Obtener contexto de la página principal filtrando únicamente enlaces relevantes
+  const getPageContext = (userMessage = "") => {
     try {
       const title = document.title || "Portal de Atención Digital";
       const url = window.location.href;
+      const origin = window.location.origin;
+      const sitemapUrl = `${origin}/mapa-del-sitio`;
       
-      // Intentar obtener descripción de meta tags
+      const searchQuery = encodeURIComponent(userMessage.replace(/(pasame|dame|el|link|enlace|de|por|favor|dónde|donde|está|busco)/gi, "").trim() || "tramites");
+      const fallbackSearchUrl = `${origin}/buscar/?q=${searchQuery}`;
+
       const metaDescription = document.querySelector('meta[name="description"]')?.getAttribute('content') || "";
-      
-      // Obtener textos de encabezados principales para dar contexto de secciones
       const headings = Array.from(document.querySelectorAll('h1, h2, h3'))
         .map(h => h.innerText.trim())
         .filter(Boolean)
-        .slice(0, 10)
+        .slice(0, 5)
         .join(', ');
 
-      // Intentar leer el contenido de la consola o la página en texto (evitando el widget del chat en sí)
-      const pageText = document.getElementById("root")?.innerText ? document.getElementById("root").innerText.substring(0, 1000) : "";
+      const relevantLinks = filterRelevantSitemapLinks(userMessage, sitemapLinks);
+      
+      let linksFormatted = "";
+      if (relevantLinks.length > 0) {
+        linksFormatted = relevantLinks.map(l => `- "${l.title}": ${l.url}`).join("\n");
+      } else {
+        linksFormatted = `- No se encontró coincidencia directa en el mapa del sitio.\n- Enlace de Búsqueda Fallback en el Portal: ${fallbackSearchUrl}`;
+      }
 
       return `[METADATOS DE LA PÁGINA]:
-- Título: "${title}"
-- URL: ${url}
+- Título de la página: "${title}"
+- URL Actual: ${url}
+- Dominio Origen: ${origin}
+- URL Mapa del Sitio: ${sitemapUrl}
+
+[ENLACES RELEVANTES ENCONTRADOS PARA LA CONSULTA]:
+${linksFormatted}
+
 - Descripción: "${metaDescription}"
-- Encabezados detectados: [${headings}]
-- Extracto de contenido de la página: "${pageText.replace(/\s+/g, ' ').substring(0, 500)}..."`;
+- Encabezados principales: [${headings}]`;
     } catch (e) {
       console.warn("No se pudo obtener el contexto de la página principal:", e);
       return "Contexto de página no disponible.";
@@ -497,7 +641,7 @@ export const ChatProvider = ({ children }) => {
 
       // 2. Si no es un trámite directo, verificar si la IA de Gemini está habilitada
       if (isGeminiEnabled) {
-        const pageContext = getPageContext();
+        const pageContext = getPageContext(text);
 
         const conversationHistory = messages
           .filter(m => m.sender === "user" || m.sender === "bot")

@@ -11,6 +11,14 @@ export default defineConfig({
   server: {
     cors: true
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+        embed: path.resolve(__dirname, "src/embed.jsx")
+      }
+    }
+  },
   plugins: [
     react(),
     {
