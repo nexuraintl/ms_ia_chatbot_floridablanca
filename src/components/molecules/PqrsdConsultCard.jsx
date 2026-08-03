@@ -1,16 +1,13 @@
 import { useState } from "react";
-import { consultarPqrsd } from "../../services/pqrsdService";
 import { useChat } from "../../context/ChatContext";
 
 export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onCancel }) => {
-  const { selectQuickReply } = useChat();
+  const { selectQuickReply, handlePqrsdConsultSubmit, isLoading } = useChat();
   const [radicado, setRadicado] = useState(initialRadicado);
   const [codigoAutenticacion, setCodigoAutenticacion] = useState(initialCodigo);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
-  const [data, setData] = useState(null);
 
-  const handleConsultar = async (e) => {
+  const handleConsultar = (e) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -23,23 +20,12 @@ export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onC
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const res = await consultarPqrsd(radicado, codigoAutenticacion);
-      setData(res);
-    } catch (err) {
-      setErrorMsg(err.message || "Ocurrió un error consultando el estado del radicado.");
-    } finally {
-      setIsSubmitting(false);
+    if (handlePqrsdConsultSubmit) {
+      handlePqrsdConsultSubmit({
+        radicado: radicado.trim(),
+        codigoAutenticacion: codigoAutenticacion.trim()
+      });
     }
-  };
-
-  const getBadgeClass = (estado) => {
-    if (!estado) return "badge-default";
-    const lower = estado.toLowerCase();
-    if (lower.includes("resuelt") || lower.includes("cerrad") || lower.includes("finaliz")) return "badge-success";
-    if (lower.includes("revisi") || lower.includes("tramit") || lower.includes("proceso")) return "badge-warning";
-    return "badge-info";
   };
 
   const handleGoToCreate = () => {
@@ -70,7 +56,7 @@ export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onC
               placeholder="Ej: 2026488450"
               value={radicado}
               onChange={(e) => setRadicado(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isLoading}
               required
             />
           </div>
@@ -82,7 +68,7 @@ export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onC
               placeholder="Ej: 202UhXbRIu2026488450"
               value={codigoAutenticacion}
               onChange={(e) => setCodigoAutenticacion(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isLoading}
               required
             />
           </div>
@@ -92,16 +78,16 @@ export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onC
           <button 
             type="submit" 
             className="btn-submit"
-            disabled={isSubmitting}
+            disabled={isLoading}
           >
-            {isSubmitting ? "⏳ Consultando..." : "🔍 Consultar"}
+            {isLoading ? "⏳ Consultando..." : "🔍 Consultar"}
           </button>
           {onCancel && (
             <button 
               type="button" 
               className="btn-cancel"
               onClick={onCancel}
-              disabled={isSubmitting}
+              disabled={isLoading}
             >
               Cancelar
             </button>
@@ -140,101 +126,6 @@ export const PqrsdConsultCard = ({ initialRadicado = "", initialCodigo = "", onC
           📑 Radicar
         </button>
       </div>
-
-      {/* Resultados de la consulta */}
-      {data && (
-        <div className="consult-results" style={{ marginTop: "14px" }}>
-          {!data.found ? (
-            <div className="pqrsd-warning">
-              ⚠️ {data.message || "No se encontró un registro con los datos ingresados."}
-            </div>
-          ) : (
-            <div className="pqrsd-details-container">
-              {data.datos_correspondencia && (
-                <div className="correspondencia-info">
-                  <div className="info-header">
-                    <h5>Radicado #{data.datos_correspondencia.radicado}</h5>
-                    <span className={`status-badge ${getBadgeClass(data.datos_correspondencia.estado)}`}>
-                      {data.datos_correspondencia.estado || "En proceso"}
-                    </span>
-                  </div>
-
-                  <div className="info-grid">
-                    <div className="info-row">
-                      <span className="label">Asunto:</span>
-                      <span className="val">{data.datos_correspondencia.asunto}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="label">Tipo:</span>
-                      <span className="val">{data.datos_correspondencia.tipo_correspondencia}</span>
-                    </div>
-                    <div className="info-row">
-                      <span className="label">Fecha Radicación:</span>
-                      <span className="val">
-                        {data.datos_correspondencia.fecha_radicacion
-                          ? new Date(data.datos_correspondencia.fecha_radicacion).toLocaleString()
-                          : "N/A"}
-                      </span>
-                    </div>
-                    <div className="info-row">
-                      <span className="label">Remitente:</span>
-                      <span className="val">{data.datos_correspondencia.remitente} ({data.datos_correspondencia.email})</span>
-                    </div>
-                    {data.datos_correspondencia.respuesta && (
-                      <div className="info-row respuesta-box">
-                        <span className="label">Respuesta Oficial:</span>
-                        <span className="val">{data.datos_correspondencia.respuesta}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Anexos */}
-              {data.anexos && data.anexos.length > 0 && (
-                <div className="anexos-section">
-                  <h6>📎 Documentos Anexos ({data.anexos.length})</h6>
-                  <ul>
-                    {data.anexos.map((anexo, idx) => (
-                      <li key={idx}>
-                        <span>📄 {anexo.NombreArchivo || anexo.Procedencia}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Flujo de trazabilidad */}
-              {data.flujo && data.flujo.length > 0 && (
-                <div className="flujo-section">
-                  <h6>📌 Trazabilidad / Histórico del Trámite</h6>
-                  <div className="timeline">
-                    {data.flujo.map((paso, idx) => (
-                      <div key={idx} className="timeline-item">
-                        <div className="timeline-dot"></div>
-                        <div className="timeline-content">
-                          <div className="resp-nombre">
-                            {paso.Responsable?.NombreConcatenado || "Responsable Asignado"}
-                          </div>
-                          <div className="resp-area">
-                            {paso.Responsable?.Area} - {paso.Responsable?.Cargo}
-                          </div>
-                          <div className="resp-fechas">
-                            <span>📅 Asignado: {paso.FechaAsignacionString || "N/A"}</span>
-                            {paso.FechaRespuestaString && (
-                              <span> | ✅ Respondió: {paso.FechaRespuestaString}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
