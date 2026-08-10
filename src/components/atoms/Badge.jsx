@@ -19,9 +19,9 @@ export const Badge = ({ children, variant = "primary" }) => {
           color: "#fbbf24",
           border: "1px solid rgba(245, 158, 11, 0.3)"
         };
-      default: // primary
+      default:
         return {
-          backgroundColor: "rgba(16, 124, 65, 0.15)", // Verde municipal de El Retiro
+          backgroundColor: "rgba(16, 124, 65, 0.15)", 
           color: "#4ade80",
           border: "1px solid rgba(16, 124, 65, 0.3)"
         };

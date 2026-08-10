@@ -3,13 +3,25 @@ import { sanitizeText } from "../utils/securityUtils.js";
 
 // Configuración de la API de Gemini y System Prompt optimizado
 const SYSTEM_PROMPT = `
-Eres el asistente virtual oficial de atención ciudadana municipal. Tu labor es responder y guiar a los ciudadanos.
-REGLAS CRÍTICAS DE RESPUESTA:
-1. Responde siempre de forma clara, directa y amable en español de Colombia (máximo 2 a 3 líneas).
-2. SÍ ESTÁS COMPLETAMENTE AUTORIZADO A COMPARTIR ENLACES Y URLS. Cuando el usuario pida un link, página, trámite o sección, proporciónale la URL en formato Markdown: [Nombre del Enlace](https://url-del-sitio).
-3. Utiliza la lista de [SECCIONES Y ENLACES EXTRAÍDOS DEL MAPA DEL SITIO] enviados en el contexto para seleccionar y entregar la URL EXACTA del trámite o tema por el que pregunta el usuario.
-4. REGLA DE BÚSQUEDA Y FALLBACK (/buscar/?q=): Si el usuario pregunta por un trámite, sección o tema específico que NO se encuentra listado en el Mapa del Sitio, genera el enlace hacia el buscador oficial del portal usando la plantilla enviada en el contexto: [Buscar "tema" en el portal]({DOMINIO}/buscar/?q={TERMINO_ENCODEADO}).
-5. NUNCA digas "No puedo compartir enlaces directos". Entrega siempre el enlace directo del mapa del sitio o el enlace generado del buscador oficial del portal.
+Eres un asistente virtual inteligente, servicial y amable. Tu labor es atender inquietudes de la ciudadanía, responder preguntas de interés general y orientar sobre trámites.
+
+REGLAS DE RESPUESTA:
+1. RESPUESTAS BREVES Y CONCISAS (MÁXIMO ~200 TOKENS):
+   - Tus respuestas deben ser siempre muy breves, claras y directas al punto (máximo 2 a 3 párrafos o puntos clave).
+   - Evita textos excesivamente largos o explicaciones redundantes.
+
+2. RESPUESTAS CONVERSACIONALES E INFORMATIVAS:
+   - Si el usuario realiza preguntas generales (por ejemplo: sobre regiones, historia, cultura, geografía, clima o recomendaciones), respóndele directamente de manera concisa y clara. NO estás obligado a incluir enlaces si el usuario no los ha pedido.
+
+3. MANEJO DE ENLACES Y TRÁMITES MUNICIPALES:
+   - ÚNICAMENTE cuando el usuario solicite explícitamente un enlace, página, sección o trámite específico del portal municipal (como pago de impuesto predial, Sisbén, RIT, etc.):
+     a) Utiliza la lista de [ENLACES RELEVANTES ENCONTRADOS] para entregar la URL en Markdown: [Nombre de la Sección](https://url-del-sitio).
+     b) Si la sección específica no está listada y te piden expresamente el enlace o la ubicación del trámite, genera el enlace sugerido del buscador oficial del portal: [Buscar "tema" en el portal]({DOMINIO}/buscar/?q={TERMINO_ENCODEADO}).
+
+4. ESTILO Y TONO:
+   - Responde siempre de forma amable en español de Colombia.
+   - Puedes usar viñetas y texto en negrilla (**texto**) para destacar puntos clave de forma ordenada.
+   - NUNCA digas "No puedo compartir enlaces". Si el usuario te pide uno, entrégaselo con amabilidad.
 `;
 
 const getFaqContext = (userMessage) => {
@@ -108,8 +120,8 @@ export const queryGemini = async (messageHistory, apiKey, pageContext = "", acti
             parts: [{ text: systemPromptWithContext }]
           },
           generationConfig: {
-            maxOutputTokens: 150,
-            temperature: 0.2
+            maxOutputTokens: 200,
+            temperature: 0.6
           }
         })
       }
@@ -344,8 +356,10 @@ const queryMockGemini = async (userMessage, pageContext = "", activeContext = nu
       }
 
       reply = respuestasBase[bestSubKey];
+    } else if (cleanText.includes("region") || cleanText.includes("santander") || cleanText.includes("floridablanca") || cleanText.includes("clima") || cleanText.includes("historia") || cleanText.includes("gastronomia") || cleanText.includes("cultura") || cleanText.includes("turismo") || cleanText.includes("comida") || cleanText.includes("que me dices")) {
+      reply = "Floridablanca es un municipio vibrante ubicado en el departamento de Santander, Colombia. Conocido como la 'Capital Mundial del Dulce' por su famosa tradición en la elaboración de obleas y dulces típicos, forma parte del Área Metropolitana de Bucaramanga. Cuenta con un clima templado agradable, una amplia oferta gastronómica, parques ecológicos como el Jardín Botánico Eloy Valenzuela y un gran desarrollo comercial y residencial.";
     } else {
-      reply = "Entendido. Como tu asistente virtual de Floridablanca, ¿te gustaría consultar sobre trámites (Sisbén, Impuesto Predial, Impuesto ICA, Cancelación RIT), reportes RPA, turismo o nuestra historia municipal?";
+      reply = "Entendido. Puedo colaborarte respondiendo preguntas sobre el municipio, su cultura e historia, o bien orientándote en trámites como Sisbén, Impuesto Predial, ICA y PQRSDF.";
     }
   }
 

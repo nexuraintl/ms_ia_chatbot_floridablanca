@@ -332,7 +332,7 @@ export const ChatProvider = ({ children }) => {
       if (relevantLinks.length > 0) {
         linksFormatted = relevantLinks.map(l => `- "${l.title}": ${l.url}`).join("\n");
       } else {
-        linksFormatted = `- No se encontró coincidencia directa en el mapa del sitio.\n- Enlace de Búsqueda Fallback en el Portal: ${fallbackSearchUrl}`;
+        linksFormatted = `- Sin enlace específico en el mapa del sitio.\n- (Opcional) Enlace de búsqueda en el portal (usar solo si solicitan buscar un trámite): ${fallbackSearchUrl}`;
       }
 
       return `[METADATOS DE LA PÁGINA]:

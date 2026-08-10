@@ -1,0 +1,221 @@
+{
+  "info": {
+    "_postman_id": "e363f9bd-224e-4066-92d5-64d856ebcd7a",
+    "name": "ms_ia_chatbot - QA (floridablanca)",
+    "description": "Colección para probar el chatbot multitenant de NEXURA (ms_ia_chatbot) desplegado en pre-qa-functions, tenant floridablanca ya dado de alta. Prueba a través del camino real de producción (API Gateway).\n\n**Cómo generar el token (variable `bearer_token`)**: el endpoint público exige un JWT de Google firmado con audience = la URL del API Gateway. Corré esto y pegá el resultado en la variable de colección `bearer_token` (expira en ~1h, hay que regenerarlo):\n\n```\ngcloud auth print-identity-token \\\n  --impersonate-service-account=58937908768-compute@developer.gserviceaccount.com \\\n  --audiences=\"https://qa-apig-functions-v1-r2q3xgg.uc.gateway.dev\"\n```",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "53188566",
+    "_collection_link": "https://go.postman.co/collection/53188566-e363f9bd-224e-4066-92d5-64d856ebcd7a?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Gateway (público - pre-mscloud.nexura.com.co)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_gateway}}/health",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat - Respuesta predeterminada (Predial)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"floridablanca\",\n  \"question\": \"que necesito para pagar mi impuesto predial\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url_gateway}}/api/v1/chat",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chat"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat - RAG / File Search (Estatuto Tributario)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"floridablanca\",\n  \"question\": \"que unidad de valor usa el estatuto tributario municipal de floridablanca, la nacional o una propia\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url_gateway}}/api/v1/chat",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chat"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat - Redirect Tránsito (no lo resuelve la Alcaldía)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"floridablanca\",\n  \"question\": \"tengo una multa de transito, donde la pago\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url_gateway}}/api/v1/chat",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chat"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat - Tenant inexistente (404 esperado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"tenant_que_no_existe\",\n  \"question\": \"hola\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url_gateway}}/api/v1/chat",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chat"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Chat - Payload inválido (422 esperado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant_id\": \"floridablanca\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url_gateway}}/api/v1/chat",
+              "host": [
+                "{{base_url_gateway}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chat"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bearer_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url_gateway",
+      "value": "https://pre-mscloud.nexura.com.co/apig/qa/ia/chatbot",
+      "description": "URL pública real (API Gateway)"
+    },
+    {
+      "key": "bearer_token",
+      "value": "",
+      "description": "Identity token con audience del Gateway (ver descripción de la colección)"
+    }
+  ]
+}

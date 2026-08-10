@@ -7,25 +7,28 @@ import { PredioCardList } from "./PredioCardList";
 import { FileText, Download, Image as ImageIcon, ExternalLink } from "lucide-react";
 import { sanitizeUrl } from "../../utils/securityUtils";
 
-const renderFormattedText = (content, isUser) => {
-  if (!content) return null;
+const parseInlineMarkdown = (text, isUser, lineIdx) => {
+  if (!text) return [];
 
-  const markdownRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  // Matcher para: [link](url), **bold** y URLs sueltas
+  const tokenRegex = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(\*\*([\s\S]+?)\*\*)|(https?:\/\/[^\s\)]+)/g;
 
-  if (markdownRegex.test(content)) {
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-    const regex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const elements = [];
+  let lastIndex = 0;
+  let match;
 
-    while ((match = regex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(content.substring(lastIndex, match.index));
-      }
-      const safeUrl = sanitizeUrl(match[2]);
-      parts.push(
+  while ((match = tokenRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      elements.push(text.substring(lastIndex, match.index));
+    }
+
+    if (match[1]) {
+      // Enlace Markdown [Label](URL)
+      const label = match[2];
+      const safeUrl = sanitizeUrl(match[3]);
+      elements.push(
         <a
-          key={match.index}
+          key={`link-${lineIdx}-${match.index}`}
           href={safeUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -36,45 +39,83 @@ const renderFormattedText = (content, isUser) => {
             wordBreak: "break-all"
           }}
         >
-          {match[1]} 🔗
+          {label} 🔗
         </a>
       );
-      lastIndex = regex.lastIndex;
+    } else if (match[4]) {
+      // Texto en negrilla **bold**
+      const boldText = match[5];
+      elements.push(
+        <strong key={`bold-${lineIdx}-${match.index}`} style={{ fontWeight: 700 }}>
+          {boldText}
+        </strong>
+      );
+    } else if (match[6]) {
+      // URL directa
+      const safeUrl = sanitizeUrl(match[6]);
+      elements.push(
+        <a
+          key={`rawlink-${lineIdx}-${match.index}`}
+          href={safeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: isUser ? "#ffffff" : "#1d4ed8",
+            fontWeight: 700,
+            textDecoration: "underline",
+            wordBreak: "break-all"
+          }}
+        >
+          {match[6]} 🔗
+        </a>
+      );
     }
-    if (lastIndex < content.length) {
-      parts.push(content.substring(lastIndex));
-    }
-    return parts;
+
+    lastIndex = tokenRegex.lastIndex;
   }
 
-  const rawUrlRegex = /(https?:\/\/[^\s]+)/g;
-  if (rawUrlRegex.test(content)) {
-    const parts = content.split(rawUrlRegex);
-    return parts.map((part, idx) => {
-      if (part.match(/^https?:\/\//)) {
-        const safeUrl = sanitizeUrl(part);
-        return (
-          <a
-            key={idx}
-            href={safeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              color: isUser ? "#ffffff" : "#1d4ed8",
-              fontWeight: 700,
-              textDecoration: "underline",
-              wordBreak: "break-all"
-            }}
-          >
-            {part} 🔗
-          </a>
-        );
-      }
-      return part;
-    });
+  if (lastIndex < text.length) {
+    elements.push(text.substring(lastIndex));
   }
 
-  return content;
+  return elements;
+};
+
+const renderFormattedText = (content, isUser) => {
+  if (!content) return null;
+
+  const lines = content.split("\n");
+
+  return lines.map((line, lineIdx) => {
+    let cleanLine = line;
+    let isBullet = false;
+
+    // Detectar viñetas tipo "* " o "- " o "* **"
+    if (/^\s*[\*\-]\s+/.test(cleanLine)) {
+      isBullet = true;
+      cleanLine = cleanLine.replace(/^\s*[\*\-]\s+/, "");
+    }
+
+    const parsedElements = parseInlineMarkdown(cleanLine, isUser, lineIdx);
+
+    return (
+      <span
+        key={lineIdx}
+        style={{
+          display: "block",
+          marginBottom: lineIdx < lines.length - 1 ? "4px" : "0",
+          paddingLeft: isBullet ? "12px" : "0"
+        }}
+      >
+        {isBullet && (
+          <span style={{ fontWeight: "bold", marginRight: "6px", color: isUser ? "#ffffff" : "#3b82f6" }}>
+            •
+          </span>
+        )}
+        {parsedElements}
+      </span>
+    );
+  });
 };
 
 export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelectPredio }) => {
@@ -98,7 +139,7 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
       >
         <div
           style={{
-            backgroundColor: "rgba(217, 119, 6, 0.08)", // Fondo ámbar/dorado sutil para RPA
+            backgroundColor: "rgba(217, 119, 6, 0.08)",
             color: "#f59e0b",
             border: "1px solid rgba(217, 119, 6, 0.2)",
             borderRadius: "6px",
