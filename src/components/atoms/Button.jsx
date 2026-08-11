@@ -38,7 +38,7 @@ export const Button = ({
     let variantStyle = {};
     if (variant === "primary") {
       variantStyle = {
-        backgroundColor: "#15803d", // Verde El Retiro
+        backgroundColor: "#15803d",
         color: "#ffffff",
         boxShadow: "0 2px 4px rgba(21, 128, 61, 0.2)",
       };
@@ -50,7 +50,7 @@ export const Button = ({
       };
     } else if (variant === "accent") {
       variantStyle = {
-        backgroundColor: "#d97706", // Ámbar/dorado de la madera
+        backgroundColor: "#d97706",
         color: "#ffffff",
         boxShadow: "0 2px 4px rgba(217, 119, 6, 0.2)",
       };

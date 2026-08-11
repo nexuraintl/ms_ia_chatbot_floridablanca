@@ -1,0 +1,169 @@
+/**
+ * Lectura y validación de la configuración de entorno.
+ *
+ * Antes cada servicio hacía su propio
+ * `import.meta.env.VITE_X || "http://localhost:8000"`, con dos consecuencias malas:
+ *
+ *   1. Si la variable no estaba definida al compilar, el bundle de PRODUCCIÓN salía
+ *      apuntando a `http://localhost:8000`. Los trámites fallaban de forma silenciosa
+ *      en el navegador del ciudadano, sin ninguna señal de por qué.
+ *   2. Un `http://` en una página servida por `https://` es contenido mixto: el
+ *      navegador bloquea la petición. Y si la página fuera `http://`, la cédula, el
+ *      teléfono y el correo del ciudadano viajarían en claro.
+ *
+ * Ahora la validación es explícita y ruidosa al arrancar.
+ *
+ * NOTA DELIBERADA: aquí NO se lee `VITE_GEMINI_API_KEY`. Vite incrusta el valor de
+ * toda variable `VITE_*` literalmente en el JavaScript compilado, así que definirla
+ * publicaba la credencial en un archivo estático descargable por cualquiera. Se
+ * verificó compilando: la clave aparecía en claro dentro de `dist/assets/*.js`.
+ * La clave se introduce ahora solo desde la consola y queda en el navegador del
+ * operador.
+ */
+
+/** Valor por defecto para desarrollo local. */
+const LOCAL_DEFAULT = "http://localhost:8000";
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * LEER `import.meta.env` SIEMPRE CON ACCESO ESTÁTICO
+ *
+ * Vite reemplaza `import.meta.env.NOMBRE_LITERAL` por su valor en tiempo de
+ * compilación mediante sustitución textual. Pero ante un acceso DINÁMICO
+ * —`import.meta.env[variable]`— no puede saber qué clave se pedirá, así que emite el
+ * OBJETO COMPLETO de variables en el bundle.
+ *
+ * Eso significa que un helper aparentemente inocente como
+ *
+ *     const readEnv = (name) => import.meta.env?.[name]
+ *
+ * publica TODAS las variables `VITE_*` en el JavaScript compilado, incluida
+ * `VITE_GEMINI_API_KEY`, aunque este archivo nunca la mencione. Se comprobó
+ * compilando: la clave aparecía dentro del objeto inlineado.
+ *
+ * Por eso cada variable se lee aquí de forma explícita y literal. No convertir esto
+ * en un bucle ni en un helper parametrizado.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * Envuelve una lectura estática para que no falle fuera de un bundle de Vite
+ * (por ejemplo al ejecutar la suite de pruebas con Node).
+ * @param {() => unknown} read
+ * @returns {string}
+ */
+const safeRead = (read) => {
+  try {
+    return String(read() ?? "").trim();
+  } catch {
+    return "";
+  }
+};
+
+/** ¿Estamos en un build de producción? */
+const isProduction = safeRead(() => import.meta.env.PROD) === "true";
+
+/**
+ * Normaliza una URL base: sin barra final, con esquema válido.
+ * @param {string} url
+ * @returns {string}
+ */
+const normalizeBaseUrl = (url) => String(url || "").replace(/\/+$/, "");
+
+/**
+ * Valida una URL base de microservicio y avisa de los problemas detectables.
+ *
+ * @param {string} value
+ * @param {string} varName
+ * @returns {string} La URL normalizada (se devuelve incluso si hay avisos, para no
+ *          romper el desarrollo local).
+ */
+const resolveServiceUrl = (value, varName) => {
+  const url = normalizeBaseUrl(value || LOCAL_DEFAULT);
+
+  if (!value) {
+    const msg =
+      `[config] ${varName} no está definida; se usará ${LOCAL_DEFAULT}.`;
+    if (isProduction) {
+      console.error(
+        `❌ ${msg} En un build de producción esto deja los trámites apuntando a la ` +
+        `máquina del propio ciudadano y fallarán todos. Define ${varName} antes de compilar.`
+      );
+    } else {
+      console.info(`ℹ️ ${msg}`);
+    }
+    return url;
+  }
+
+  // Contenido mixto: página https:// llamando a http://
+  try {
+    const pageProtocol = globalThis.window?.location?.protocol;
+    if (pageProtocol === "https:" && url.startsWith("http://")) {
+      console.error(
+        `❌ [config] ${varName} usa http:// (${url}) pero la página se sirve por https://. ` +
+        `El navegador bloqueará estas peticiones por contenido mixto. Usa https://.`
+      );
+    }
+    if (pageProtocol === "http:" && isProduction) {
+      console.warn(
+        "⚠️ [config] La página se sirve por http://. Los datos personales del ciudadano " +
+        "(documento, teléfono, correo) viajarían sin cifrar. Habilita HTTPS."
+      );
+    }
+  } catch {
+    /* sin window: entorno de pruebas */
+  }
+
+  if (isProduction && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(url)) {
+    console.error(
+      `❌ [config] ${varName} apunta a ${url} en un build de producción. ` +
+      "Ningún ciudadano tiene ese servicio en su máquina."
+    );
+  }
+
+  return url;
+};
+
+/** Configuración resuelta del entorno. */
+export const environment = Object.freeze({
+  isProduction,
+
+  /** URL base del microservicio RPA de Impuesto Predial. */
+  predialApiUrl: resolveServiceUrl(
+    // Acceso estático obligatorio: ver la nota de cabecera.
+    safeRead(() => import.meta.env.VITE_RPA_PREDIAL_API_URL),
+    "VITE_RPA_PREDIAL_API_URL"
+  ),
+
+  /** URL base del microservicio RPA de PQRSD. */
+  pqrsdApiUrl: resolveServiceUrl(
+    safeRead(() => import.meta.env.VITE_RPA_PQRSD_API_URL),
+    "VITE_RPA_PQRSD_API_URL"
+  ),
+
+  /**
+   * Activa el registro de consumo de tokens en el servidor de desarrollo.
+   * En producción está apagado por defecto: el endpoint `/api/log-tokens` solo
+   * existe en el plugin del servidor de Vite y no debería llevarse a producción
+   * sin autenticación ni límite de tasa.
+   */
+  telemetryEnabled: !isProduction
+});
+
+/**
+ * Hosts de los backends propios, derivados de la configuración.
+ * Se usan en `urlPolicy` para reconocer los recursos que devuelven los RPA.
+ *
+ * @returns {string[]}
+ */
+export const getBackendHosts = () => {
+  const hosts = new Set();
+  for (const url of [environment.predialApiUrl, environment.pqrsdApiUrl]) {
+    try {
+      hosts.add(new URL(url).hostname);
+    } catch {
+      /* URL inválida: ya se avisó arriba */
+    }
+  }
+  return Array.from(hosts);
+};
