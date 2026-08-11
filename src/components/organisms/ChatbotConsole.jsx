@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useChat } from "../../context/ChatContext";
 import { Terminal as TerminalIcon, Cpu, Key, Code, Copy, Check, TrendingDown, Sparkles, Globe, Award, Settings, Sun, Moon } from "lucide-react";
-import { isValidGeminiApiKey, sanitizeLogString, maskPhone, maskEmail, maskIdentification } from "../../utils/securityUtils";
+import { redactPII } from "../../domain/security/piiRedactor";
+import { sanitizeLogString } from "../../domain/security/textSanitizer";
+import { isValidGeminiApiKey } from "../../hooks/usePreferences";
 
 export const ChatbotConsole = () => {
   const { 
@@ -42,11 +44,23 @@ export const ChatbotConsole = () => {
 
   const handleSaveKey = (e) => {
     e.preventDefault();
+
+    // Antes se avisaba del formato incorrecto y se guardaba de todas formas, lo que
+    // dejaba al operador creyendo que la clave era válida. Ahora el aviso decide.
     if (localKey && !isValidGeminiApiKey(localKey)) {
-      alert("⚠️ La API Key ingresada no coincide con el formato oficial de Google AI Studio (AIzaSy...). Por favor verícala.");
+      const proceed = window.confirm(
+        "⚠️ La clave ingresada no coincide con el formato de Google AI Studio (AIzaSy...).\n\n" +
+        "¿Deseas guardarla de todas formas?"
+      );
+      if (!proceed) return;
     }
+
     updateApiKey(localKey);
-    alert("API Key de Gemini actualizada exitosamente.");
+    alert(
+      localKey
+        ? "API Key de Gemini actualizada. Recuerda restringirla por dominio y cuota en Google Cloud Console: al llamar a Gemini desde el navegador, la clave es visible para quien use este equipo."
+        : "API Key eliminada. El chatbot responderá con el catálogo local de respuestas."
+    );
   };
 
   // Calcular ahorro monetario simulado (0.000015 USD por token ahorrado en flash/prompts)
@@ -536,13 +550,12 @@ export const ChatbotConsole = () => {
                 senderLabel = "SYS-RPA";
               }
 
-              // Enmascarar PII (números de teléfono de 10 dígitos, correos y cédulas)
-              const safeText = sanitizeLogString(
-                (m.text || "")
-                  .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, (em) => maskEmail(em))
-                  .replace(/\b3\d{9}\b/g, (ph) => maskPhone(ph))
-                  .replace(/\b\d{7,10}\b/g, (idNum) => maskIdentification(idNum))
-              );
+              // Enmascarar PII antes de mostrarla en la terminal.
+              // La cadena de tres `.replace()` que había aquí no cubría los códigos de
+              // autenticación de PQRSD (son alfanuméricos, así que ningún patrón
+              // numérico los alcanzaba) y aparecían en claro. `redactPII` centraliza
+              // todos los patrones, incluido ese.
+              const safeText = sanitizeLogString(redactPII(m.text || ""));
 
               return (
                 <div key={m.id || idx} style={{ color: logColor }}>

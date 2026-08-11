@@ -30,6 +30,15 @@
       "flow": "pqrsd_consultar"
     }
   ],
+  "security": {
+    "_comment": "Hosts en los que se permite que un enlace generado por la IA se renderice como enlace pulsable. Todo lo demás se muestra como texto plano. El dominio de la página anfitriona se añade automáticamente. Un valor que empieza por punto es comodín de sufijo: '.gov.co' acepta 'floridablanca.gov.co' pero no 'floridablanca.gov.co.dominio-falso.com'.",
+    "allowedLinkHosts": [
+      ".gov.co",
+      ".floridablanca.gov.co",
+      ".sisben.gov.co",
+      ".dnp.gov.co"
+    ]
+  },
   "routing": {
     "sisben": ["sisben", "puntaje", "grupo", "afiliacion"],
     "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],

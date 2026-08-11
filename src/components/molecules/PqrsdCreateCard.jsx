@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getCatalogos, crearPqrsd } from "../../services/pqrsdService";
+import { getCatalogos, crearPqrsd, validateAttachments, FILE_CONSTRAINTS } from "../../services/pqrsdService";
 import { useChat } from "../../context/ChatContext";
 
 export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
@@ -62,9 +62,22 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files) {
-      setFiles(Array.from(e.target.files));
+    if (!e.target.files) return;
+
+    const selected = Array.from(e.target.files);
+
+    // Validar antes de aceptar: la versión anterior admitía cualquier tipo, tamaño y
+    // cantidad, y el ciudadano solo descubría el rechazo tras esperar la subida.
+    const { valid, error } = validateAttachments(selected);
+    if (!valid) {
+      setErrorMsg(error);
+      setFiles([]);
+      e.target.value = "";
+      return;
     }
+
+    setErrorMsg(null);
+    setFiles(selected);
   };
 
   const handleSubmit = async (e) => {
@@ -290,13 +303,18 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
             <div className="form-group">
               <label>Adjuntar Documentos / Fotos (Opcional):</label>
-              <input 
+              <input
                 type="file"
                 multiple
+                accept={FILE_CONSTRAINTS.allowedExtensions.map((e) => `.${e}`).join(",")}
                 onChange={handleFileChange}
                 disabled={isSubmitting}
                 className="file-input"
               />
+              <span className="file-hint" style={{ fontSize: "0.72rem", opacity: 0.75 }}>
+                Máximo {FILE_CONSTRAINTS.maxFiles} archivos de{" "}
+                {(FILE_CONSTRAINTS.maxBytesPerFile / 1024 / 1024).toFixed(0)} MB cada uno.
+              </span>
               {files.length > 0 && (
                 <span className="file-count">📎 {files.length} archivo(s) seleccionado(s)</span>
               )}
