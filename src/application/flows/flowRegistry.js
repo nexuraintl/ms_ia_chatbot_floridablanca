@@ -17,7 +17,13 @@
  * AHORA cada trámite es una entrada de datos con su función de arranque. El despacho
  * es una búsqueda en un mapa y no vuelve a tocarse. Registrar un trámite nuevo es
  * añadir un objeto a `createFlowRegistry`.
+ *
+ * Ser el único punto de despacho tiene una ventaja añadida: aquí se cuenta cada trámite
+ * iniciado, para el panel de monitoreo. Un trámite nuevo aparece en las métricas sin
+ * tener que instrumentarlo, porque todos pasan por `runFlow`.
  */
+
+import { sessionMetrics, METRIC_EVENTS } from "../../domain/observability/sessionMetrics.js";
 
 /**
  * @typedef {Object} FlowDefinition
@@ -74,6 +80,7 @@ export const runFlow = (registry, flowId) => {
   }
 
   flow.start();
+  sessionMetrics.record(METRIC_EVENTS.FLOW_STARTED, { flowId: flow.id, label: flow.label });
   return { executed: true, flow };
 };
 

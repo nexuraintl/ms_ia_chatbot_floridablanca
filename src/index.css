@@ -193,6 +193,21 @@
   border: 1px solid var(--input-border) !important;
 }
 
+.antigravity-chatbot-root input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+  padding: 0 !important;
+  margin: 2px 0 0 0 !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
+  accent-color: #059669 !important;
+  box-sizing: border-box !important;
+}
+
 .antigravity-chatbot-root input::placeholder,
 .antigravity-chatbot-root textarea::placeholder {
   color: var(--input-placeholder) !important;
@@ -442,7 +457,7 @@
 .pqrsd-form input[type="tel"],
 .pqrsd-form select,
 .pqrsd-form textarea,
-.form-card input,
+.form-card input:not([type="checkbox"]):not([type="radio"]),
 .form-card select {
   width: 100%;
   padding: 10px 14px;
@@ -465,7 +480,7 @@
 .pqrsd-form input:focus,
 .pqrsd-form select:focus,
 .pqrsd-form textarea:focus,
-.form-card input:focus,
+.form-card input:not([type="checkbox"]):not([type="radio"]):focus,
 .form-card select:focus {
   border-color: #15803d;
   box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);

@@ -14,6 +14,10 @@
 import { useCallback } from "react";
 import { consultarPqrsd } from "../services/pqrsdService.js";
 import { translateRpaError } from "../domain/errors/rpaErrorTranslator.js";
+import { sessionMetrics, METRIC_EVENTS } from "../domain/observability/sessionMetrics.js";
+
+/** Identificador del trámite en el panel. Coincide con el del registro de flujos. */
+const FLOW_CONSULT = { flowId: "pqrsd_consultar", label: "Consulta de PQRSD" };
 
 /**
  * @param {Object} deps
@@ -71,6 +75,7 @@ export const usePqrsdFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) => 
             customComponent: "pqrsd_result",
             pqrsdData: res
           });
+          sessionMetrics.record(METRIC_EVENTS.FLOW_COMPLETED, FLOW_CONSULT);
         } else {
           addMessage({
             sender: "bot",
@@ -78,14 +83,19 @@ export const usePqrsdFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) => 
               `⚠️ ${res?.message ||
                 "No se encontró ningún radicado con los datos ingresados. Verifica el número de radicado y el código de seguridad."}`
           });
+          // El motivo NO incluye el radicado ni el código: el panel muestra este texto y
+          // ese par es la credencial que abre el expediente completo del ciudadano.
+          sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+            ...FLOW_CONSULT,
+            reason: "El radicado consultado no existe o el código no corresponde"
+          });
         }
       } catch (error) {
         // `consultarPqrsd` ya devuelve mensajes aptos para el ciudadano; el traductor
         // actúa como red de seguridad para cualquier error inesperado.
-        addMessage({
-          sender: "bot",
-          text: `⚠️ ${error?.message || translateRpaError(error)}`
-        });
+        const reason = error?.message || translateRpaError(error);
+        addMessage({ sender: "bot", text: `⚠️ ${reason}` });
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW_CONSULT, reason });
       } finally {
         setIsLoading(false);
         scheduleFollowUp();

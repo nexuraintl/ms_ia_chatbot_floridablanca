@@ -1,17 +1,219 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useChat } from "../../context/ChatContext";
-import { Terminal as TerminalIcon, Cpu, Key, Code, Copy, Check, TrendingDown, Sparkles, Globe, Award, Settings, Sun, Moon } from "lucide-react";
+import {
+  Terminal as TerminalIcon,
+  Cpu,
+  Key,
+  Code,
+  Copy,
+  Check,
+  Globe,
+  Settings,
+  Sun,
+  Moon,
+  Activity,
+  Archive,
+  MessagesSquare,
+  ShieldCheck,
+  ClipboardList,
+  Info
+} from "lucide-react";
 import { redactPII } from "../../domain/security/piiRedactor";
 import { sanitizeLogString } from "../../domain/security/textSanitizer";
 import { isValidGeminiApiKey } from "../../hooks/usePreferences";
+import { useSessionMetrics } from "../../hooks/useSessionMetrics";
+import { summarizeConversation, formatDuration } from "../../domain/observability/conversationStats";
+import { environment } from "../../config/environment";
+import config from "../../config/chatbotConfig.json";
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * QUÉ SE MONITOREA AQUÍ (Y QUÉ SE DEJÓ DE MONITOREAR)
+ *
+ * La versión anterior encabezaba el panel con tres tarjetas: TOKENS CONSUMIDOS,
+ * TOKENS AHORRADOS y EFICIENCIA DE COSTOS. Ninguna medía algo verificable:
+ *
+ *   · "TOKENS AHORRADOS" era `150 - tokensDeLaRespuesta`, la diferencia contra un
+ *     presupuesto imaginario. El proveedor local devolvía la constante 120.
+ *   · "EFICIENCIA DE COSTOS" multiplicaba esa cifra inventada por un precio fijo
+ *     escrito en este archivo. Producía un número en dólares con apariencia de dato
+ *     contable, que es justo lo que alguien copia a un informe de gestión.
+ *   · Sin clave de API, "TOKENS CONSUMIDOS" contaba consumo de una API que nunca se
+ *     llamó, porque el catálogo local también reportaba tokens estimados.
+ *   · Los tres contadores vivían en estado de React: cualquier recarga los ponía a cero.
+ *
+ * Se reemplazaron por lo que un operador de la Alcaldía necesita comprobar de un vistazo
+ * y este widget sí sabe con certeza:
+ *
+ *   1. QUIÉN ESTÁ RESPONDIENDO. Sin clave, el chatbot responde con el catálogo local.
+ *      Antes no había ninguna señal en la interfaz y se confundía con la IA real.
+ *   2. SI LA EVIDENCIA SE ESTÁ GUARDANDO. El registro de la atención es la prueba de
+ *      la gestión; los registros sin entregar son la señal de que el backend no confirma.
+ *   3. CÓMO VA LA ATENCIÓN EN CURSO. Mensajes, duración e identificación del ciudadano.
+ *   4. SI EL SERVICIO RESPONDE BIEN. Respuestas degradadas y latencia real medida.
+ *   5. QUÉ TRÁMITES SE INICIARON Y CUÁLES TERMINARON, con el motivo del último fallo.
+ *   6. QUÉ DEFENSAS ACTUARON: datos personales enmascarados y enlaces bloqueados.
+ *   7. EL CONSUMO DE LA API, separando lo que reporta Google de lo que estimamos, y sin
+ *      convertirlo a dinero: el precio por token no está en el navegador.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/** Paleta de estados. Se mantiene la del proyecto para no introducir colores nuevos. */
+const TONE = Object.freeze({
+  ok: { color: "#16a34a", bg: "rgba(22, 163, 74, 0.12)", border: "rgba(22, 163, 74, 0.3)" },
+  warn: { color: "#d97706", bg: "rgba(217, 119, 6, 0.12)", border: "rgba(217, 119, 6, 0.3)" },
+  error: { color: "#dc2626", bg: "rgba(239, 68, 68, 0.12)", border: "rgba(239, 68, 68, 0.3)" },
+  info: { color: "#0284c7", bg: "rgba(2, 132, 199, 0.12)", border: "rgba(2, 132, 199, 0.3)" },
+  idle: { color: "var(--text-muted)", bg: "transparent", border: "var(--border-color)" }
+});
+
+/** Nombre legible de cada trámite enrutable. */
+const FLOW_LABELS = Object.freeze({
+  sisben: "Sisbén",
+  predial: "Predial",
+  pqrsd_crear: "PQRSD",
+  pqrsd_consultar: "PQRSD",
+  pqrsd: "PQRSD"
+});
+
+/**
+ * Trámites realmente configurados, derivados de `chatbotConfig.json > routing`.
+ *
+ * El interruptor de servicios anunciaba "Sisbén, Predial y RPA" en texto fijo. Cuando
+ * Sisbén se retiró del enrutamiento y de las respuestas rápidas, el rótulo siguió
+ * ofreciéndolo: la interfaz prometía un trámite que ya no se podía iniciar. Derivarlo de
+ * la configuración evita que vuelva a desincronizarse.
+ */
+const CONFIGURED_FLOWS_LABEL =
+  Array.from(
+    new Set(
+      Object.keys(config.routing || {})
+        .map((id) => FLOW_LABELS[id])
+        .filter(Boolean)
+    )
+  ).join(" · ") || "Ninguno configurado";
+
+/** Estilo base compartido por las tarjetas y los paneles. */
+const panelStyle = {
+  backgroundColor: "var(--card-bg)",
+  border: "1px solid var(--border-color)",
+  borderRadius: "14px",
+  boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
+};
+
+/**
+ * Tarjeta de estado: rótulo, valor grande, detalle y una nota opcional.
+ *
+ * @param {Object} props
+ * @param {string} props.label
+ * @param {React.ReactNode} props.value
+ * @param {string} props.detail
+ * @param {string} [props.note]
+ * @param {keyof TONE} [props.tone]
+ * @param {React.ComponentType<{size?: number, style?: Object}>} props.icon
+ */
+const StatusCard = ({ label, value, detail, note, tone = "idle", icon: Icon }) => {
+  const palette = TONE[tone] || TONE.idle;
+
+  return (
+    <div style={{ ...panelStyle, padding: "18px 20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+        <span style={{ fontSize: "0.72rem", fontWeight: "700", color: "var(--text-muted)", letterSpacing: "0.6px" }}>
+          {label}
+        </span>
+        <Icon size={17} style={{ color: palette.color, flexShrink: 0 }} />
+      </div>
+
+      <span style={{ fontSize: "1.45rem", fontWeight: "800", color: palette.color, lineHeight: 1.15 }}>
+        {value}
+      </span>
+
+      <span style={{ fontSize: "0.76rem", color: "var(--text-muted)", lineHeight: "1.45" }}>{detail}</span>
+
+      {note && (
+        <span
+          style={{
+            fontSize: "0.72rem",
+            fontWeight: "600",
+            color: palette.color,
+            backgroundColor: palette.bg,
+            border: `1px solid ${palette.border}`,
+            borderRadius: "6px",
+            padding: "3px 8px",
+            alignSelf: "flex-start"
+          }}
+        >
+          {note}
+        </span>
+      )}
+    </div>
+  );
+};
+
+/** Encabezado de un panel de la mitad inferior. */
+const PanelHeader = ({ icon: Icon, title, hint }) => (
+  <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginBottom: "14px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <Icon size={17} style={{ color: "#16a34a" }} />
+      <h3 style={{ margin: 0, fontSize: "0.88rem", fontWeight: "700", color: "var(--text-main)" }}>{title}</h3>
+    </div>
+    {hint && <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>{hint}</span>}
+  </div>
+);
+
+/** Fila "etiqueta — valor" de los paneles de detalle. */
+const DetailRow = ({ label, value, tone = "idle", footnote }) => {
+  const palette = TONE[tone] || TONE.idle;
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
+        padding: "9px 0",
+        borderBottom: "1px solid var(--border-color)"
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px" }}>
+        <span style={{ fontSize: "0.8rem", color: "var(--text-main)" }}>{label}</span>
+        <span style={{ fontSize: "0.85rem", fontWeight: "700", color: palette.color, whiteSpace: "nowrap" }}>
+          {value}
+        </span>
+      </div>
+      {footnote && (
+        <span style={{ fontSize: "0.71rem", color: "var(--text-muted)", lineHeight: "1.4" }}>{footnote}</span>
+      )}
+    </div>
+  );
+};
+
+/** Formatea una latencia en milisegundos. */
+const formatLatency = (ms) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(2)} s` : "—");
+
+/**
+ * Concuerda el sustantivo con la cifra. Evita los "1 respuestas" y los "(s)" pegados,
+ * que en un panel institucional se leen como descuido.
+ *
+ * @param {number} count
+ * @param {string} singular
+ * @param {string} plural
+ * @returns {string}
+ */
+const pluralize = (count, singular, plural) => `${count} ${count === 1 ? singular : plural}`;
 
 export const ChatbotConsole = () => {
-  const { 
-    apiKey, 
-    updateApiKey, 
-    tokensUsedTotal, 
-    tokensSavedTotal, 
+  const {
+    apiKey,
+    updateApiKey,
     messages,
+    providerName,
+    identity,
+    identityMode,
+    hasConsent,
+    conversationId,
+    isRecordingEnabled,
+    recorderName,
+    pendingRecords,
     isGeminiEnabled,
     setIsGeminiEnabled,
     isServicesEnabled,
@@ -19,10 +221,26 @@ export const ChatbotConsole = () => {
     theme,
     toggleTheme
   } = useChat();
+
+  const metrics = useSessionMetrics();
+
   const [copied, setCopied] = useState(false);
   const [localKey, setLocalKey] = useState(apiKey);
   const [prevApiKey, setPrevApiKey] = useState(apiKey);
   const terminalEndRef = useRef(null);
+
+  /**
+   * Reloj de pared para la duración de la sesión. Se refresca cada 30 s: es lo único del
+   * panel que cambia sin que ocurra nada, así que no merece un intervalo más corto.
+   */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  /** Marca de arranque del panel, fijada una sola vez (antes se recalculaba en cada render). */
+  const bootedAt = useMemo(() => new Date().toLocaleString(), []);
 
   // Sincronizar localKey cuando la apiKey cambia en el contexto sin re-renders en cascada
   if (apiKey !== prevApiKey) {
@@ -34,6 +252,16 @@ export const ChatbotConsole = () => {
   useEffect(() => {
     terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  /**
+   * Estadísticas derivadas de la conversación. Se recalculan cuando cambian los mensajes,
+   * no se llevan en contadores: las defensas que miden (redacción de PII, bloqueo de
+   * enlaces) se aplican durante el render, y un contador ahí subiría con cada repintado.
+   */
+  const stats = useMemo(
+    () => summarizeConversation(messages, { baseOrigin: globalThis.window?.location?.origin }),
+    [messages]
+  );
 
   const handleCopyCode = () => {
     const code = `<script type="module" src="http://localhost:5173/src/embed.jsx"></script>`;
@@ -63,8 +291,22 @@ export const ChatbotConsole = () => {
     );
   };
 
-  // Calcular ahorro monetario simulado (0.000015 USD por token ahorrado en flash/prompts)
-  const usdSaved = (tokensSavedTotal * 0.000015).toFixed(5);
+  // ── Lecturas de estado para las tarjetas ──────────────────────────────────
+
+  const isRemoteProvider = providerName === "gemini-api";
+  const engineTone = !isGeminiEnabled ? "warn" : isRemoteProvider ? "ok" : "info";
+
+  const recordingTone = !isRecordingEnabled ? "warn" : pendingRecords > 0 ? "error" : "ok";
+
+  const identityLabel = identity ? "Identificado" : identityMode === "off" ? "Anónimo por diseño" : "Anónimo";
+
+  const healthTone =
+    metrics.ai.replies === 0 ? "idle" : metrics.ai.degraded > 0 ? "error" : "ok";
+
+  const sessionDuration = formatDuration(Math.max(0, nowMs - metrics.startedAt));
+
+  const totalStarted = metrics.flows.reduce((acc, f) => acc + f.started, 0);
+  const totalFailed = metrics.flows.reduce((acc, f) => acc + f.failed, 0);
 
   return (
     <div
@@ -230,7 +472,7 @@ export const ChatbotConsole = () => {
             <Settings size={18} style={{ color: "#16a34a" }} />
             <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "600", color: "var(--text-main)" }}>Módulos Habilitados</h3>
           </div>
-          
+
           {/* Toggle: FAQ / Gemini IA */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
@@ -272,7 +514,8 @@ export const ChatbotConsole = () => {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
               <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "var(--text-main)" }}>Trámites y Servicios</span>
-              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Sisbén, Predial y RPA</span>
+              {/* Etiqueta derivada de la configuración: ver CONFIGURED_FLOWS_LABEL. */}
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{CONFIGURED_FLOWS_LABEL}</span>
             </div>
             <button
               onClick={() => setIsServicesEnabled(!isServicesEnabled)}
@@ -356,7 +599,7 @@ export const ChatbotConsole = () => {
         </div>
       </div>
 
-      {/* ÁREA PRINCIPAL: MÉTRICAS Y TERMINAL */}
+      {/* ÁREA PRINCIPAL: ESTADO OPERATIVO Y TERMINAL */}
       <div
         className="console-main-area"
         style={{
@@ -364,7 +607,7 @@ export const ChatbotConsole = () => {
           padding: "32px 40px",
           display: "flex",
           flexDirection: "column",
-          gap: "28px",
+          gap: "24px",
           overflowY: "auto",
           height: "100vh",
           boxSizing: "border-box"
@@ -377,7 +620,7 @@ export const ChatbotConsole = () => {
               Panel de Control del Asistente Virtual
             </h1>
             <p style={{ margin: "4px 0 0 0", fontSize: "0.9rem", color: "var(--text-muted)" }}>
-              Monitorea el consumo de la API de Gemini, logs del sistema y simulación de automatizaciones RPA.
+              Estado del servicio, evidencia de la atención y trámites de la sesión en curso.
             </p>
           </div>
           <div
@@ -400,87 +643,174 @@ export const ChatbotConsole = () => {
                 boxShadow: "0 0 8px #16a34a"
               }}
             />
-            <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: "600", letterSpacing: "0.5px" }}>
-              WIDGET EMBEBIBLE ACTIVO
+            <span style={{ fontSize: "0.75rem", color: "#16a34a", fontWeight: "600", letterSpacing: "0.4px" }}>
+              {environment.serviceName} · {environment.serviceVersion} · {environment.environmentName.toUpperCase()}
             </span>
           </div>
         </div>
 
-        {/* REJILLA DE MÉTRICAS */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "20px" }}>
-          {/* Tarjeta 1: Tokens Usados */}
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: "var(--card-bg)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>TOKENS CONSUMIDOS</span>
-              <Cpu size={18} style={{ color: "#0284c7" }} />
-            </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "var(--text-main)" }}>
-              {tokensUsedTotal.toLocaleString()}
-            </span>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              Consumo real en peticiones Gemini
-            </span>
+        {/* REJILLA DE ESTADO OPERATIVO */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "18px" }}>
+          {/* 1. Quién está respondiendo. Sin esta tarjeta, el catálogo local se confunde
+                 con la IA real y se reportan como respuestas del modelo. */}
+          <StatusCard
+            label="MOTOR DE RESPUESTA"
+            value={isRemoteProvider ? "IA Gemini" : "Catálogo local"}
+            detail={
+              isRemoteProvider
+                ? "Consultas resueltas por el modelo gemini-2.5-flash-lite."
+                : "Sin clave de API: responde el catálogo de preguntas frecuentes del repositorio."
+            }
+            note={
+              !isGeminiEnabled
+                ? "Respuesta libre deshabilitada"
+                : apiKey && !isValidGeminiApiKey(apiKey)
+                  ? "La clave guardada no tiene el formato de Google AI Studio"
+                  : null
+            }
+            tone={engineTone}
+            icon={Cpu}
+          />
+
+          {/* 2. La evidencia de la atención. `pendingRecords > 0` significa que el backend
+                 no está confirmando: es el único indicador que anticipa pérdida de registro. */}
+          <StatusCard
+            label="REGISTRO DE LA ATENCIÓN"
+            value={isRecordingEnabled ? "Activo" : "Desactivado"}
+            detail={
+              isRecordingEnabled
+                ? `Destino "${recorderName}". Conversación ${String(conversationId || "").slice(0, 8)}…`
+                : `Modo "off": no se envía ningún dato personal a ningún destino.`
+            }
+            note={
+              isRecordingEnabled && pendingRecords > 0
+                ? `${pluralize(pendingRecords, "registro", "registros")} en cola sin confirmar`
+                : null
+            }
+            tone={recordingTone}
+            icon={Archive}
+          />
+
+          {/* 3. Volumen y contexto de la atención en curso. */}
+          <StatusCard
+            label="ATENCIÓN EN CURSO"
+            value={pluralize(stats.total, "mensaje", "mensajes")}
+            detail={`${stats.fromCitizen} del ciudadano · ${stats.fromBot} del asistente · ${sessionDuration} de sesión`}
+            note={hasConsent ? `${identityLabel} · autorización registrada` : identityLabel}
+            tone={identity ? "ok" : "info"}
+            icon={MessagesSquare}
+          />
+
+          {/* 4. Salud del servicio: la latencia se mide alrededor de la llamada real al
+                 proveedor, y las degradadas son las respuestas de contingencia. */}
+          <StatusCard
+            label="RESPUESTAS DEL ASISTENTE"
+            value={
+              metrics.ai.replies === 0
+                ? "Sin actividad"
+                : pluralize(metrics.ai.replies, "respuesta", "respuestas")
+            }
+            detail={
+              metrics.ai.latencySamples === 0
+                ? "Todavía no hay mediciones de latencia en esta sesión."
+                : `Latencia p50 ${formatLatency(metrics.ai.p50LatencyMs)} · última ${formatLatency(metrics.ai.lastLatencyMs)}`
+            }
+            note={
+              metrics.ai.degraded > 0
+                ? `${pluralize(metrics.ai.degraded, "respuesta degradada", "respuestas degradadas")} por fallo del proveedor`
+                : null
+            }
+            tone={healthTone}
+            icon={Activity}
+          />
+        </div>
+
+        {/* DETALLE: TRÁMITES Y VERIFICACIONES */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(330px, 1fr))", gap: "18px" }}>
+          {/* Trámites: el inicio se cuenta en `runFlow`, así que ningún trámite nuevo se
+              queda fuera del panel por olvido de instrumentarlo. */}
+          <div style={{ ...panelStyle, padding: "20px 22px" }}>
+            <PanelHeader
+              icon={ClipboardList}
+              title="Trámites de esta sesión"
+              hint={
+                totalStarted === 0
+                  ? "Aún no se ha iniciado ningún trámite."
+                  : `${pluralize(totalStarted, "trámite iniciado", "trámites iniciados")} · ${totalFailed} con fallo.`
+              }
+            />
+
+            {metrics.flows.length === 0 ? (
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: "1.5" }}>
+                Cuando el ciudadano abra un trámite —Predial o PQRSD— aquí aparecerán los intentos,
+                los que entregaron resultado (factura o radicado) y el motivo de los que fallaron.
+              </p>
+            ) : (
+              metrics.flows.map((flow) => (
+                <DetailRow
+                  key={flow.id}
+                  label={flow.label}
+                  value={`${flow.started} ▸ ${flow.completed} ✓ ${flow.failed} ✕`}
+                  tone={flow.failed > 0 ? "error" : flow.completed > 0 ? "ok" : "info"}
+                  footnote={flow.lastError ? `Último fallo: ${flow.lastError}` : null}
+                />
+              ))
+            )}
           </div>
 
-          {/* Tarjeta 2: Tokens Ahorrados */}
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: "var(--card-bg)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>TOKENS AHORRADOS</span>
-              <TrendingDown size={18} style={{ color: "#16a34a" }} />
-            </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#16a34a" }}>
-              {tokensSavedTotal.toLocaleString()}
-            </span>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              Optimizados por respuestas cortas
-            </span>
-          </div>
+          {/* Defensas y consumo. Las dos primeras cifras se derivan de los mensajes; las de
+              tokens vienen del proveedor, separando lo reportado de lo estimado. */}
+          <div style={{ ...panelStyle, padding: "20px 22px" }}>
+            <PanelHeader
+              icon={ShieldCheck}
+              title="Defensas y consumo de la API"
+              hint="Lo que las capas de seguridad interceptaron en esta conversación."
+            />
 
-          {/* Tarjeta 3: Ahorro Monetario Estimado */}
-          <div
-            style={{
-              padding: "20px",
-              backgroundColor: "var(--card-bg)",
-              border: "1px solid var(--border-color)",
-              borderRadius: "14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "8px",
-              boxShadow: "0 4px 15px rgba(0, 0, 0, 0.04)"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--text-muted)" }}>EFICIENCIA DE COSTOS</span>
-              <Sparkles size={18} style={{ color: "#d97706" }} />
-            </div>
-            <span style={{ fontSize: "1.8rem", fontWeight: "800", color: "#d97706" }}>
-              ${usdSaved}
-            </span>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              USD estimados ahorrados por diseño
-            </span>
+            <DetailRow
+              label="Mensajes con datos personales enmascarados"
+              value={stats.withMaskedPii}
+              tone={stats.withMaskedPii > 0 ? "ok" : "idle"}
+              footnote="Cédulas, correos, celulares y códigos de PQRSD no salen en claro hacia logs ni telemetría."
+            />
+
+            <DetailRow
+              label="Enlaces no autorizados bloqueados"
+              value={stats.blockedLinkHosts.length}
+              tone={stats.blockedLinkHosts.length > 0 ? "warn" : "idle"}
+              footnote={
+                stats.blockedLinkHosts.length > 0
+                  ? `Destinos: ${stats.blockedLinkHosts.join(", ")}`
+                  : "Ningún enlace fuera de la lista blanca apareció en las respuestas."
+              }
+            />
+
+            <DetailRow
+              label="Tokens reportados por la API"
+              value={metrics.tokens.reported.toLocaleString()}
+              tone={metrics.tokens.reported > 0 ? "info" : "idle"}
+              footnote={
+                metrics.ai.apiReplies === 0
+                  ? "No se ha llamado a Gemini en esta sesión: el catálogo local no consume cuota."
+                  : `Cifra exacta de usageMetadata en ${metrics.tokens.reportedCalls} de ${pluralize(metrics.ai.apiReplies, "llamada", "llamadas")}.`
+              }
+            />
+
+            {metrics.tokens.estimated > 0 && (
+              <DetailRow
+                label="Tokens estimados (sin dato de la API)"
+                value={metrics.tokens.estimated.toLocaleString()}
+                tone="warn"
+                footnote={`Aproximación por longitud de texto en ${pluralize(metrics.tokens.estimatedCalls, "llamada", "llamadas")} sin usageMetadata. No usar para facturación.`}
+              />
+            )}
+
+            <DetailRow
+              label="Formularios y adjuntos entregados"
+              value={`${stats.interactiveCards} / ${stats.attachments}`}
+              tone="idle"
+              footnote="Tarjetas de trámite mostradas y archivos entregados (facturas, códigos QR)."
+            />
           </div>
         </div>
 
@@ -530,13 +860,16 @@ export const ChatbotConsole = () => {
               boxShadow: "inset 0 4px 20px rgba(0, 0, 0, 0.5)"
             }}
           >
+            {/* Cabecera de arranque con los datos que exige GOB-GCP-STD-01 en /version.
+                Antes eran dos líneas decorativas que además recalculaban la fecha en
+                cada render. */}
             <div style={{ color: "#94a3b8" }}>
-              [SYSTEM_LOG] [{new Date().toLocaleDateString()}] Inicializando terminal de logs...
+              [BOOT] [{bootedAt}] servicio={environment.serviceName} versión={environment.serviceVersion} ambiente={environment.environmentName}
             </div>
             <div style={{ color: "#94a3b8" }}>
-              [SYSTEM_LOG] Escuchando eventos del microservicio de chatbot...
+              [BOOT] motor={providerName} registro={recorderName} telemetría={environment.telemetryEnabled ? "activa" : "inactiva"}
             </div>
-            
+
             {messages.map((m, idx) => {
               const prefix = `[${m.timestamp || "00:00:00"}]`;
               let logColor = "#34d399"; // Verde por defecto para bot
@@ -565,30 +898,37 @@ export const ChatbotConsole = () => {
                 </div>
               );
             })}
-            
+
             <div ref={terminalEndRef} />
           </div>
         </div>
 
-        {/* Guía Rápida e Información de Demostración */}
-        <div
-          style={{
-            padding: "20px 24px",
-            backgroundColor: "var(--card-bg)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "14px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px"
-          }}
-        >
+        {/* Cómo leer las cifras. Va aquí a propósito: la única forma de que una métrica
+            no se malinterprete es decir en el mismo panel qué mide y qué no. */}
+        <div style={{ ...panelStyle, padding: "18px 22px", display: "flex", flexDirection: "column", gap: "8px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Award size={18} style={{ color: "#16a34a" }} />
-            <h4 style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-main)", fontWeight: "700" }}>Cómo funciona la IA Contextual</h4>
+            <Info size={17} style={{ color: "#0284c7" }} />
+            <h4 style={{ margin: 0, fontSize: "0.88rem", color: "var(--text-main)", fontWeight: "700" }}>
+              Cómo leer estas cifras
+            </h4>
           </div>
-          <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--text-muted)", lineHeight: "1.5" }}>
-            El chatbot ahora detecta de forma automática la estructura, títulos y fragmentos de texto de la página en la cual se encuentra embebido. Cuando conversas con él, se le envía esta información de fondo, lo que le permite responder con precisión a preguntas como <strong>"¿dónde estoy?"</strong> o <strong>"¿qué secciones tiene esta página?"</strong> sin necesidad de bases de datos estáticas externas.
-          </p>
+          <ul style={{ margin: 0, paddingLeft: "20px", fontSize: "0.8rem", color: "var(--text-muted)", lineHeight: "1.6" }}>
+            <li>
+              Corresponden a <strong>la sesión abierta en este navegador</strong>. Se reinician al recargar
+              la página y al reiniciar la conversación, porque describen una atención concreta y no un
+              acumulado histórico. El acumulado corresponde al backend de registro, no al widget.
+            </li>
+            <li>
+              El consumo de tokens solo suma cuando el proveedor declara que la llamada gastó cuota
+              remota. Las respuestas del catálogo local no cuentan, y lo que informa la API se muestra
+              aparte de lo estimado por longitud de texto.
+            </li>
+            <li>
+              No se calcula ahorro ni coste en dinero: el precio por token depende del modelo y del
+              contrato, datos que no están en el navegador. La cifra que sustituía a esto era el
+              resultado de multiplicar un presupuesto imaginario por un precio fijo escrito en el código.
+            </li>
+          </ul>
         </div>
       </div>
     </div>

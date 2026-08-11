@@ -48,6 +48,11 @@
  * @property {number} savedTokens
  * @property {boolean} isEstimate  true si las cifras de tokens son aproximadas.
  * @property {boolean} [isError]   true si la respuesta es un mensaje de degradación.
+ * @property {boolean} [billable]  true si la llamada consumió cuota de un proveedor
+ *           remoto. Solo el proveedor sabe esto, así que es él quien lo declara: el
+ *           consumidor no debe deducirlo del nombre del adaptador. Sin este campo, la
+ *           consola contaba como "tokens consumidos" las respuestas del catálogo local,
+ *           que no gastan nada.
  */
 
 /**
@@ -100,5 +105,8 @@ export const degradedReply = (
   tokensUsed: 0,
   savedTokens: 0,
   isEstimate: true,
-  isError: true
+  isError: true,
+  // Una degradación ocurre porque la petición falló o no se llegó a hacer: no hay
+  // consumo que atribuir.
+  billable: false
 });

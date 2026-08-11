@@ -122,6 +122,8 @@ export const createGeminiApiProvider = ({ getApiKey, faqCatalog = [], model = DE
       return {
         text: replyText,
         contextIntent: faqMatch?.intencion ?? null,
+        // Esta llamada sí gastó cuota de Google: la consola puede contarla.
+        billable: true,
         ...usage
       };
     } catch (error) {

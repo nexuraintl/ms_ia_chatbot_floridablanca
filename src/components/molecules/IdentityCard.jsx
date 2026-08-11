@@ -177,9 +177,18 @@ export const IdentityCard = ({
                 if (errors.consent) setErrors((prev) => ({ ...prev, consent: undefined }));
               }}
               disabled={isSubmitting}
-              style={{ marginTop: "2px", flexShrink: 0 }}
+              style={{
+                marginTop: "2px",
+                width: "16px",
+                height: "16px",
+                minWidth: "16px",
+                minHeight: "16px",
+                flexShrink: 0,
+                cursor: "pointer",
+                accentColor: "#059669"
+              }}
             />
-            <span>{consentText}</span>
+            <span style={{ flex: 1 }}>{consentText}</span>
           </label>
 
           {policyUrl && (

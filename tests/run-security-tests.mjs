@@ -735,6 +735,171 @@ section("19. Correlación hacia los microservicios (GOB-GCP-STD-01)");
   configureCorrelation({ enabled: true, conversationId: null });
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("20. Métricas del panel: cifras verificables, no inventadas");
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El panel mostraba TOKENS AHORRADOS y EFICIENCIA DE COSTOS calculados contra un
+// presupuesto imaginario de 150 tokens y un precio fijo escrito en el componente. Estas
+// pruebas fijan las reglas que impiden que vuelva a ocurrir: lo que no se puede medir no
+// se muestra, y lo estimado nunca se confunde con lo que informa la API.
+{
+  const { createSessionMetrics, METRIC_EVENTS } =
+    await import("../src/domain/observability/sessionMetrics.js");
+  const { summarizeConversation, formatDuration } =
+    await import("../src/domain/observability/conversationStats.js");
+
+  // La política de enlaces se reconfigura igual que en el arranque de la app, para no
+  // depender del orden de las secciones anteriores.
+  urlPolicy.configureUrlPolicy({
+    allowedLinkHosts: chatbotConfig.security.allowedLinkHosts,
+    knownBackendHosts: ["rpa.floridablanca.gov.co"]
+  });
+
+  // ── El consumo de API solo cuenta si hubo consumo de API ────────────────────
+  const local = createSessionMetrics();
+  local.record(METRIC_EVENTS.AI_REPLY, {
+    provider: "local-mock",
+    billable: false,
+    tokensUsed: 160,
+    isEstimate: true,
+    latencyMs: 800
+  });
+  const localSnapshot = local.getSnapshot();
+  check(
+    "una respuesta del catálogo local no suma consumo de la API",
+    localSnapshot.tokens.reported === 0 &&
+      localSnapshot.tokens.estimated === 0 &&
+      localSnapshot.ai.localReplies === 1,
+    `reportados=${localSnapshot.tokens.reported} estimados=${localSnapshot.tokens.estimated} locales=${localSnapshot.ai.localReplies}`
+  );
+
+  const remote = createSessionMetrics();
+  remote.record(METRIC_EVENTS.AI_REPLY, { billable: true, isEstimate: false, tokensUsed: 500, latencyMs: 300 });
+  remote.record(METRIC_EVENTS.AI_REPLY, { billable: true, isEstimate: true, tokensUsed: 320, latencyMs: 100 });
+  remote.record(METRIC_EVENTS.AI_REPLY, { billable: false, degraded: true, tokensUsed: 0, latencyMs: 200 });
+  const remoteSnapshot = remote.getSnapshot();
+  check(
+    "lo que reporta la API y lo estimado se acumulan por separado",
+    remoteSnapshot.tokens.reported === 500 && remoteSnapshot.tokens.estimated === 320,
+    `reportados=${remoteSnapshot.tokens.reported} estimados=${remoteSnapshot.tokens.estimated}`
+  );
+  check(
+    "las respuestas degradadas se cuentan y no ensucian el consumo",
+    remoteSnapshot.ai.replies === 3 &&
+      remoteSnapshot.ai.degraded === 1 &&
+      remoteSnapshot.ai.apiReplies === 2
+  );
+  check(
+    "la latencia se resume en percentiles sobre las muestras reales",
+    remoteSnapshot.ai.p50LatencyMs === 200 && remoteSnapshot.ai.p95LatencyMs === 300,
+    `p50=${remoteSnapshot.ai.p50LatencyMs}ms p95=${remoteSnapshot.ai.p95LatencyMs}ms`
+  );
+  check(
+    "no se calcula ninguna cifra monetaria",
+    !("usd" in remoteSnapshot.tokens) &&
+      !("saved" in remoteSnapshot.tokens) &&
+      JSON.stringify(remoteSnapshot).toLowerCase().indexOf("usd") === -1
+  );
+
+  // ── Ciclo de vida de los trámites ───────────────────────────────────────────
+  const flows = createSessionMetrics();
+  flows.record(METRIC_EVENTS.FLOW_STARTED, { flowId: "predial", label: "Impuesto Predial" });
+  flows.record(METRIC_EVENTS.FLOW_STARTED, { flowId: "predial", label: "Impuesto Predial" });
+  flows.record(METRIC_EVENTS.FLOW_COMPLETED, { flowId: "predial" });
+  flows.record(METRIC_EVENTS.FLOW_FAILED, { flowId: "predial", reason: "El RPA no respondió a tiempo" });
+  const predial = flows.getSnapshot().flows.find((f) => f.id === "predial");
+  check(
+    "el trámite acumula inicios, resultados y fallos por separado",
+    predial.started === 2 && predial.completed === 1 && predial.failed === 1,
+    `iniciados=${predial.started} completados=${predial.completed} fallidos=${predial.failed}`
+  );
+  check("conserva el motivo del último fallo", predial.lastError === "El RPA no respondió a tiempo");
+
+  // La instantánea debe ser estable entre lecturas: `useSyncExternalStore` entra en un
+  // bucle infinito de renders si cada lectura devuelve un objeto nuevo.
+  check(
+    "dos lecturas sin cambios devuelven la misma instantánea",
+    flows.getSnapshot() === flows.getSnapshot()
+  );
+  const before = flows.getSnapshot();
+  flows.record(METRIC_EVENTS.FLOW_STARTED, { flowId: "pqrsd_crear", label: "Radicación de PQRSD" });
+  check("un cambio invalida la instantánea memorizada", flows.getSnapshot() !== before);
+
+  flows.reset();
+  const cleared = flows.getSnapshot();
+  check(
+    "reset deja los contadores en cero (una atención nueva no hereda la anterior)",
+    cleared.flows.length === 0 && cleared.ai.replies === 0
+  );
+
+  // Un fallo de instrumentación nunca debe tumbar una atención en curso.
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  let threw = false;
+  try {
+    flows.record("evento_que_no_existe", { flowId: "x" });
+  } catch {
+    threw = true;
+  }
+  console.warn = originalWarn;
+  check("un evento desconocido se descarta sin lanzar", !threw);
+
+  // ── Estadísticas derivadas de la conversación ───────────────────────────────
+  const conversation = [
+    { id: "1", sender: "system", text: "🔒 Aviso de Privacidad" },
+    { id: "2", sender: "user", text: "Mi cédula es 1098765432 y mi correo juan.perez@gmail.com" },
+    { id: "3", sender: "bot", text: "Consulta aquí: [Trámites](https://floridablanca.gov.co/tramites)" },
+    {
+      id: "4",
+      sender: "bot",
+      text: "Paga en [Portal](https://pagos-falsos.example.com/pse) o en https://pagos-falsos.example.com/otra"
+    },
+    { id: "5", sender: "user", text: "Visita https://sitio-del-atacante.example.com" },
+    { id: "6", sender: "bot", text: "Aquí tienes tu factura", attachment: { type: "file" } },
+    { id: "7", sender: "bot", text: "Diligencia el formulario", customComponent: "predial_form" }
+  ];
+  const stats = summarizeConversation(conversation, { baseOrigin: ORIGIN });
+
+  check(
+    "detecta los mensajes que contienen datos personales",
+    stats.withMaskedPii === 1,
+    `mensajes con PII=${stats.withMaskedPii}`
+  );
+  check(
+    "cuenta el destino no autorizado que la lista blanca bloqueó",
+    stats.blockedLinkHosts.includes("pagos-falsos.example.com"),
+    `bloqueados=${JSON.stringify(stats.blockedLinkHosts)}`
+  );
+  check(
+    "no cuenta como bloqueado un enlace del dominio oficial",
+    !stats.blockedLinkHosts.some((host) => host.endsWith("floridablanca.gov.co"))
+  );
+  check(
+    "dos enlaces al mismo host malicioso son un destino, no dos",
+    stats.blockedLinkHosts.filter((h) => h === "pagos-falsos.example.com").length === 1
+  );
+  check(
+    "un enlace escrito por el ciudadano no se atribuye a la salida del modelo",
+    !stats.blockedLinkHosts.includes("sitio-del-atacante.example.com"),
+    "solo se validan los enlaces que el asistente muestra como pulsables"
+  );
+  check(
+    "resume el volumen de la atención",
+    stats.total === 7 && stats.fromCitizen === 2 && stats.fromBot === 4 && stats.notices === 1,
+    `total=${stats.total} ciudadano=${stats.fromCitizen} bot=${stats.fromBot}`
+  );
+  check(
+    "cuenta formularios y adjuntos entregados",
+    stats.interactiveCards === 1 && stats.attachments === 1
+  );
+  check(
+    "la duración no produce valores absurdos con entradas inválidas",
+    formatDuration(-1) === "—" && formatDuration(NaN) === "—" && formatDuration(95000) === "1 min",
+    `95s -> ${formatDuration(95000)}`
+  );
+}
+
 // ── Resumen ────────────────────────────────────────────────────────────────────
 const fallos = results.filter((r) => !r.passed);
 console.log(`\n\x1b[1m${"═".repeat(74)}\x1b[0m`);

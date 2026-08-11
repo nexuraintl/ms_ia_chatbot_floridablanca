@@ -32,10 +32,6 @@
   },
   "quickReplies": [
     {
-      "label": "🟡 Consultar Trámite de Sisbén",
-      "flow": "sisben"
-    },
-    {
       "label": "🟡 Pagar Impuesto Predial",
       "flow": "predial"
     },
@@ -58,7 +54,6 @@
     ]
   },
   "routing": {
-    "sisben": ["sisben", "puntaje", "grupo", "afiliacion"],
     "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],
     "pqrsd_crear": ["radicar", "peticion", "queja", "reclamo", "sugerencia", "denuncia", "crear pqrsd", "hacer pqrsd", "poner queja", "radicar pqrsd", "radicar pqrs", "nueva pqrsd"],
     "pqrsd_consultar": ["consultar radicado", "estado radicado", "buscar radicado", "trazabilidad", "mi radicado", "consultar pqrsd", "consultar mi pqrsd", "consultar estado", "consultarlo", "consultar pqrs"],

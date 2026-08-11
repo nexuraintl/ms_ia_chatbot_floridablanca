@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { getCatalogos, crearPqrsd, validateAttachments, FILE_CONSTRAINTS } from "../../services/pqrsdService";
 import { useChat } from "../../context/ChatContext";
+import { sessionMetrics, METRIC_EVENTS } from "../../domain/observability/sessionMetrics";
+
+/** Identificador del trámite en el panel. Coincide con el del registro de flujos. */
+const FLOW = { flowId: "pqrsd_crear", label: "Radicación de PQRSD" };
 
 export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
   // Si el ciudadano ya se identificó, no volver a pedirle el correo.
@@ -116,14 +120,21 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
       if (res.success) {
         setResult(res);
+        // El radicado entregado es el resultado del trámite. No se reporta su número:
+        // el panel de monitoreo no necesita el dato y el radicado es PII.
+        sessionMetrics.record(METRIC_EVENTS.FLOW_COMPLETED, FLOW);
         if (onSubmitSuccess) {
           onSubmitSuccess(res);
         }
       } else {
-        setErrorMsg(res.message || "No se pudo radicar la PQRSD. Intenta nuevamente.");
+        const reason = res.message || "No se pudo radicar la PQRSD. Intenta nuevamente.";
+        setErrorMsg(reason);
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
       }
     } catch (err) {
-      setErrorMsg(err.message || "Ocurrió un error inesperado al conectar con el RPA.");
+      const reason = err.message || "Ocurrió un error inesperado al conectar con el RPA.";
+      setErrorMsg(reason);
+      sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
     } finally {
       setIsSubmitting(false);
       if (scheduleFollowUp) scheduleFollowUp(20000);

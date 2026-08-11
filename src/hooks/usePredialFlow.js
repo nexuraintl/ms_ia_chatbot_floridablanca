@@ -30,6 +30,10 @@ import {
   getFacturaPdfUrl
 } from "../services/rpaPredialService.js";
 import { translateRpaError, translatePredialSearchError } from "../domain/errors/rpaErrorTranslator.js";
+import { sessionMetrics, METRIC_EVENTS } from "../domain/observability/sessionMetrics.js";
+
+/** Identificador del trámite en el panel de monitoreo. Coincide con el del registro de flujos. */
+const FLOW = { flowId: "predial", label: "Impuesto Predial" };
 
 /** Mensajes de progreso por evento del stream. */
 const PROGRESS_MESSAGES = Object.freeze({
@@ -104,11 +108,17 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
             text: "⚠️ No encontré ese predio en Floridablanca. Verifica el dato ingresado e intenta de nuevo."
           });
           setIsLoading(false);
+          sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+            ...FLOW,
+            reason: "El RPA no encontró el predio consultado"
+          });
         }
         return;
       }
 
       if (event === "pdf_ready") {
+        // La factura entregada es el resultado del trámite: aquí sí terminó.
+        sessionMetrics.record(METRIC_EVENTS.FLOW_COMPLETED, FLOW);
         addMessage({
           sender: "bot",
           text:
@@ -152,7 +162,9 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
       if (event === "error") {
         closeActiveStream();
         setIsLoading(false);
-        addMessage({ sender: "bot", text: `⚠️ ${translateRpaError(message)}` });
+        const reason = translateRpaError(message);
+        addMessage({ sender: "bot", text: `⚠️ ${reason}` });
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
         scheduleFollowUp();
       }
     },
@@ -183,6 +195,10 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
             sender: "bot",
             text: "⚠️ El servicio no devolvió un identificador de trámite. Intenta de nuevo en unos minutos."
           });
+          sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+            ...FLOW,
+            reason: "El RPA no devolvió job_id"
+          });
           return;
         }
 
@@ -195,14 +211,17 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
               sender: "bot",
               text: "⚠️ Se perdió la conexión con el trámite. Por favor intenta de nuevo."
             });
+            sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+              ...FLOW,
+              reason: "Se perdió la conexión con el stream del RPA"
+            });
           }
         );
       } catch (error) {
         setIsLoading(false);
-        addMessage({
-          sender: "bot",
-          text: `⚠️ ${translatePredialSearchError(error, { searchType })}`
-        });
+        const reason = translatePredialSearchError(error, { searchType });
+        addMessage({ sender: "bot", text: `⚠️ ${reason}` });
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
         scheduleFollowUp();
       }
     },
@@ -231,6 +250,10 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
             "Por favor inicia la consulta de nuevo."
         });
         setIsLoading(false);
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+          ...FLOW,
+          reason: "Se perdieron los datos de contacto antes de seleccionar el predio"
+        });
         return;
       }
 
@@ -251,6 +274,10 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
             sender: "bot",
             text: "⚠️ El servicio no devolvió un identificador de trámite. Intenta de nuevo."
           });
+          sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+            ...FLOW,
+            reason: "El RPA no devolvió job_id al seleccionar el predio"
+          });
           return;
         }
 
@@ -263,11 +290,17 @@ export const usePredialFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) =
               sender: "bot",
               text: "⚠️ Se perdió la conexión con el trámite. Por favor intenta de nuevo."
             });
+            sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, {
+              ...FLOW,
+              reason: "Se perdió la conexión con el stream del RPA"
+            });
           }
         );
       } catch (error) {
         setIsLoading(false);
-        addMessage({ sender: "bot", text: `⚠️ ${translateRpaError(error)}` });
+        const reason = translateRpaError(error);
+        addMessage({ sender: "bot", text: `⚠️ ${reason}` });
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
         scheduleFollowUp();
       }
     },

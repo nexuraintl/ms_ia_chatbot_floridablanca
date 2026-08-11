@@ -33,8 +33,9 @@ import { configureUrlPolicy } from "../domain/security/urlPolicy.js";
 import { configureCorrelation } from "../domain/observability/correlation.js";
 import { resolveIntent, mentionsService } from "../domain/intents/intentResolver.js";
 import { createFlowRegistry, runFlow, getFlowLabel } from "../application/flows/flowRegistry.js";
+import { sessionMetrics } from "../domain/observability/sessionMetrics.js";
 
-import { useMessageStore } from "../hooks/useMessageStore.js";
+import { useMessageStore, buildGreetingMessages } from "../hooks/useMessageStore.js";
 import { useFollowUp } from "../hooks/useFollowUp.js";
 import { usePreferences } from "../hooks/usePreferences.js";
 import { useSitemapLinks } from "../hooks/useSitemapLinks.js";
@@ -77,10 +78,6 @@ export const ChatProvider = ({ children }) => {
   const [activeContext, setActiveContext] = useState(null);
   const [lastServiceMentioned, setLastServiceMentioned] = useState(null);
 
-  // ── Contadores de consumo ─────────────────────────────────────────────────
-  const [tokensUsedTotal, setTokensUsedTotal] = useState(0);
-  const [tokensSavedTotal, setTokensSavedTotal] = useState(0);
-
   // ── Preferencias persistentes ─────────────────────────────────────────────
   const preferences = usePreferences();
   const {
@@ -95,12 +92,12 @@ export const ChatProvider = ({ children }) => {
     setIsServicesEnabled
   } = preferences;
 
-  // ── Mensajes ──────────────────────────────────────────────────────────────
-  const { messages, setMessages, addMessage, updateMessage, reset, toConversationHistory } =
-    useMessageStore({ config, isServicesEnabled });
-
   // ── Identidad del ciudadano (configurable por tenant) ─────────────────────
   const identityState = useCitizenIdentity({ config });
+
+  // ── Mensajes ──────────────────────────────────────────────────────────────
+  const { messages, setMessages, addMessage, addMessages, updateMessage, reset, toConversationHistory } =
+    useMessageStore({ config, isServicesEnabled, isGateVisible: identityState.isGateVisible });
 
   // ── Registro de la conversación (evidencia de la atención) ────────────────
   const recorder = useConversationRecorder({
@@ -121,12 +118,13 @@ export const ChatProvider = ({ children }) => {
   const { sitemapLinks } = useSitemapLinks();
 
   // ── Conversación con IA ───────────────────────────────────────────────────
-  const onUsage = useCallback(({ used, saved }) => {
-    setTokensUsedTotal((prev) => prev + used);
-    setTokensSavedTotal((prev) => prev + saved);
-  }, []);
-
-  const { ask } = useAiConversation({ apiKey, sitemapLinks, onUsage });
+  //
+  // La medición del consumo ya no vive aquí. Antes eran dos `useState` que sumaban
+  // "tokens usados" y "tokens ahorrados"; el segundo era una constante disfrazada y
+  // ambos volvían a cero en cada recarga. Ahora `useAiConversation` reporta latencia,
+  // desenlace y tokens al registro de `domain/observability/sessionMetrics.js`, que
+  // distingue lo que informa la API de lo que estimamos.
+  const { ask, providerName } = useAiConversation({ apiKey, sitemapLinks });
 
   // ── Flujos de trámite ─────────────────────────────────────────────────────
   const flowDeps = useMemo(
@@ -165,13 +163,20 @@ export const ChatProvider = ({ children }) => {
 
   // ── Reinicio al cambiar los módulos activos ───────────────────────────────
   const isFirstRender = useRef(true);
+  const prevPrefsRef = useRef({ isServicesEnabled, isGeminiEnabled });
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
     }
-    setIsTextInputEnabled(true);
-    reset(isServicesEnabled);
+    if (
+      prevPrefsRef.current.isServicesEnabled !== isServicesEnabled ||
+      prevPrefsRef.current.isGeminiEnabled !== isGeminiEnabled
+    ) {
+      prevPrefsRef.current = { isServicesEnabled, isGeminiEnabled };
+      setIsTextInputEnabled(true);
+      reset(isServicesEnabled);
+    }
   }, [isServicesEnabled, isGeminiEnabled, reset]);
 
   /** Muestra el formulario de identidad como una tarjeta dentro del chat. */
@@ -371,29 +376,30 @@ export const ChatProvider = ({ children }) => {
       if (!result.ok) return result;
 
       const firstName = result.identity.name.split(/\s+/)[0];
-      addMessage({
-        sender: "bot",
-        text: `¡Gracias, ${firstName}! Ya tengo tus datos.`
-      });
 
       // Reanudar el trámite que quedó en espera mientras se pedía la identidad.
       if (result.resumedFlow) {
+        addMessage({
+          sender: "bot",
+          text: `¡Gracias, ${firstName}! Ya tengo tus datos.`
+        });
         runFlow(flowRegistry, result.resumedFlow);
+        return result;
       }
 
+      // Sin trámite en espera: la puerta de identidad era lo primero que vio el
+      // ciudadano, así que el saludo llega ahora y ya personalizado.
+      addMessages(buildGreetingMessages({ config, isServicesEnabled, firstName }));
       return result;
     },
-    [identityState, addMessage, flowRegistry]
+    [identityState, addMessage, addMessages, flowRegistry, isServicesEnabled]
   );
 
   /** El ciudadano decide continuar sin identificarse. */
   const skipIdentity = useCallback(() => {
     identityState.skipIdentity();
-    addMessage({
-      sender: "bot",
-      text: "Sin problema. Cuéntame en qué te puedo colaborar."
-    });
-  }, [identityState, addMessage]);
+    addMessages(buildGreetingMessages({ config, isServicesEnabled }));
+  }, [identityState, addMessages, isServicesEnabled]);
 
   // ── Control de apertura ───────────────────────────────────────────────────
 
@@ -430,6 +436,9 @@ export const ChatProvider = ({ children }) => {
     // Un reinicio abre una conversación nueva en el registro, en lugar de mezclar los
     // mensajes con los de la atención anterior.
     recorder.startNewConversation();
+    // Las métricas acompañan a la conversación: si el registro empieza de nuevo, los
+    // contadores del panel también, o estarían describiendo una atención que ya cerró.
+    sessionMetrics.reset();
     gateShownRef.current = false;
     reset(isServicesEnabled);
   }, [clearFollowUpTimer, reset, isServicesEnabled, identityState, recorder]);
@@ -447,9 +456,14 @@ export const ChatProvider = ({ children }) => {
       isTextInputEnabled: isTextInputEnabled && !identityState.isInputBlocked,
       isLoading,
       apiKey,
-      tokensSavedTotal,
-      tokensUsedTotal,
       theme,
+
+      /**
+       * Proveedor que está atendiendo (`gemini-api` o `local-mock`). El panel lo muestra
+       * porque es la diferencia entre "responde la IA" y "responde el catálogo local", y
+       * antes no había forma de saberlo desde la interfaz.
+       */
+      providerName,
 
       // Identidad del ciudadano
       identity: identityState.identity,
@@ -457,6 +471,12 @@ export const ChatProvider = ({ children }) => {
       identitySettings: identityState.settings,
       isIdentitySkippable: identityState.isSkippable,
       identityPrefill: identityState.prefill,
+      /**
+       * Solo si existe la autorización, no el registro completo. El panel necesita saber
+       * que se otorgó; el texto y la marca de tiempo del consentimiento no tienen por qué
+       * circular por más componentes de los necesarios.
+       */
+      hasConsent: Boolean(identityState.consent),
       submitIdentity,
       skipIdentity,
 
@@ -504,8 +524,7 @@ export const ChatProvider = ({ children }) => {
       recorder,
       isLoading,
       apiKey,
-      tokensSavedTotal,
-      tokensUsedTotal,
+      providerName,
       theme,
       openChat,
       closeChat,
