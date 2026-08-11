@@ -483,6 +483,206 @@ section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("14. Identidad del ciudadano: validación y normalización");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { validateIdentity, createIdentity, normalizeName, normalizeEmail, IDENTITY_LIMITS } =
+    await import("../src/domain/identity/citizenIdentity.js");
+
+  check("rechaza nombre vacío", !validateIdentity({ name: "", email: "a@b.co" }).valid);
+  check("rechaza nombre sin letras", !validateIdentity({ name: "123", email: "a@b.co" }).valid);
+  check("rechaza correo sin dominio", !validateIdentity({ name: "Ana Gómez", email: "ana@" }).valid);
+  check("rechaza correo sin TLD", !validateIdentity({ name: "Ana Gómez", email: "ana@local" }).valid);
+  check("acepta datos válidos", validateIdentity({ name: "Ana Gómez", email: "ana@correo.com" }).valid);
+
+  // Acentos y ñ son normales en nombres colombianos: deben pasar.
+  check(
+    "acepta nombres con acentos y ñ",
+    validateIdentity({ name: "José Muñoz Peña", email: "jose@correo.com" }).valid
+  );
+
+  check(
+    "normaliza el correo a minúsculas",
+    normalizeEmail("  ANA.Gomez@Correo.COM  ") === "ana.gomez@correo.com"
+  );
+  check(
+    "colapsa espacios del nombre sin alterar mayúsculas internas",
+    normalizeName("  Ana   de la  Rosa  ") === "Ana de la Rosa"
+  );
+
+  // Un nombre larguísimo no debe reventar el backend.
+  check(
+    "acota la longitud del nombre",
+    normalizeName("x".repeat(500)).length <= IDENTITY_LIMITS.name
+  );
+
+  const identity = createIdentity({ name: "Ana Gómez", email: "ANA@correo.com" });
+  check("createIdentity normaliza y sella la fecha", identity.email === "ana@correo.com" && Boolean(identity.providedAt));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("15. Registro de autorización (Ley 1581: demostrabilidad)");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { createConsentRecord, checksumNotice, covers, isCurrent, PURPOSES, PRIVACY_NOTICE_VERSION } =
+    await import("../src/domain/consent/consentRecord.js");
+
+  const texto = "Autorizo el tratamiento de mis datos conforme a la Ley 1581 de 2012.";
+  const consent = createConsentRecord({ noticeText: texto });
+
+  check("registra la versión del aviso aceptado", consent.noticeVersion === PRIVACY_NOTICE_VERSION);
+  check("registra el momento de la aceptación", Boolean(consent.acceptedAt));
+  check("registra el mecanismo", consent.mechanism === "formulario_identidad");
+  check("registra finalidades específicas", consent.purposes.length >= 3);
+  check("la autorización cubre atender la solicitud", covers(consent, PURPOSES.ATTEND_REQUEST));
+  check("no cubre una finalidad no declarada", !covers(consent, "publicidad"));
+  check("se reconoce como vigente", isCurrent(consent));
+
+  // Si alguien edita el texto del aviso sin subir la versión, la huella lo delata.
+  const consentOtroTexto = createConsentRecord({ noticeText: `${texto} Y además cedo mis datos a terceros.` });
+  check(
+    "la huella detecta un cambio del texto del aviso",
+    consent.noticeChecksum !== consentOtroTexto.noticeChecksum,
+    `${consent.noticeChecksum} vs ${consentOtroTexto.noticeChecksum}`
+  );
+  check("la huella es estable para el mismo texto", checksumNotice(texto) === checksumNotice(texto));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("16. Registro de conversación: idempotencia, orden y aislamiento");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { createMessageRecord, createEnvelope, isRecordable, RECORD_SCHEMA_VERSION } =
+    await import("../src/domain/conversation/conversationRecord.js");
+
+  const msg = { id: "abc-123", sender: "user", text: "cuando vence el predial" };
+  const rec = createMessageRecord({ tenantId: "floridablanca", conversationId: "conv-1", sequence: 7, message: msg });
+
+  check("conserva el id del mensaje como clave de idempotencia", rec.messageId === "abc-123");
+  check("conserva la secuencia para detectar huecos", rec.sequence === 7);
+  check("incluye tenantId en cada registro (aislamiento multi-tenant)", rec.tenantId === "floridablanca");
+  check("incluye versión de esquema para poder migrar", rec.schemaVersion === RECORD_SCHEMA_VERSION);
+  check("incluye marca de tiempo del cliente", Boolean(rec.occurredAt));
+
+  // Los mensajes de bienvenida son texto fijo: solo añadirían ruido a la evidencia.
+  check("excluye los mensajes de bienvenida", !isRecordable({ id: "welcome-1", sender: "bot", text: "Hola" }));
+  check("incluye los mensajes del ciudadano", isRecordable(msg));
+  check("excluye mensajes sin contenido", !isRecordable({ id: "x", sender: "bot" }));
+
+  // Un texto enorme no debe poder inflar el registro sin control.
+  const largo = createMessageRecord({
+    tenantId: "t", conversationId: "c", sequence: 0,
+    message: { id: "big", sender: "user", text: "z".repeat(50000) }
+  });
+  check("acota la longitud del texto persistido", largo.text.length <= 8000, `${largo.text.length} chars`);
+
+  // La cabecera no debe recoger huella del dispositivo.
+  const env = createEnvelope({ tenantId: "t", conversationId: "c", pageUrl: "https://x.gov.co/a" });
+  check(
+    "la cabecera no recoge user-agent ni huella del dispositivo",
+    !("userAgent" in env.context) && !("fingerprint" in env.context),
+    `campos de contexto: ${Object.keys(env.context).join(", ")}`
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("17. Persistencia: por defecto apagada y a prueba de errores de configuración");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { resolvePersistenceMode, createConversationRepository } =
+    await import("../src/adapters/persistence/createConversationRepository.js");
+
+  check("por defecto no se persiste nada", resolvePersistenceMode({}) === "off");
+  check(
+    "modo http sin endpoint degrada a off en lugar de improvisar destino",
+    resolvePersistenceMode({ mode: "http", endpoint: "" }) === "off"
+  );
+  check("modo desconocido degrada a off", resolvePersistenceMode({ mode: "s3-magico" }) === "off");
+  check("modo http con endpoint se respeta", resolvePersistenceMode({ mode: "http", endpoint: "https://x.run.app" }) === "http");
+
+  const off = createConversationRepository({});
+  check("el repositorio nulo cumple el puerto", typeof off.appendMessages === "function" && off.name === "null");
+
+  const { assertImplementsConversationRepository } = await import("../src/ports/ConversationRepositoryPort.js");
+  let rejected = false;
+  try {
+    assertImplementsConversationRepository({ name: "malo" });
+  } catch {
+    rejected = true;
+  }
+  check("un repositorio incompleto falla al construirse, no al guardar", rejected);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("18. Cola durable: ningún registro se pierde si el backend falla");
+// ══════════════════════════════════════════════════════════════════════════════
+// Es la propiedad central de un registro legal, así que se verifica de forma explícita.
+{
+  const { createOutboxConversationRepository } =
+    await import("../src/adapters/persistence/OutboxConversationRepository.js");
+
+  // Delegado controlable: falla mientras `shouldFail` sea true.
+  let shouldFail = true;
+  const delivered = [];
+  const fakeDelegate = {
+    name: "fake",
+    async openConversation(env) {
+      if (shouldFail) throw new Error("backend caído");
+      delivered.push({ kind: "envelope", id: env.conversationId });
+    },
+    async appendMessages(records) {
+      if (shouldFail) throw new Error("backend caído");
+      delivered.push(...records.map((r) => ({ kind: "message", id: r.messageId })));
+    },
+    async flush() {
+      return { pending: 0 };
+    }
+  };
+
+  const repo = createOutboxConversationRepository({ delegate: fakeDelegate });
+
+  await repo.openConversation({ conversationId: "conv-9", tenantId: "t" });
+  await repo.appendMessages([
+    { conversationId: "conv-9", messageId: "m1", sequence: 0, text: "hola" },
+    { conversationId: "conv-9", messageId: "m2", sequence: 1, text: "adios" }
+  ]);
+
+  let status = await repo.flush();
+  check(
+    "con el backend caído nada se entrega y todo queda en cola",
+    delivered.length === 0 && status.pending === 3,
+    `entregados=${delivered.length} pendientes=${status.pending}`
+  );
+
+  // El backend vuelve.
+  shouldFail = false;
+  status = await repo.flush();
+
+  check(
+    "al recuperarse el backend se entrega todo lo acumulado",
+    status.pending === 0 && delivered.length === 3,
+    `entregados=${delivered.length} pendientes=${status.pending}`
+  );
+
+  check(
+    "la cabecera se entrega ANTES que sus mensajes",
+    delivered[0]?.kind === "envelope",
+    `orden: ${delivered.map((d) => d.kind).join(" -> ")}`
+  );
+
+  check(
+    "los mensajes conservan su orden de secuencia",
+    delivered[1]?.id === "m1" && delivered[2]?.id === "m2",
+    `orden: ${delivered.map((d) => d.id).join(" -> ")}`
+  );
+
+  // Un segundo vaciado no debe reenviar lo ya confirmado.
+  const before = delivered.length;
+  await repo.flush();
+  check("un vaciado posterior no duplica lo ya entregado", delivered.length === before);
+}
+
 // ── Resumen ────────────────────────────────────────────────────────────────────
 const fallos = results.filter((r) => !r.passed);
 console.log(`\n\x1b[1m${"═".repeat(74)}\x1b[0m`);

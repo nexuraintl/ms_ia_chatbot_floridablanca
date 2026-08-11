@@ -147,7 +147,24 @@ export const environment = Object.freeze({
    * existe en el plugin del servidor de Vite y no debería llevarse a producción
    * sin autenticación ni límite de tasa.
    */
-  telemetryEnabled: !isProduction
+  telemetryEnabled: !isProduction,
+
+  /**
+   * URL base del backend que almacena el registro de conversaciones.
+   *
+   * Aún sin definir: se sabe que estará alojado en Cloud Run. Mientras esté vacía, la
+   * persistencia queda en el modo que indique la configuración (`off` o `console`) y no
+   * se envía ningún dato personal a ninguna parte.
+   */
+  conversationApiUrl: safeRead(() => import.meta.env.VITE_CONVERSATION_API_URL),
+
+  /**
+   * Modo de persistencia: `off` | `console` | `http`.
+   *
+   * La variable de entorno tiene prioridad sobre `chatbotConfig.json`, para poder
+   * activar el registro por entorno sin modificar la configuración del tenant.
+   */
+  persistenceMode: safeRead(() => import.meta.env.VITE_PERSISTENCE_MODE)
 });
 
 /**

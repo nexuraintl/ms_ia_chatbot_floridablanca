@@ -3,7 +3,8 @@ import { getCatalogos, crearPqrsd, validateAttachments, FILE_CONSTRAINTS } from 
 import { useChat } from "../../context/ChatContext";
 
 export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
-  const { scheduleFollowUp } = useChat();
+  // Si el ciudadano ya se identificó, no volver a pedirle el correo.
+  const { scheduleFollowUp, identityPrefill } = useChat();
   const [loadingCatalogos, setLoadingCatalogos] = useState(true);
   const [catalogos, setCatalogos] = useState({
     tipos: [],
@@ -12,7 +13,7 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
   const [formData, setFormData] = useState({
     asunto: "",
-    email: "",
+    email: identityPrefill?.email || "",
     telefonoCelular: "",
     esAnonimo: true,
     numeroIdentificacion: "",

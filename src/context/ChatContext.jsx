@@ -41,6 +41,8 @@ import { useAiConversation } from "../hooks/useAiConversation.js";
 import { usePredialFlow } from "../hooks/usePredialFlow.js";
 import { usePqrsdFlow } from "../hooks/usePqrsdFlow.js";
 import { useSisbenFlow } from "../hooks/useSisbenFlow.js";
+import { useCitizenIdentity } from "../hooks/useCitizenIdentity.js";
+import { useConversationRecorder } from "../hooks/useConversationRecorder.js";
 
 /** Tope de longitud del mensaje del ciudadano. */
 const MAX_INPUT_LENGTH = 1000;
@@ -92,6 +94,17 @@ export const ChatProvider = ({ children }) => {
   // ── Mensajes ──────────────────────────────────────────────────────────────
   const { messages, setMessages, addMessage, updateMessage, reset, toConversationHistory } =
     useMessageStore({ config, isServicesEnabled });
+
+  // ── Identidad del ciudadano (configurable por tenant) ─────────────────────
+  const identityState = useCitizenIdentity({ config });
+
+  // ── Registro de la conversación (evidencia de la atención) ────────────────
+  const recorder = useConversationRecorder({
+    messages,
+    config,
+    identity: identityState.identity,
+    consent: identityState.consent
+  });
 
   // ── Seguimiento tras inactividad ──────────────────────────────────────────
   const { schedule: scheduleFollowUp, clear: clearFollowUpTimer } = useFollowUp({
@@ -149,10 +162,27 @@ export const ChatProvider = ({ children }) => {
     reset(isServicesEnabled);
   }, [isServicesEnabled, isGeminiEnabled, reset]);
 
+  /** Muestra el formulario de identidad como una tarjeta dentro del chat. */
+  const showIdentityForm = useCallback(
+    (introText) => {
+      addMessage({
+        sender: "bot",
+        text: introText,
+        customComponent: "identity_form"
+      });
+    },
+    [addMessage]
+  );
+
   /**
    * Intenta resolver el mensaje como un trámite local.
+   *
+   * En modo `progressive`, un trámite que notifica resultados (Predial, PQRSD) pide
+   * antes nombre y correo, y queda en espera para reanudarse en cuanto se entreguen.
+   * Así se captura el dato sin poner una barrera a quien solo viene a consultar algo.
+   *
    * @param {string} text
-   * @returns {boolean} true si se lanzó un flujo
+   * @returns {boolean} true si se atendió (se lanzó el flujo o se pidió la identidad)
    */
   const tryRouteToFlow = useCallback(
     (text) => {
@@ -161,6 +191,19 @@ export const ChatProvider = ({ children }) => {
         pendingService: lastServiceMentioned
       });
 
+      if (!flow) return false;
+
+      if (identityState.flowRequiresIdentity(flow)) {
+        identityState.requestIdentityForFlow(flow);
+        showIdentityForm(
+          `Para continuar con ${getFlowLabel(flowRegistry, flow)} necesito tus datos de contacto, ` +
+          "porque el resultado se notifica por correo electrónico:"
+        );
+        setLastServiceMentioned(null);
+        setIsLoading(false);
+        return true;
+      }
+
       const { executed } = runFlow(flowRegistry, flow);
       if (executed) {
         setLastServiceMentioned(null);
@@ -168,7 +211,7 @@ export const ChatProvider = ({ children }) => {
       }
       return executed;
     },
-    [flowRegistry, lastServiceMentioned]
+    [flowRegistry, lastServiceMentioned, identityState, showIdentityForm]
   );
 
   /**
@@ -263,6 +306,17 @@ export const ChatProvider = ({ children }) => {
    */
   const selectQuickReply = useCallback(
     async (option) => {
+      // En modo `gate` la puerta debe bloquear TODO, no solo el teclado. Sin esta
+      // comprobación, un botón de respuesta rápida cuyo trámite no exige identidad
+      // (por ejemplo Sisbén) permitía saltarse la puerta por completo.
+      if (identityState.isInputBlocked) {
+        addMessage({ sender: "user", text: option });
+        showIdentityForm(
+          "Para continuar necesito primero tus datos de contacto:"
+        );
+        return;
+      }
+
       addMessage({ sender: "user", text: option });
       setIsLoading(true);
 
@@ -280,21 +334,93 @@ export const ChatProvider = ({ children }) => {
       // Sin trámite directo: derivar al flujo normal sin duplicar el mensaje.
       await sendMessage(option, true);
     },
-    [addMessage, isServicesEnabled, tryRouteToFlow, sendMessage]
+    [
+      addMessage,
+      isServicesEnabled,
+      tryRouteToFlow,
+      sendMessage,
+      identityState.isInputBlocked,
+      showIdentityForm
+    ]
   );
 
+  /**
+   * Recibe los datos del formulario de identidad.
+   *
+   * Devuelve el resultado de la validación en lugar de lanzar, porque quien llama es un
+   * formulario que necesita pintar los errores campo por campo.
+   *
+   * @param {{name: string, email: string}} input
+   * @returns {{ ok: boolean, errors?: Object }}
+   */
+  const submitIdentity = useCallback(
+    (input) => {
+      const result = identityState.submitIdentity(input);
+      if (!result.ok) return result;
+
+      const firstName = result.identity.name.split(/\s+/)[0];
+      addMessage({
+        sender: "bot",
+        text: `¡Gracias, ${firstName}! Ya tengo tus datos.`
+      });
+
+      // Reanudar el trámite que quedó en espera mientras se pedía la identidad.
+      if (result.resumedFlow) {
+        runFlow(flowRegistry, result.resumedFlow);
+      }
+
+      return result;
+    },
+    [identityState, addMessage, flowRegistry]
+  );
+
+  /** El ciudadano decide continuar sin identificarse. */
+  const skipIdentity = useCallback(() => {
+    identityState.skipIdentity();
+    addMessage({
+      sender: "bot",
+      text: "Sin problema. Cuéntame en qué te puedo colaborar."
+    });
+  }, [identityState, addMessage]);
+
   // ── Control de apertura ───────────────────────────────────────────────────
-  const openChat = useCallback(() => setIsOpen(true), []);
+
+  /**
+   * Muestra el formulario al abrir el chat en los modos de puerta.
+   * Se controla con una referencia para no volver a mostrarlo si el ciudadano cierra
+   * y reabre el widget dentro de la misma conversación.
+   */
+  const gateShownRef = useRef(false);
+
+  const openChat = useCallback(() => {
+    setIsOpen(true);
+    if (identityState.isGateVisible && !gateShownRef.current) {
+      gateShownRef.current = true;
+      showIdentityForm(identityState.settings.subtitle || "Antes de empezar, cuéntame quién eres:");
+    }
+  }, [identityState.isGateVisible, identityState.settings.subtitle, showIdentityForm]);
+
   const closeChat = useCallback(() => setIsOpen(false), []);
-  const toggleChat = useCallback(() => setIsOpen((prev) => !prev), []);
+  const toggleChat = useCallback(() => {
+    if (!isOpen) {
+      openChat();
+    } else {
+      setIsOpen(false);
+    }
+  }, [isOpen, openChat]);
 
   const resetChat = useCallback(() => {
     setIsTextInputEnabled(true);
     setActiveContext(null);
     setLastServiceMentioned(null);
     clearFollowUpTimer();
+    identityState.reset();
+    // Un reinicio abre una conversación nueva en el registro, en lugar de mezclar los
+    // mensajes con los de la atención anterior.
+    recorder.startNewConversation();
+    gateShownRef.current = false;
     reset(isServicesEnabled);
-  }, [clearFollowUpTimer, reset, isServicesEnabled]);
+  }, [clearFollowUpTimer, reset, isServicesEnabled, identityState, recorder]);
 
   /**
    * Valor del contexto. Se memoiza para no re-renderizar a todos los consumidores en
@@ -305,12 +431,28 @@ export const ChatProvider = ({ children }) => {
       // Estado
       isOpen,
       messages,
-      isTextInputEnabled,
+      // En modo `gate` el teclado permanece bloqueado hasta que se entregan los datos.
+      isTextInputEnabled: isTextInputEnabled && !identityState.isInputBlocked,
       isLoading,
       apiKey,
       tokensSavedTotal,
       tokensUsedTotal,
       theme,
+
+      // Identidad del ciudadano
+      identity: identityState.identity,
+      identityMode: identityState.mode,
+      identitySettings: identityState.settings,
+      isIdentitySkippable: identityState.isSkippable,
+      identityPrefill: identityState.prefill,
+      submitIdentity,
+      skipIdentity,
+
+      // Registro de la conversación
+      conversationId: recorder.conversationId,
+      isRecordingEnabled: recorder.isEnabled,
+      recorderName: recorder.repositoryName,
+      pendingRecords: recorder.pendingRecords,
 
       // Apertura
       openChat,
@@ -344,6 +486,10 @@ export const ChatProvider = ({ children }) => {
       isOpen,
       messages,
       isTextInputEnabled,
+      identityState,
+      submitIdentity,
+      skipIdentity,
+      recorder,
       isLoading,
       apiKey,
       tokensSavedTotal,
