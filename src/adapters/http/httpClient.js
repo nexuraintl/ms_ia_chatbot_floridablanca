@@ -13,6 +13,8 @@
  *     que un `catch` descuidado no acabe pintando detalles internos en el chat.
  */
 
+import { buildCorrelationHeaders, createCorrelationId } from "../../domain/observability/correlation.js";
+
 /** Timeout por defecto de las peticiones, en milisegundos. */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -27,13 +29,16 @@ export class HttpError extends Error {
    * @param {number} [opts.status]
    * @param {unknown} [opts.body]
    * @param {string} [opts.publicMessage]
+   * @param {string} [opts.correlationId] Identificador con el que buscar la petición
+   *        en los logs del microservicio destino.
    */
-  constructor(message, { status = 0, body = null, publicMessage = "" } = {}) {
+  constructor(message, { status = 0, body = null, publicMessage = "", correlationId = "" } = {}) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.body = body;
     this.publicMessage = publicMessage;
+    this.correlationId = correlationId;
   }
 }
 
@@ -80,6 +85,10 @@ export const request = async (
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const isPlainObject = body !== undefined && body !== null && !isFormData && typeof body === "object";
 
+  // GOB-GCP-STD-01: toda petición sale correlacionada. Este widget es el ORIGEN de la
+  // traza, así que emite el identificador en lugar de propagarlo.
+  const correlationId = createCorrelationId();
+
   /** @type {RequestInit} */
   const init = {
     method,
@@ -88,6 +97,7 @@ export const request = async (
       Accept: "application/json",
       // No fijar Content-Type con FormData: el navegador debe añadir el boundary.
       ...(isPlainObject ? { "Content-Type": "application/json" } : {}),
+      ...buildCorrelationHeaders(correlationId),
       ...headers
     }
   };
@@ -104,6 +114,7 @@ export const request = async (
     const aborted = error?.name === "AbortError";
     throw new HttpError(aborted ? `Timeout tras ${timeoutMs}ms: ${url}` : `Fallo de red: ${error?.message}`, {
       status: 0,
+      correlationId,
       publicMessage: aborted
         ? "El servicio está tardando más de lo normal. Intenta de nuevo en unos minutos."
         : "No pude conectarme con el servicio. Verifica tu conexión e intenta de nuevo."
@@ -115,9 +126,13 @@ export const request = async (
   const payload = await parseJsonSafe(response);
 
   if (!response.ok) {
+    // El servicio destino puede devolver su propio Correlation-ID; si lo hace, ése es
+    // el que hay que buscar en sus logs y tiene prioridad sobre el que emitimos.
+    const upstreamId = response.headers?.get?.("X-Correlation-ID");
     throw new HttpError(`HTTP ${response.status} en ${url}`, {
       status: response.status,
       body: payload,
+      correlationId: upstreamId || correlationId,
       publicMessage: ""
     });
   }

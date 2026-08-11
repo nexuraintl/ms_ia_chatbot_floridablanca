@@ -124,9 +124,48 @@ const resolveServiceUrl = (value, varName) => {
   return url;
 };
 
+/**
+ * Ambientes válidos según GOB-GCP-STD-01.
+ * QAM (dev/qa) → PREM (master) → PROD (main).
+ */
+const VALID_ENVIRONMENTS = ["dev", "qa", "qam", "prem", "preprod", "prod", "local"];
+
+/**
+ * Normaliza y valida el ambiente declarado.
+ * @param {string} value
+ * @returns {string}
+ */
+const resolveEnvironment = (value) => {
+  const env = String(value || "").toLowerCase().trim();
+  if (!env) return isProduction ? "prod" : "local";
+  if (!VALID_ENVIRONMENTS.includes(env)) {
+    console.warn(
+      `⚠️ [config] ENVIRONMENT="${env}" no es uno de los ambientes del estándar ` +
+      `(${VALID_ENVIRONMENTS.join(", ")}).`
+    );
+  }
+  return env;
+};
+
 /** Configuración resuelta del entorno. */
 export const environment = Object.freeze({
   isProduction,
+
+  // ── Variables base exigidas por GOB-GCP-STD-01 ──────────────────────────────
+  // Se exponen en /version y acompañan a los registros, igual que en los
+  // microservicios FastAPI de la plataforma.
+
+  /** Nombre del servicio. Convención: [módulo]-[microservicio]. */
+  serviceName: safeRead(() => import.meta.env.VITE_SERVICE_NAME) || "ia-chatbot-floridablanca",
+
+  /** Versión desplegada. En Cloud Build se inyecta el SHA del commit. */
+  serviceVersion: safeRead(() => import.meta.env.VITE_SERVICE_VERSION) || "0.0.0-dev",
+
+  /** Ambiente: qam | prem | prod | local. */
+  environmentName: resolveEnvironment(safeRead(() => import.meta.env.VITE_ENVIRONMENT)),
+
+  /** Proyecto GCP, para correlacionar trazas en Cloud Logging. */
+  googleCloudProject: safeRead(() => import.meta.env.VITE_GOOGLE_CLOUD_PROJECT),
 
   /** URL base del microservicio RPA de Impuesto Predial. */
   predialApiUrl: resolveServiceUrl(

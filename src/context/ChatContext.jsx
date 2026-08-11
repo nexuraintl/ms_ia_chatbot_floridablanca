@@ -30,6 +30,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import config from "../config/chatbotConfig.json";
 import { getBackendHosts } from "../config/environment.js";
 import { configureUrlPolicy } from "../domain/security/urlPolicy.js";
+import { configureCorrelation } from "../domain/observability/correlation.js";
 import { resolveIntent, mentionsService } from "../domain/intents/intentResolver.js";
 import { createFlowRegistry, runFlow, getFlowLabel } from "../application/flows/flowRegistry.js";
 
@@ -52,6 +53,9 @@ configureUrlPolicy({
   allowedLinkHosts: config.security?.allowedLinkHosts ?? [],
   knownBackendHosts: getBackendHosts()
 });
+
+// GOB-GCP-STD-01: emisión de cabeceras de correlación hacia los microservicios.
+configureCorrelation({ enabled: config.observability?.sendCorrelationId !== false });
 
 const ChatContext = createContext(null);
 
@@ -150,6 +154,14 @@ export const ChatProvider = ({ children }) => {
       }),
     [startSisben, startPredial, startPqrsdCreate, startPqrsdConsult, startPqrsdMenu]
   );
+
+  /**
+   * Vincular el id de conversación a las cabeceras de correlación, para que todas las
+   * peticiones de una misma atención se puedan agrupar en Cloud Logging.
+   */
+  useEffect(() => {
+    configureCorrelation({ conversationId: recorder.conversationId });
+  }, [recorder.conversationId]);
 
   // ── Reinicio al cambiar los módulos activos ───────────────────────────────
   const isFirstRender = useRef(true);

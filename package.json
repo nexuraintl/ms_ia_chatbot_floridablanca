@@ -8,7 +8,10 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:security": "node security-tests/run-security-tests.mjs"
+    "start": "node server/index.js",
+    "test": "npm run test:security && npm run test:server",
+    "test:security": "node tests/run-security-tests.mjs",
+    "test:server": "node tests/run-server-tests.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

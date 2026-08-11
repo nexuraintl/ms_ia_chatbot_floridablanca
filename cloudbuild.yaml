@@ -1,0 +1,114 @@
+# Pipeline de build y despliegue a Cloud Run (GOB-GCP-STD-01).
+#
+# Cumple los requisitos del estándar:
+#   · Build y push de la imagen a Artifact Registry
+#   · Despliegue a Cloud Run
+#   · Tag de imagen = $COMMIT_SHA
+#   · Variables de sustitución por ambiente
+#   · Timeout configurado
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PENDIENTE DE CONFIRMAR antes del primer despliegue
+#
+#   _PROJECT_ID    proyecto GCP real de cada ambiente (QAM / PREM / PROD)
+#   _REGION        región del Cloud Run
+#   _AR_REPO       repositorio de Artifact Registry
+#   _RUN_SA        service account de ejecución
+#   _RPA_*_URL     URLs reales de los microservicios RPA
+#
+# Los valores de abajo son la forma correcta según la convención de nomenclatura del
+# estándar, no valores verificados contra la infraestructura.
+# ─────────────────────────────────────────────────────────────────────────────
+
+substitutions:
+  # Nomenclatura del estándar: servicio Cloud Run = [ambiente]-[módulo]-[microservicio]
+  _ENVIRONMENT: "qam"
+  _MODULE: "ia"
+  _MICROSERVICE: "chatbot-floridablanca"
+  _SERVICE_NAME: "${_ENVIRONMENT}-${_MODULE}-${_MICROSERVICE}"
+
+  _REGION: "us-central1"
+  _AR_REPO: "cloud-run-source-deploy"
+  _RUN_SA: ""
+
+  # Recursos por ambiente. QAM arranca en 0 para no gastar en reposo; PREM y PROD
+  # mantienen 1 instancia caliente para evitar el arranque en frío al ciudadano.
+  _MIN_INSTANCES: "0"
+  _MAX_INSTANCES: "10"
+  _CPU: "1"
+  _MEMORY: "512Mi"
+  _CONCURRENCY: "80"
+
+  # Configuración del widget incrustada en el bundle. Solo valores públicos.
+  _RPA_PREDIAL_API_URL: ""
+  _RPA_PQRSD_API_URL: ""
+  _CONVERSATION_API_URL: ""
+  _PERSISTENCE_MODE: "off"
+
+  _IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_MICROSERVICE}"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: "1200s"
+
+steps:
+  # ── 1. Build de la imagen ──────────────────────────────────────────────────
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_IMAGE}:${COMMIT_SHA}
+      - --tag=${_IMAGE}:${_ENVIRONMENT}-latest
+      - --build-arg=VITE_SERVICE_NAME=${_MODULE}-${_MICROSERVICE}
+      # La versión desplegada es el SHA del commit: identifica sin ambigüedad qué
+      # código está sirviendo cada instancia, y es lo que devuelve /version.
+      - --build-arg=VITE_SERVICE_VERSION=${SHORT_SHA}
+      - --build-arg=VITE_ENVIRONMENT=${_ENVIRONMENT}
+      - --build-arg=VITE_GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
+      - --build-arg=VITE_RPA_PREDIAL_API_URL=${_RPA_PREDIAL_API_URL}
+      - --build-arg=VITE_RPA_PQRSD_API_URL=${_RPA_PQRSD_API_URL}
+      - --build-arg=VITE_CONVERSATION_API_URL=${_CONVERSATION_API_URL}
+      - --build-arg=VITE_PERSISTENCE_MODE=${_PERSISTENCE_MODE}
+      - .
+
+  # ── 2. Push a Artifact Registry ────────────────────────────────────────────
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, "${_IMAGE}"]
+    waitFor: [build]
+
+  # ── 3. Despliegue a Cloud Run ──────────────────────────────────────────────
+  #
+  # Ingress `internal-and-cloud-load-balancing` según GOB-GCP-STD-01 (nunca `all`).
+  #
+  # ATENCIÓN: con este ingress el servicio NO es alcanzable directamente desde el
+  # navegador de un ciudadano. Como este widget se incrusta en portales públicos,
+  # necesita un balanceador de carga externo por delante. Sin él, el chatbot no cargará
+  # en los portales municipales.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_IMAGE}:${COMMIT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --ingress=internal-and-cloud-load-balancing
+      - --port=8080
+      - --min-instances=${_MIN_INSTANCES}
+      - --max-instances=${_MAX_INSTANCES}
+      - --cpu=${_CPU}
+      - --memory=${_MEMORY}
+      - --concurrency=${_CONCURRENCY}
+      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
+      - --labels=module=${_MODULE},environment=${_ENVIRONMENT},managed-by=cloudbuild
+      - --quiet
+    waitFor: [push]
+
+images:
+  - "${_IMAGE}:${COMMIT_SHA}"
+  - "${_IMAGE}:${_ENVIRONMENT}-latest"

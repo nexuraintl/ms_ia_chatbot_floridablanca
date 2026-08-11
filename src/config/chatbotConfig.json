@@ -8,6 +8,10 @@
     "consentText": "Autorizo a la Alcaldía de Floridablanca a tratar mis datos personales (nombre y correo electrónico) para atender mi consulta, notificarme el resultado y conservar el registro de esta atención, conforme a la Ley 1581 de 2012 y a la Política de Tratamiento de Datos Personales del municipio. Puedo solicitar el acceso, la corrección o la supresión de mis datos en cualquier momento.",
     "policyUrl": ""
   },
+  "observability": {
+    "_comment": "GOB-GCP-STD-01 exige propagar X-Correlation-ID entre servicios. Este widget es el ORIGEN de la traza, así que lo emite. ATENCIÓN: enviar cabeceras personalizadas cross-origin obliga al navegador a hacer preflight OPTIONS; si un microservicio destino no incluye X-Correlation-ID y X-Conversation-ID en su Access-Control-Allow-Headers, la petición falla. Poner en false si algún backend aún no lo admite.",
+    "sendCorrelationId": true
+  },
   "persistence": {
     "_comment": "Dónde se guarda el registro de la conversación. Modos: 'off' (no se guarda nada), 'console' (solo imprime lo que se enviaría, para desarrollo), 'http' (envía al backend definido en VITE_CONVERSATION_API_URL). La variable de entorno VITE_PERSISTENCE_MODE tiene prioridad sobre este valor.",
     "mode": "off",

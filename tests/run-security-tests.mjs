@@ -163,6 +163,8 @@ section("4. Inyección CRLF y caracteres de control");
   check("sanitizeLogString neutraliza CRLF", !/[\r\n]/.test(sanitizeLogString(payload)));
   check(
     "sanitizeText elimina caracteres de control",
+    // Los caracteres de control son justamente lo que se comprueba aqui.
+    // eslint-disable-next-line no-control-regex
     !/[ -]/.test(sanitizeText("a bcd")),
     `-> ${JSON.stringify(sanitizeText("a bcd"))}`
   );
@@ -681,6 +683,56 @@ section("18. Cola durable: ningún registro se pierde si el backend falla");
   const before = delivered.length;
   await repo.flush();
   check("un vaciado posterior no duplica lo ya entregado", delivered.length === before);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("19. Correlación hacia los microservicios (GOB-GCP-STD-01)");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const {
+    createCorrelationId,
+    configureCorrelation,
+    buildCorrelationHeaders,
+    CORRELATION_HEADER,
+    CONVERSATION_HEADER
+  } = await import("../src/domain/observability/correlation.js");
+
+  const id = createCorrelationId();
+  check(
+    "genera identificadores con forma de UUID v4",
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id),
+    `-> ${id}`
+  );
+
+  const ids = new Set(Array.from({ length: 5000 }, () => createCorrelationId()));
+  check("5.000 identificadores sin colisión", ids.size === 5000);
+
+  configureCorrelation({ enabled: true, conversationId: "conv-abc" });
+  const headers = buildCorrelationHeaders();
+  check("emite X-Correlation-ID", Boolean(headers[CORRELATION_HEADER]), `-> ${headers[CORRELATION_HEADER]}`);
+  check("emite X-Conversation-ID para agrupar la atención", headers[CONVERSATION_HEADER] === "conv-abc");
+
+  const a = buildCorrelationHeaders();
+  const b = buildCorrelationHeaders();
+  check(
+    "cada petición lleva su propio Correlation-ID",
+    a[CORRELATION_HEADER] !== b[CORRELATION_HEADER]
+  );
+  check(
+    "el Conversation-ID se mantiene estable entre peticiones",
+    a[CONVERSATION_HEADER] === b[CONVERSATION_HEADER]
+  );
+
+  // Interruptor de emergencia: si un microservicio no admite la cabecera en CORS,
+  // debe poder desactivarse sin tocar código.
+  configureCorrelation({ enabled: false });
+  check(
+    "se puede desactivar por configuración (escape ante CORS restrictivo)",
+    Object.keys(buildCorrelationHeaders()).length === 0
+  );
+
+  // Restaurar para no afectar a otras secciones.
+  configureCorrelation({ enabled: true, conversationId: null });
 }
 
 // ── Resumen ────────────────────────────────────────────────────────────────────
