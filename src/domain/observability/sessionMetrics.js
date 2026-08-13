@@ -90,6 +90,9 @@ const createEmptyState = (startedAt) => ({
   degraded: 0,
   apiReplies: 0,
   localReplies: 0,
+  fallbackReplies: 0,
+  lastFallbackReason: null,
+  fallbackActive: false,
   latencies: [],
   lastLatencyMs: null,
   tokensReported: 0,
@@ -198,11 +201,31 @@ export const createSessionMetrics = ({
      * @param {boolean} [payload.billable]    true si la llamada consumió cuota remota.
      * @param {number} [payload.tokensUsed]
      * @param {boolean} [payload.isEstimate]  true si las cifras son aproximadas.
+     * @param {boolean} [payload.servedByFallback] true si respondió el banco de preguntas
+     *        porque el backend cortó la IA (cuota, límite de tasa o servicio caído).
+     * @param {string} [payload.fallbackReason]
      */
-    [METRIC_EVENTS.AI_REPLY]({ provider, latencyMs, degraded, billable, tokensUsed, isEstimate }) {
+    [METRIC_EVENTS.AI_REPLY]({
+      provider,
+      latencyMs,
+      degraded,
+      billable,
+      tokensUsed,
+      isEstimate,
+      servedByFallback,
+      fallbackReason
+    }) {
       state.replies += 1;
       if (provider) state.provider = String(provider);
       if (degraded) state.degraded += 1;
+
+      // El estado de degradación describe la ÚLTIMA respuesta, porque es lo que el panel
+      // necesita contestar: ¿quién está respondiendo ahora mismo?
+      state.fallbackActive = servedByFallback === true;
+      if (servedByFallback) {
+        state.fallbackReplies += 1;
+        if (fallbackReason) state.lastFallbackReason = String(fallbackReason);
+      }
 
       if (Number.isFinite(latencyMs) && latencyMs >= 0) {
         const ms = Math.round(latencyMs);
@@ -296,6 +319,9 @@ export const createSessionMetrics = ({
           degraded: state.degraded,
           apiReplies: state.apiReplies,
           localReplies: state.localReplies,
+          fallbackReplies: state.fallbackReplies,
+          lastFallbackReason: state.lastFallbackReason,
+          fallbackActive: state.fallbackActive,
           lastLatencyMs: state.lastLatencyMs,
           p50LatencyMs: percentile(sorted, 50),
           p95LatencyMs: percentile(sorted, 95),

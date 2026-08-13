@@ -472,16 +472,33 @@ section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
     "verificado compilando con VITE_GEMINI_API_KEY definida: ausente en dist/"
   );
 
+  // El arreglo definitivo ya está construido: `server/aiProxy.js` guarda la clave del lado
+  // del servidor. Estas dos comprobaciones verifican que existe y que gana.
+  const proxyProvider = await import("../src/adapters/ai/GeminiProxyProvider.js");
+  check(
+    "existe un adaptador que habla con un proxy de backend en lugar de con Google",
+    typeof proxyProvider.createGeminiProxyProvider === "function",
+    "server/aiProxy.js guarda la clave en el servidor: no llega al navegador"
+  );
+  check(
+    "configurar el proxy desactiva la ruta que expone la clave",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "https://chatbot.example.gov.co" }) !==
+      "gemini-api",
+    "ni una clave olvidada en el localStorage del operador reactiva la llamada directa"
+  );
+
   check(
     "la clave no es visible para quien usa el navegador",
     false,
-    "ABIERTO POR DISEÑO. Al llamar a Gemini directamente desde el cliente, la\n" +
-    "         credencial es legible en las herramientas de desarrollo. No hay arreglo\n" +
-    "         posible en el frontend.\n" +
-    "         Mitigar fuera del código: restringir por referente HTTP y por API en\n" +
-    "         Google Cloud, fijar cuota diaria baja, y rotar si algún build la publicó.\n" +
-    "         Solución definitiva: un proxy de backend. El puerto AiProviderPort existe\n" +
-    "         para que eso sea añadir un adaptador, sin tocar el resto."
+    "ABIERTO SOLO EN MODO DESARROLLO. Sin VITE_AI_PROXY_URL definida, el widget\n" +
+    "         llama a Gemini directamente con la clave que el operador escribe en el panel,\n" +
+    "         y esa credencial es legible en las herramientas de desarrollo. Es el modo\n" +
+    "         pensado para desarrollo local y no debería desplegarse.\n" +
+    "         CIERRE: definir VITE_AI_PROXY_URL y el secreto gemini-api-key en Secret\n" +
+    "         Manager. Con eso la clave nunca entra en el navegador y esta comprobación\n" +
+    "         deja de aplicar. Ver SECURITY.md, H-01.\n" +
+    "         Si se opera en modo desarrollo: restringir la clave por referente HTTP y por\n" +
+    "         API en Google Cloud, fijar cuota diaria baja, y rotar si algún build la publicó."
   );
 }
 
@@ -898,6 +915,255 @@ section("20. Métricas del panel: cifras verificables, no inventadas");
     formatDuration(-1) === "—" && formatDuration(NaN) === "—" && formatDuration(95000) === "1 min",
     `95s -> ${formatDuration(95000)}`
   );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("21. Cuota de IA: degradación silenciosa al banco de preguntas");
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// El requisito es explícito: cuando se agota la cuota NO se le dice al ciudadano que no
+// tiene créditos. Se apaga Gemini y el bot sigue respondiendo con el banco de preguntas.
+// Estas pruebas fijan ese comportamiento, porque es exactamente el tipo de detalle que un
+// refactor posterior rompe sin que nadie lo note: basta con dejar escapar el texto de
+// degradación.
+{
+  const { createQuotaAwareProvider } = await import("../src/adapters/ai/QuotaAwareProvider.js");
+  const { createLocalMockProvider } = await import("../src/adapters/ai/LocalMockProvider.js");
+  const { degradedReply } = await import("../src/ports/AiProviderPort.js");
+  const { PROXY_REASONS } = await import("../src/adapters/ai/GeminiProxyProvider.js");
+
+  // ── Política de selección de proveedor ──────────────────────────────────────
+  check(
+    "con proxy configurado se elige el proxy aunque haya clave local",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "https://chatbot.example.gov.co" }) ===
+      "ai-proxy",
+    "una clave olvidada en el navegador del operador no debe saltarse el control de gasto"
+  );
+  check(
+    "sin proxy pero con clave se llama a Gemini directo (modo desarrollo)",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "" }) === "gemini-api"
+  );
+  check(
+    "sin proxy ni clave responde el catálogo local",
+    selectProviderId({ apiKey: "", proxyUrl: "" }) === "local-mock"
+  );
+
+  // ── Andamiaje ───────────────────────────────────────────────────────────────
+  /** Almacenamiento falso: en Node no hay sessionStorage. */
+  const fakeStorage = () => {
+    const map = new Map();
+    return {
+      get: (k) => (map.has(k) ? map.get(k) : null),
+      set: (k, v) => map.set(k, String(v)),
+      remove: (k) => map.delete(k)
+    };
+  };
+
+  /** Proveedor primario que declina con el motivo dado. */
+  const decliningPrimary = (reason, retryAfterSeconds) => {
+    let calls = 0;
+    return {
+      name: "ai-proxy",
+      get calls() {
+        return calls;
+      },
+      async generateReply() {
+        calls += 1;
+        return { ...degradedReply(), fallback: { reason, retryAfterSeconds } };
+      }
+    };
+  };
+
+  const localBank = createLocalMockProvider({ faqCatalog, latencyMs: 0 });
+
+  /** Consulta que SÍ coincide con una palabra clave del banco ("pagar predial"). */
+  const askPredial = {
+    history: [{ sender: "user", text: "quiero pagar predial" }],
+    pageContext: null,
+    activeContext: null
+  };
+
+  /** Consulta fuera de las 6 intenciones del banco. */
+  const askOffCatalog = {
+    history: [{ sender: "user", text: "a que hora abre la biblioteca municipal" }],
+    pageContext: null,
+    activeContext: null
+  };
+
+  // ── El ciudadano recibe una respuesta útil, no un aviso ─────────────────────
+  {
+    let clock = 1_000_000;
+    const primary = decliningPrimary(PROXY_REASONS.QUOTA_EXHAUSTED, 3600);
+    const provider = createQuotaAwareProvider({
+      primary,
+      fallback: localBank,
+      now: () => clock,
+      storage: fakeStorage()
+    });
+
+    const reply = await provider.generateReply(askPredial);
+    const degradedText = degradedReply().text;
+
+    check(
+      "al agotarse la cuota responde el banco de preguntas, no un error",
+      reply.text !== degradedText && reply.text.length > 40,
+      `respondió ${reply.text.length} caracteres del catálogo`
+    );
+    // Comprobación estricta: tiene que venir del catálogo de predial y NO ser la frase
+    // genérica de "puedo ayudarte con…". La versión laxa de esta prueba pasaba con la
+    // respuesta genérica, porque esa frase también menciona "Impuesto Predial".
+    const genericReply = (await localBank.generateReply(askOffCatalog)).text;
+    check(
+      "la respuesta sale del catálogo del tema consultado, no de la frase genérica",
+      reply.text !== genericReply && /inmueble|factura|predio|catastr|c[oó]digo predial/i.test(reply.text),
+      reply.text.slice(0, 90) + "…"
+    );
+    check(
+      "una consulta fuera de las 6 intenciones del banco cae en la respuesta genérica",
+      genericReply.startsWith("Entendido"),
+      "límite conocido: la calidad de la degradación depende de ampliar NewFaqConfig.json"
+    );
+    check(
+      "NUNCA se menciona cuota, créditos ni límite al ciudadano",
+      !/cuota|cr[eé]dito|l[ií]mite|agotad|excedid|429|intenta m[aá]s tarde/i.test(reply.text),
+      "es el requisito central: el ciudadano no debe enterarse"
+    );
+    check(
+      "el texto de degradación del proveedor no se filtra",
+      !reply.text.includes("congestión"),
+      "degradedReply() es para fallos, no para un límite administrativo"
+    );
+    check(
+      "la respuesta no se cuenta como consumo de API",
+      reply.billable === false,
+      "la atendió el catálogo local: no gastó cuota remota"
+    );
+    check(
+      "queda marcada como atendida por el banco, para el panel del operador",
+      reply.servedByFallback === true && reply.fallbackReason === PROXY_REASONS.QUOTA_EXHAUSTED
+    );
+
+    // ── La IA queda apagada: no se vuelve a molestar al backend ───────────────
+    await provider.generateReply(askPredial);
+    await provider.generateReply(askPredial);
+    check(
+      "una vez cortada, no se gastan más peticiones contra el backend",
+      primary.calls === 1,
+      `llamadas al proxy=${primary.calls} tras 3 consultas`
+    );
+    check(
+      "el panel puede saber que está suspendida y por cuánto",
+      provider.isSuspended === true && provider.suspendedForSeconds === 3600,
+      `suspendida ${provider.suspendedForSeconds}s`
+    );
+    check(
+      "el nombre del proveedor refleja quién responde ahora",
+      provider.name.includes("cuota"),
+      `name=${provider.name}`
+    );
+
+    // Pasada la ventana que dictó el servidor, se vuelve a intentar.
+    clock += 3601 * 1000;
+    check("expirada la suspensión, se reintenta la IA", provider.isSuspended === false);
+    await provider.generateReply(askPredial);
+    check("y efectivamente se vuelve a llamar al backend", primary.calls === 2);
+  }
+
+  // ── El límite de ráfaga no debe apagar la IA todo el día ────────────────────
+  {
+    let clock = 2_000_000;
+    const primary = decliningPrimary(PROXY_REASONS.RATE_LIMITED, 60);
+    const provider = createQuotaAwareProvider({
+      primary,
+      fallback: localBank,
+      now: () => clock,
+      storage: fakeStorage()
+    });
+
+    await provider.generateReply(askPredial);
+    check(
+      "un límite de ráfaga suspende solo lo que el servidor pidió",
+      provider.suspendedForSeconds === 60,
+      `${provider.suspendedForSeconds}s, no el resto del día`
+    );
+    clock += 61 * 1000;
+    check("pasado el minuto, la IA vuelve", provider.isSuspended === false);
+  }
+
+  // ── Un corte de red del ciudadano no debe apagar nada ──────────────────────
+  {
+    const primary = decliningPrimary("transport", 0);
+    const provider = createQuotaAwareProvider({
+      primary,
+      fallback: localBank,
+      now: () => 3_000_000,
+      storage: fakeStorage()
+    });
+
+    const reply = await provider.generateReply(askPredial);
+    check(
+      "un fallo de transporte se atiende con el banco pero NO suspende la IA",
+      reply.servedByFallback === true && provider.isSuspended === false,
+      "puede ser un corte momentáneo de la red del ciudadano"
+    );
+  }
+
+  // ── La suspensión sobrevive a una recarga de la página ─────────────────────
+  {
+    const storage = fakeStorage();
+    const clock = 4_000_000;
+    const first = createQuotaAwareProvider({
+      primary: decliningPrimary(PROXY_REASONS.QUOTA_EXHAUSTED, 3600),
+      fallback: localBank,
+      now: () => clock,
+      storage
+    });
+    await first.generateReply(askPredial);
+
+    // Recargar la página construye un proveedor nuevo sobre el mismo sessionStorage.
+    const afterReload = createQuotaAwareProvider({
+      primary: decliningPrimary(PROXY_REASONS.QUOTA_EXHAUSTED, 3600),
+      fallback: localBank,
+      now: () => clock + 1000,
+      storage
+    });
+    check(
+      "recargar no reintenta una llamada que ya se sabe que va a fallar",
+      afterReload.isSuspended === true,
+      "la suspensión se guarda en sessionStorage"
+    );
+
+    afterReload.resume();
+    check("el operador puede reanudar la IA a mano", afterReload.isSuspended === false);
+  }
+
+  // ── El proveedor real no se rompe con una respuesta normal ─────────────────
+  {
+    const healthy = {
+      name: "ai-proxy",
+      async generateReply() {
+        return {
+          text: "Respuesta del modelo.",
+          contextIntent: null,
+          tokensUsed: 150,
+          savedTokens: 0,
+          isEstimate: false,
+          billable: true
+        };
+      }
+    };
+    const provider = createQuotaAwareProvider({
+      primary: healthy,
+      fallback: localBank,
+      now: () => 5_000_000,
+      storage: fakeStorage()
+    });
+    const reply = await provider.generateReply(askPredial);
+    check(
+      "una respuesta normal pasa intacta y sigue contando como consumo",
+      reply.text === "Respuesta del modelo." && reply.billable === true && !reply.servedByFallback
+    );
+  }
 }
 
 // ── Resumen ────────────────────────────────────────────────────────────────────

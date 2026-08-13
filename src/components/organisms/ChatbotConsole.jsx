@@ -293,8 +293,27 @@ export const ChatbotConsole = () => {
 
   // ── Lecturas de estado para las tarjetas ──────────────────────────────────
 
-  const isRemoteProvider = providerName === "gemini-api";
-  const engineTone = !isGeminiEnabled ? "warn" : isRemoteProvider ? "ok" : "info";
+  /**
+   * Quién responde. Son tres situaciones distintas y el operador necesita distinguirlas:
+   * la IA a través del backend, la IA directa desde el navegador (solo desarrollo), o el
+   * catálogo local. Y un cuarto caso que antes era invisible: la IA cortada por cuota,
+   * que para el ciudadano se ve exactamente igual que el catálogo local porque no se le
+   * muestra ningún aviso.
+   */
+  const isProxyProvider = providerName === "ai-proxy";
+  const isDirectProvider = providerName === "gemini-api";
+  const isRemoteProvider = isProxyProvider || isDirectProvider;
+  const isQuotaDegraded = metrics.ai.fallbackActive === true;
+
+  const engineTone = !isGeminiEnabled || isQuotaDegraded ? "warn" : isRemoteProvider ? "ok" : "info";
+
+  /** Motivos del proxy, traducidos para el operador. */
+  const FALLBACK_LABELS = {
+    quota_exhausted: "cuota diaria agotada en el backend",
+    rate_limited: "demasiadas consultas por minuto desde esta red",
+    ai_unavailable: "el backend no puede hablar con Gemini",
+    transport: "no se pudo alcanzar el backend"
+  };
 
   const recordingTone = !isRecordingEnabled ? "warn" : pendingRecords > 0 ? "error" : "ok";
 
@@ -655,18 +674,24 @@ export const ChatbotConsole = () => {
                  con la IA real y se reportan como respuestas del modelo. */}
           <StatusCard
             label="MOTOR DE RESPUESTA"
-            value={isRemoteProvider ? "IA Gemini" : "Catálogo local"}
+            value={isQuotaDegraded ? "Catálogo local" : isRemoteProvider ? "IA Gemini" : "Catálogo local"}
             detail={
-              isRemoteProvider
-                ? "Consultas resueltas por el modelo gemini-2.5-flash-lite."
-                : "Sin clave de API: responde el catálogo de preguntas frecuentes del repositorio."
+              isQuotaDegraded
+                ? "La IA está cortada para esta sesión. El ciudadano no ve ningún aviso: sigue recibiendo respuestas del banco de preguntas."
+                : isProxyProvider
+                  ? "Consultas resueltas por el modelo a través del proxy del backend, que guarda la clave y controla el gasto."
+                  : isDirectProvider
+                    ? "Llamada directa a Gemini desde el navegador, con la clave del operador. Modo de desarrollo."
+                    : "Sin backend ni clave: responde el catálogo de preguntas frecuentes del repositorio."
             }
             note={
-              !isGeminiEnabled
-                ? "Respuesta libre deshabilitada"
-                : apiKey && !isValidGeminiApiKey(apiKey)
-                  ? "La clave guardada no tiene el formato de Google AI Studio"
-                  : null
+              isQuotaDegraded
+                ? `Motivo: ${FALLBACK_LABELS[metrics.ai.lastFallbackReason] || metrics.ai.lastFallbackReason || "límite del backend"}`
+                : !isGeminiEnabled
+                  ? "Respuesta libre deshabilitada"
+                  : isDirectProvider && apiKey && !isValidGeminiApiKey(apiKey)
+                    ? "La clave guardada no tiene el formato de Google AI Studio"
+                    : null
             }
             tone={engineTone}
             icon={Cpu}
@@ -802,6 +827,15 @@ export const ChatbotConsole = () => {
                 value={metrics.tokens.estimated.toLocaleString()}
                 tone="warn"
                 footnote={`Aproximación por longitud de texto en ${pluralize(metrics.tokens.estimatedCalls, "llamada", "llamadas")} sin usageMetadata. No usar para facturación.`}
+              />
+            )}
+
+            {metrics.ai.fallbackReplies > 0 && (
+              <DetailRow
+                label="Respuestas atendidas por el banco de preguntas"
+                value={metrics.ai.fallbackReplies}
+                tone="warn"
+                footnote="Consultas que la IA no atendió por un límite del backend y resolvió el catálogo local. Para el ciudadano fueron respuestas normales."
               />
             )}
 

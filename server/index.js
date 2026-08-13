@@ -24,6 +24,8 @@ import { fileURLToPath } from "node:url";
 
 import { withCorrelation } from "./correlation.js";
 import { setupLogging, info, warning, error } from "./logging.js";
+import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
+import { describeIpResolution } from "./clientIdentity.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +46,13 @@ setupLogging({
   serviceVersion: SERVICE_VERSION,
   environment: ENVIRONMENT
 });
+
+/**
+ * Proxy de IA con control de gasto. Sus limitadores viven en el proceso, así que se crea
+ * una sola vez: el estado del contador ES el control de gasto de esta instancia.
+ */
+const aiProxyConfig = createProxyConfig();
+const aiProxy = createAiProxyHandler({ config: aiProxyConfig });
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -172,6 +181,25 @@ const handleRequest = (req, res) => {
     });
   };
 
+  // ── Proxy de IA ───────────────────────────────────────────────────────────
+  // Se atiende antes de la comprobación de método, porque es la ÚNICA ruta que admite
+  // POST y OPTIONS. El resto del servidor sigue sirviendo solo lectura.
+  if (urlPath === AI_CHAT_PATH) {
+    aiProxy
+      .handle(req, res)
+      .then(complete)
+      .catch((err) => {
+        // Una excepción no prevista aquí no debe dejar la petición colgada ni revelar la
+        // traza al cliente.
+        error("ai_proxy_unhandled", { error: err?.message });
+        if (!res.headersSent) {
+          sendJson(res, 503, { error: "AI unavailable", reason: "ai_unavailable" });
+        }
+        complete(503);
+      });
+    return;
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     sendJson(res, 405, { error: "Method Not Allowed" });
     complete(405);
@@ -243,6 +271,29 @@ server.listen(PORT, "0.0.0.0", () => {
     static_root: STATIC_ROOT,
     node_version: process.version
   });
+
+  // Se deja constancia de la configuración del control de gasto en el arranque. Una
+  // configuración errónea de `TRUSTED_PROXY_HOPS` o de `ALLOWED_ORIGINS` no produce
+  // ningún error visible —el limitador simplemente deja de limitar— así que este log es
+  // la forma más barata de detectarlo.
+  info("ai_proxy_configured", {
+    path: AI_CHAT_PATH,
+    ai_enabled: aiProxyConfig.apiKey !== "",
+    model: aiProxyConfig.model,
+    rate_limit_per_minute: aiProxyConfig.ratePerMinute,
+    daily_quota_per_session: aiProxyConfig.dailyQuotaPerSession,
+    daily_token_ceiling: aiProxyConfig.dailyTokenCeiling,
+    allowed_origins: aiProxyConfig.allowedOrigins.length,
+    ...describeIpResolution(aiProxyConfig.trustedProxyHops)
+  });
+
+  if (aiProxyConfig.apiKey === "") {
+    warning("ai_key_missing", {
+      note:
+        "GEMINI_API_KEY no está definida: el proxy responderá ai_unavailable y el widget " +
+        "atenderá con el banco de preguntas frecuentes."
+    });
+  }
 });
 
-export { server, handleRequest };
+export { server, handleRequest, aiProxy };

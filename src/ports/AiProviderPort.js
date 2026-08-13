@@ -53,6 +53,15 @@
  *           consumidor no debe deducirlo del nombre del adaptador. Sin este campo, la
  *           consola contaba como "tokens consumidos" las respuestas del catálogo local,
  *           que no gastan nada.
+ * @property {{reason: string, retryAfterSeconds: number}} [fallback]
+ *           Presente cuando el proveedor declina atender y pide que otro lo haga: cuota
+ *           agotada, límite de tasa, servicio caído. `retryAfterSeconds` lo dicta el
+ *           servidor, no el cliente. Lo consume `QuotaAwareProvider`, que atiende la
+ *           consulta con el banco de preguntas; ningún consumidor debería convertir este
+ *           campo en texto para el ciudadano.
+ * @property {boolean} [servedByFallback]  true si respondió el catálogo local en lugar del
+ *           proveedor de IA. Es información para el panel del operador.
+ * @property {string} [fallbackReason]     Motivo de esa degradación, para el panel.
  */
 
 /**

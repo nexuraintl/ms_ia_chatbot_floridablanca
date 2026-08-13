@@ -181,6 +181,20 @@ export const environment = Object.freeze({
   ),
 
   /**
+   * Origen del proxy de IA del backend.
+   *
+   * Es una URL pública, así que puede ir en el bundle sin problema —a diferencia de la
+   * clave, que es justamente lo que este proxy existe para no publicar—. Vacío significa
+   * "mismo origen que el widget", que es el caso cuando lo sirve el propio Cloud Run.
+   *
+   * Definirla cambia el proveedor de IA: con proxy, la clave de Gemini vive en el servidor
+   * y el gasto se controla ahí (límite por IP, cuota por sesión y techo diario de tokens).
+   * Sin ella, el widget vuelve al modo de desarrollo, en el que la clave la escribe el
+   * operador en la consola y queda visible en su navegador.
+   */
+  aiProxyUrl: normalizeBaseUrl(safeRead(() => import.meta.env.VITE_AI_PROXY_URL)),
+
+  /**
    * Activa el registro de consumo de tokens en el servidor de desarrollo.
    * En producción está apagado por defecto: el endpoint `/api/log-tokens` solo
    * existe en el plugin del servidor de Vite y no debería llevarse a producción

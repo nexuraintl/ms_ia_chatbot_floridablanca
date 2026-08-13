@@ -15,9 +15,22 @@
 #   _AR_REPO       repositorio de Artifact Registry
 #   _RUN_SA        service account de ejecución
 #   _RPA_*_URL     URLs reales de los microservicios RPA
+#   _ALLOWED_ORIGINS  dominios de los portales que embeben el widget
 #
 # Los valores de abajo son la forma correcta según la convención de nomenclatura del
 # estándar, no valores verificados contra la infraestructura.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# LA CLAVE DE GEMINI VA POR SECRET MANAGER, NO POR --set-env-vars
+#
+# El secreto `gemini-api-key` debe existir en Secret Manager y la service account de
+# ejecución necesita `roles/secretmanager.secretAccessor` sobre él. Se monta como
+# variable de entorno de RUNTIME (`--set-secrets`), que es lo que la distingue de una
+# variable `VITE_*`: estas últimas se sustituyen dentro del bundle al compilar y quedan
+# publicadas en un archivo estático. Ver SECURITY.md, hallazgo H-01.
+#
+# Sin el secreto el despliegue sigue funcionando: el proxy responde `ai_unavailable` y el
+# widget atiende con el banco de preguntas frecuentes.
 # ─────────────────────────────────────────────────────────────────────────────
 
 substitutions:
@@ -45,6 +58,36 @@ substitutions:
   _CONVERSATION_API_URL: ""
   _PERSISTENCE_MODE: "off"
 
+  # Origen del proxy de IA. Vacío = mismo origen que sirve el widget, que es el caso
+  # normal: el proxy vive en este mismo servicio.
+  _AI_PROXY_URL: ""
+
+  # ── Control de gasto de Gemini ─────────────────────────────────────────────
+  # Nombre del secreto en Secret Manager que guarda la clave.
+  _GEMINI_SECRET: "gemini-api-key"
+  _GEMINI_MODEL: "gemini-2.5-flash-lite"
+
+  # Ráfagas por IP. Frena bots y bucles de reintento.
+  _AI_RATE_LIMIT_PER_MINUTE: "10"
+
+  # Ración diaria de respuestas de IA por sesión. Al agotarse, el ciudadano sigue siendo
+  # atendido con el banco de preguntas y no ve ningún aviso.
+  _AI_DAILY_QUOTA_PER_SESSION: "30"
+
+  # Techo diario de tokens reales de todo el servicio: el cortacircuitos de gasto.
+  _AI_DAILY_TOKEN_CEILING: "500000"
+
+  # Portales autorizados a llamar al proxy, separados por comas. Un valor que empieza por
+  # punto es comodín de sufijo (`.floridablanca.gov.co`). El mismo origen que sirve el
+  # widget se permite siempre. NUNCA se responde con `*`: quién puede invocar el endpoint
+  # es parte del control de gasto.
+  _ALLOWED_ORIGINS: ".floridablanca.gov.co"
+
+  # Saltos de confianza en X-Forwarded-For. 2 = balanceador externo de GCP por delante de
+  # Cloud Run (el despliegue previsto). 1 = Cloud Run expuesto directo en *.run.app.
+  # Un valor incorrecto no da error: el límite por IP simplemente deja de funcionar.
+  _TRUSTED_PROXY_HOPS: "2"
+
   _IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_MICROSERVICE}"
 
 options:
@@ -71,6 +114,7 @@ steps:
       - --build-arg=VITE_RPA_PQRSD_API_URL=${_RPA_PQRSD_API_URL}
       - --build-arg=VITE_CONVERSATION_API_URL=${_CONVERSATION_API_URL}
       - --build-arg=VITE_PERSISTENCE_MODE=${_PERSISTENCE_MODE}
+      - --build-arg=VITE_AI_PROXY_URL=${_AI_PROXY_URL}
       - .
 
   # ── 2. Push a Artifact Registry ────────────────────────────────────────────
@@ -104,7 +148,10 @@ steps:
       - --cpu=${_CPU}
       - --memory=${_MEMORY}
       - --concurrency=${_CONCURRENCY}
-      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
+      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS}
+      # La clave nunca como variable de compilación ni en --set-env-vars: se monta desde
+      # Secret Manager en tiempo de ejecución.
+      - --set-secrets=GEMINI_API_KEY=${_GEMINI_SECRET}:latest
       - --labels=module=${_MODULE},environment=${_ENVIRONMENT},managed-by=cloudbuild
       - --quiet
     waitFor: [push]

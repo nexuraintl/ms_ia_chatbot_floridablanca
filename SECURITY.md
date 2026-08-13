@@ -8,8 +8,10 @@ Las pruebas son ejecutables y reproducibles:
 npm run test:security
 ```
 
-Estado actual: **70 de 71 verificaciones en verde**. El único punto pendiente es
-arquitectónico y está documentado abajo (H-01).
+Estado actual: **159 de 160 verificaciones en verde**. La única que sigue en rojo
+comprueba que la clave no sea visible en el navegador, y solo lo es en el **modo de
+desarrollo** —sin proxy configurado—; con el proxy activo la clave no llega al cliente.
+Ver H-01.
 
 ---
 
@@ -17,7 +19,7 @@ arquitectónico y está documentado abajo (H-01).
 
 | ID | Severidad | Hallazgo | Estado |
 |----|-----------|----------|--------|
-| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Mitigado; residual abierto por diseño |
+| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Cerrado al configurar el proxy del backend |
 | H-02 | **Alto** | Inyección de prompt vía DOM de la página anfitriona | Corregido (defensa en 5 capas) |
 | H-03 | **Alto** | Sin lista blanca de destinos: phishing con apariencia oficial | Corregido |
 | H-04 | **Alto** | Datos personales persistidos en claro en `token_usage.log` | Corregido |
@@ -55,20 +57,43 @@ Vite solo puede sustituir accesos **estáticos**; ante un acceso con clave compu
 incrusta el objeto de entorno **entero**, incluidas todas las variables. Al añadir
 variables nuevas, leerlas siempre como `import.meta.env.VITE_NOMBRE_LITERAL`.
 
-**Residual abierto, por diseño.** Mientras el navegador llame a Gemini directamente, la
-clave es legible para quien use ese equipo. No tiene solución en el frontend: si el
-cliente puede autenticarse, el usuario puede leer la credencial.
+**Cierre definitivo: el proxy del backend, ya implementado.**
 
-Acciones necesarias **fuera del código**:
+`server/aiProxy.js` expone `POST /api/ai/chat` en el mismo servicio de Cloud Run que sirve
+el widget. La clave se monta desde Secret Manager como variable de **runtime**
+(`GEMINI_API_KEY`), nunca como `VITE_*`, así que no entra en el bundle porque no existe
+durante el build.
+
+Para activarlo basta definir `VITE_AI_PROXY_URL` —vacío significa "mismo origen"— y el
+secreto en el despliegue: `selectProviderId` elige entonces el adaptador `ai-proxy` y la
+clave no vuelve a pasar por el navegador. El proxy tiene prioridad sobre cualquier clave
+local, de modo que una credencial olvidada en el `localStorage` de un operador no puede
+saltarse el control.
+
+El proxy añade tres controles de gasto que **no eran posibles desde el cliente**, porque
+requieren ver la IP y no fiarse de lo que diga el navegador:
+
+| Control | Variable | Frena |
+|---|---|---|
+| Coste acotado por petición | (fijo en el código) | Un cliente modificado pidiendo respuestas caras |
+| Ráfagas por IP | `AI_RATE_LIMIT_PER_MINUTE` | Bots y bucles de reintento |
+| Cuota diaria por sesión | `AI_DAILY_QUOTA_PER_SESSION` | Consumo desproporcionado de un usuario |
+| Techo diario de tokens | `AI_DAILY_TOKEN_CEILING` | Gasto total del servicio |
+
+Detalle que decide si el límite por IP es real: detrás del balanceador de GCP la IP fiable
+de `X-Forwarded-For` es la **penúltima** (`TRUSTED_PROXY_HOPS=2`). Tomar la primera —el
+error habitual— deja el limitador en un adorno, porque el cliente escribe esa parte de la
+cabecera. Ver `server/clientIdentity.js`.
+
+**Modo de desarrollo (residual conocido).** Sin `VITE_AI_PROXY_URL`, el widget sigue
+llamando a Gemini directamente con la clave que el operador escribe en el panel, y esa
+clave es legible para quien use ese equipo. Es el modo pensado para desarrollo local y no
+debería desplegarse. Si se usa así, siguen aplicando las acciones fuera del código:
 
 - Restringir la clave por referente HTTP a los dominios de la Alcaldía.
 - Restringirla a la API *Generative Language* únicamente.
 - Fijar una cuota diaria baja, para acotar el gasto si se filtra.
 - **Rotarla** si alguna vez se desplegó un build que la contenía.
-
-Solución definitiva: un proxy en el backend. La arquitectura ya está preparada —
-ver `src/ports/AiProviderPort.js`: basta registrar un adaptador nuevo en
-`createAiProvider`, sin tocar el resto de la aplicación.
 
 ---
 
@@ -201,16 +226,29 @@ sustituye por un objeto estructurado, lo que elimina toda esa clase de fallo.
 
 ## Qué queda pendiente
 
-1. **Rotar la clave de Gemini** si algún build publicado la contenía, y restringirla en
+1. **Crear el secreto `gemini-api-key` en Secret Manager** y dar
+   `roles/secretmanager.secretAccessor` a la service account de ejecución, para activar el
+   proxy (H-01). Mientras no exista, el proxy responde `ai_unavailable` y el widget atiende
+   con el banco de preguntas frecuentes: no se cae, pero tampoco hay IA.
+2. **Rotar la clave de Gemini** si algún build publicado la contenía, y restringirla en
    Google Cloud Console (H-01).
-2. **Rellenar `security.allowedLinkHosts`** en `src/config/chatbotConfig.json` con los
+3. **Confirmar `_ALLOWED_ORIGINS` y `_TRUSTED_PROXY_HOPS`** en `cloudbuild.yaml` con los
+   dominios reales de los portales y con la topología real del balanceador. Un
+   `TRUSTED_PROXY_HOPS` incorrecto no produce ningún error visible: el límite por IP
+   simplemente deja de aplicarse. El log de arranque `ai_proxy_configured` deja constancia
+   del valor en uso.
+4. **Rellenar `security.allowedLinkHosts`** en `src/config/chatbotConfig.json` con los
    dominios reales de la Alcaldía. Los valores actuales son una base razonable, no una
    lista verificada.
-3. **Definir `VITE_RPA_*_API_URL` con `https://`** antes de compilar para producción.
-4. **Añadir una Content-Security-Policy.** `index.html` no tiene ninguna, y el widget se
+5. **Definir `VITE_RPA_*_API_URL` con `https://`** antes de compilar para producción.
+6. **Añadir una Content-Security-Policy.** `index.html` no tiene ninguna, y el widget se
    embebe en portales de terceros. Requiere decidirla con quien opere el portal, por eso
    no se incluyó aquí.
-5. **Valorar el proxy de backend** para la IA, que es lo único que cierra H-01 de verdad.
-6. **Revisar `services/apiMock.js`**: contiene datos de ciudadanos ficticios y carga
+7. **Revisar `services/apiMock.js`**: contiene datos de ciudadanos ficticios y carga
    imágenes desde `images.unsplash.com`. En un portal de gobierno eso filtra la IP del
    visitante a un tercero y rompe si no hay internet.
+8. **Valorar un almacén compartido para la cuota diaria.** Los contadores del proxy viven
+   en la memoria de cada instancia: con `max-instances=10` el tope real puede llegar a ~10x
+   el configurado, y un escalado a cero los borra. El límite por IP y el techo de tokens
+   siguen actuando, pero la cuota por sesión es aproximada. `server/rateLimit.js` deja el
+   almacén detrás de una interfaz mínima para poder cambiarlo sin tocar la lógica.

@@ -13,6 +13,11 @@
 # en el bundle. Por eso aquí SOLO pueden ir valores públicos (nombre del servicio,
 # versión, ambiente, URLs de microservicios). NUNCA una clave de API: quedaría
 # publicada en un archivo estático descargable. Ver SECURITY.md, hallazgo H-01.
+#
+# La clave de Gemini (GEMINI_API_KEY) es variable de RUNTIME y no aparece en ningún ARG
+# de este archivo: la monta Cloud Run desde Secret Manager al arrancar el contenedor, y la
+# lee el proxy `server/aiProxy.js`. Esa es la diferencia que hace que la credencial no
+# llegue al navegador: el bundle no la contiene porque nunca estuvo en el build.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Etapa 1: compilación del bundle
@@ -30,6 +35,9 @@ ARG VITE_RPA_PREDIAL_API_URL=""
 ARG VITE_RPA_PQRSD_API_URL=""
 ARG VITE_CONVERSATION_API_URL=""
 ARG VITE_PERSISTENCE_MODE=off
+# Origen del proxy de IA. Es una URL pública y por tanto puede ir en el bundle; vacío
+# significa "mismo origen", que es el caso cuando este servicio sirve también el widget.
+ARG VITE_AI_PROXY_URL=""
 
 ENV VITE_SERVICE_NAME=$VITE_SERVICE_NAME \
     VITE_SERVICE_VERSION=$VITE_SERVICE_VERSION \
@@ -38,7 +46,8 @@ ENV VITE_SERVICE_NAME=$VITE_SERVICE_NAME \
     VITE_RPA_PREDIAL_API_URL=$VITE_RPA_PREDIAL_API_URL \
     VITE_RPA_PQRSD_API_URL=$VITE_RPA_PQRSD_API_URL \
     VITE_CONVERSATION_API_URL=$VITE_CONVERSATION_API_URL \
-    VITE_PERSISTENCE_MODE=$VITE_PERSISTENCE_MODE
+    VITE_PERSISTENCE_MODE=$VITE_PERSISTENCE_MODE \
+    VITE_AI_PROXY_URL=$VITE_AI_PROXY_URL
 
 # Copiar solo los manifiestos primero: así la capa de dependencias se reutiliza
 # mientras package-lock.json no cambie, aunque cambie el código.

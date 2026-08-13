@@ -45,9 +45,12 @@ export const useAiConversation = ({ apiKey, sitemapLinks }) => {
    * El proveedor depende de la clave, así que se reconstruye cuando esta cambia.
    * `getApiKey` se pasa como función para que el adaptador lea el valor vigente en
    * el momento de la petición y no una copia congelada en el cierre.
+   *
+   * Con `VITE_AI_PROXY_URL` definida gana el proxy del backend, que es donde viven la
+   * clave y el control de gasto; la clave local solo se usa en desarrollo.
    */
   const provider = useMemo(
-    () => createAiProvider({ getApiKey: () => apiKey, faqCatalog }),
+    () => createAiProvider({ getApiKey: () => apiKey, faqCatalog, proxyUrl: environment.aiProxyUrl }),
     [apiKey]
   );
 
@@ -81,7 +84,11 @@ export const useAiConversation = ({ apiKey, sitemapLinks }) => {
         // El proveedor declara si consumió cuota remota; no se deduce de su nombre.
         billable: reply.billable === true,
         tokensUsed: reply.tokensUsed,
-        isEstimate: reply.isEstimate
+        isEstimate: reply.isEstimate,
+        // Cuando el backend corta la IA por cuota, esto es lo único que lo delata: el
+        // ciudadano no ve ningún aviso, así que el operador necesita verlo en el panel.
+        servedByFallback: reply.servedByFallback === true,
+        fallbackReason: reply.fallbackReason
       });
 
       if (reply.tokensUsed > 0) {

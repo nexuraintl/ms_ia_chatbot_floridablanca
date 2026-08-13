@@ -15,13 +15,16 @@
 
 import { assertImplementsAiProvider } from "../../ports/AiProviderPort.js";
 import { createGeminiApiProvider } from "./GeminiApiProvider.js";
+import { createGeminiProxyProvider } from "./GeminiProxyProvider.js";
 import { createLocalMockProvider } from "./LocalMockProvider.js";
+import { createQuotaAwareProvider } from "./QuotaAwareProvider.js";
 
 /**
  * Registro de constructores disponibles.
  * @type {Record<string, (deps: Object) => import("../../ports/AiProviderPort.js").AiProvider>}
  */
 const PROVIDER_REGISTRY = {
+  "ai-proxy": createGeminiProxyProvider,
   "gemini-api": createGeminiApiProvider,
   "local-mock": createLocalMockProvider
 };
@@ -40,30 +43,49 @@ export const registerAiProvider = (id, factory) => {
 };
 
 /**
- * Política de selección: con clave disponible se usa la API; sin ella, el mock local.
+ * Política de selección, en orden de preferencia:
+ *
+ *   1. `ai-proxy`   — hay un backend configurado. Es la opción de producción: la clave
+ *                     vive en el servidor y el gasto se controla ahí.
+ *   2. `gemini-api` — no hay backend pero sí una clave en el navegador. Es el modo de
+ *                     desarrollo local; la clave queda expuesta a quien use el equipo.
+ *   3. `local-mock` — ni backend ni clave: se responde con el catálogo de FAQ.
+ *
+ * El proxy tiene prioridad sobre la clave local a propósito: si un despliegue tiene
+ * backend, una clave olvidada en el `localStorage` del operador no debe hacer que sus
+ * consultas se salten el control de gasto.
  *
  * @param {Object} params
  * @param {string} params.apiKey
+ * @param {string} [params.proxyUrl]
  * @param {string} [params.preferred]  Fuerza un proveedor concreto (diagnóstico/pruebas).
  * @returns {string} id del proveedor
  */
-export const selectProviderId = ({ apiKey, preferred }) => {
+export const selectProviderId = ({ apiKey, proxyUrl, preferred }) => {
   if (preferred && PROVIDER_REGISTRY[preferred]) return preferred;
+  if (proxyUrl && String(proxyUrl).trim() !== "") return "ai-proxy";
   return apiKey && String(apiKey).trim() !== "" ? "gemini-api" : "local-mock";
 };
 
 /**
  * Construye el proveedor que corresponde al estado actual.
  *
+ * Cuando el elegido es el proxy se envuelve en `QuotaAwareProvider`, que atiende con el
+ * banco de preguntas cuando el backend dice que se agotó la cuota. La composición se hace
+ * aquí y no dentro del proveedor para que cada pieza siga teniendo una responsabilidad:
+ * el proxy habla con el backend, el decorador decide cuándo degradar, y el mock responde
+ * localmente.
+ *
  * @param {Object} deps
  * @param {() => string} deps.getApiKey
  * @param {import("../../domain/faq/faqMatcher.js").FaqItem[]} deps.faqCatalog
+ * @param {string} [deps.proxyUrl]
  * @param {string} [deps.preferred]
  * @returns {import("../../ports/AiProviderPort.js").AiProvider}
  */
-export const createAiProvider = ({ getApiKey, faqCatalog, preferred }) => {
+export const createAiProvider = ({ getApiKey, faqCatalog, proxyUrl = "", preferred }) => {
   const apiKey = typeof getApiKey === "function" ? getApiKey() : "";
-  const id = selectProviderId({ apiKey, preferred });
+  const id = selectProviderId({ apiKey, proxyUrl, preferred });
   const factory = PROVIDER_REGISTRY[id];
 
   if (!factory) {
@@ -72,5 +94,12 @@ export const createAiProvider = ({ getApiKey, faqCatalog, preferred }) => {
 
   // Validar el contrato al construir: un proveedor mal implementado falla aquí,
   // no en mitad de una conversación con un ciudadano.
-  return assertImplementsAiProvider(factory({ getApiKey, faqCatalog }));
+  const provider = assertImplementsAiProvider(factory({ getApiKey, faqCatalog, proxyUrl }));
+
+  if (id !== "ai-proxy") return provider;
+
+  return createQuotaAwareProvider({
+    primary: provider,
+    fallback: createLocalMockProvider({ faqCatalog })
+  });
 };
