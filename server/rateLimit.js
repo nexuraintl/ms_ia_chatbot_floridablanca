@@ -1,43 +1,16 @@
 /**
  * Limitadores de tasa y de cuota. Lógica pura, sin dependencias.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * DOS LIMITADORES, PORQUE FRENAN COSAS DISTINTAS
+ * Son dos porque frenan cosas distintas: `createRateLimiter` usa ventana corta por IP y
+ * frena ráfagas; `createDailyQuota` reparte la ración diaria por sesión.
  *
- *   · `createRateLimiter`  — ventana corta (segundos o minutos). Frena RÁFAGAS: bots,
- *     bucles de reintento, un script que descubrió el endpoint. Se cuenta por IP.
- *   · `createDailyQuota`   — ventana de un día natural. Reparte la RACIÓN de cada
- *     usuario. Se cuenta por sesión.
+ * Las entradas caducadas se purgan de forma incremental (una barrida cada N operaciones,
+ * sin temporizadores) y el mapa tiene tope: sin eso, cada IP nueva deja una clave para
+ * siempre y la instancia crece hasta que Cloud Run la mata, borrando los contadores.
  *
- * Un solo limitador no cubre los dos casos: una ventana corta permitiría gastar todo el
- * presupuesto a lo largo del día, y una cuota diaria no impide que un bot la agote en
- * cuatro segundos.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * LA FUGA QUE SE CORRIGE RESPECTO AL LIMITADOR DE `vite.config.js`
- *
- * El limitador del plugin de desarrollo guarda las entradas en un `Map` y NUNCA las
- * elimina: cada IP nueva añade una clave que se queda para siempre. En el servidor de
- * desarrollo da igual, dura minutos y solo lo usa una persona. En un servidor de Cloud Run
- * expuesto a internet es una fuga de memoria: una instancia que vea muchas IPs distintas
- * crece hasta que Cloud Run la mata por consumo, y matarla borra los contadores, que es
- * justo lo que un atacante quiere.
- *
- * Aquí las entradas caducadas se purgan de forma incremental (una barrida cada N
- * operaciones, sin temporizadores) y el mapa tiene tope de tamaño.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * ALCANCE: EL ESTADO ES DE LA INSTANCIA
- *
- * Los contadores viven en memoria del proceso. Con `min-instances=0` y
- * `max-instances=10` eso significa que la cuota diaria es APROXIMADA: varias instancias
- * llevan cuentas separadas y un escalado a cero las borra. Es una decisión consciente
- * (evita provisionar Firestore o Memorystore) y está documentada en el plan.
- *
- * Para que cambiarla salga barato, el almacén está detrás de una interfaz mínima —`get`,
- * `set`, `delete`, `entries`— así que sustituirlo por uno respaldado por Firestore no
- * obliga a tocar la lógica de decisión ni el manejador HTTP.
- * ─────────────────────────────────────────────────────────────────────────────
+ * El estado es de la instancia, así que la cuota diaria es APROXIMADA con varias
+ * instancias. Decisión consciente para no provisionar Firestore; el almacén está tras una
+ * interfaz mínima (`get`, `set`, `delete`, `entries`) por si hay que cambiarlo.
  */
 
 /** Cada cuántas operaciones se barre el mapa en busca de entradas caducadas. */

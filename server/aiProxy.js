@@ -1,54 +1,16 @@
 /**
- * Proxy de Gemini con control de gasto. `POST /api/ai/chat`.
+ * Proxy de Gemini con control de gasto. `POST /api/ai/chat`. Cierra H-01: la clave vive
+ * aquí y no en el navegador.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * POR QUÉ EXISTE
+ * Control en tres capas: coste acotado por petición (el cuerpo que llega no se reenvía,
+ * se reconstruye con lista blanca y topes propios), ráfagas por IP y cuota diaria por
+ * sesión. Más un cortacircuitos global sobre los tokens de `usageMetadata`.
  *
- * Hasta ahora el navegador llamaba a `generativelanguage.googleapis.com` con la clave en
- * la cabecera. Eso hacía imposible controlar el gasto:
+ * Acota el coste, no el contenido: la instrucción de sistema la sigue construyendo el
+ * frontend, donde viven el catálogo de FAQ y el serializador de contexto.
  *
- *   · Cualquier límite en el cliente se salta leyendo la clave en las herramientas de
- *     desarrollo y llamando a Gemini directo.
- *   · El frontend no ve la IP, así que no puede distinguir un bot de un ciudadano.
- *   · El cliente decidía `maxOutputTokens` y el tamaño del historial, es decir, el coste
- *     de cada llamada.
- *
- * Con la clave de este lado, las tres cosas dejan de ser ciertas. Además cierra el
- * hallazgo H-01 de `SECURITY.md`: la credencial desaparece del navegador.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * TRES CAPAS DE CONTROL
- *
- *   1. COSTE ACOTADO POR PETICIÓN — siempre, sin contadores. El cuerpo que llega NO se
- *      reenvía: se reconstruye campo por campo con lista blanca y con topes propios. Es
- *      la capa que hace que el coste por llamada sea una cifra conocida.
- *   2. RÁFAGAS POR IP — ventana de un minuto. Frena bots y bucles de reintento.
- *   3. CUOTA DIARIA POR SESIÓN — la ración de cada persona.
- *
- * Más un CORTACIRCUITOS GLOBAL sobre los tokens realmente consumidos (los de
- * `usageMetadata`, no una estimación), que cubre el caso que ninguna cuota individual
- * cubre: mucha gente legítima a la vez.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * QUÉ SE ACOTA Y QUÉ NO
- *
- * El servidor acota el COSTE, no el CONTENIDO de la instrucción de sistema. Esa
- * instrucción —con las reglas anti-inyección— la sigue construyendo el frontend, donde
- * viven el catálogo de FAQ y el serializador del contexto de página. Un cliente
- * modificado podría enviar su propia instrucción de sistema, pero solo se afectaría a sí
- * mismo, y el gasto sigue acotado porque lo que se limita es el total de caracteres de
- * entrada y de salida. Mover la construcción del prompt aquí exigiría meter `src/` en la
- * imagen de runtime, que hoy solo lleva `dist/` y `server/`.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * QUÉ NUNCA SALE DE AQUÍ
- *
- *   · El texto del ciudadano no se registra en ningún log. Ni truncado ni redactado: no
- *     hace falta para operar y es dato personal (Ley 1581 de 2012).
- *   · El mensaje de error de Gemini no llega al cliente. Esos mensajes describen el
- *     estado de la credencial ("API key not valid", "quota exceeded for project"), así
- *     que se registran de este lado y al cliente se le devuelve un motivo genérico.
- * ─────────────────────────────────────────────────────────────────────────────
+ * No sale de aquí: el texto del ciudadano (dato personal, Ley 1581) ni el mensaje de
+ * error de Gemini (describe el estado de la credencial). Al cliente, motivo genérico.
  */
 
 import { createRateLimiter, createDailyQuota, createTokenBudget } from "./rateLimit.js";

@@ -1,45 +1,16 @@
 /**
  * Degradación silenciosa al banco de preguntas. Implementa `ports/AiProviderPort`.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * EL REQUISITO, TAL CUAL
+ * Al agotarse la cuota no se avisa al ciudadano: se apaga Gemini para él y el bot sigue
+ * con el banco de FAQ. Decir "no tienes créditos" no le sirve de nada y es una invitación
+ * a probar cómo saltárselo.
  *
- * Cuando un ciudadano agota su cuota diaria de IA, NO se le dice que se quedó sin
- * créditos. Se apaga Gemini para él y el bot sigue respondiendo con el banco de preguntas
- * frecuentes que ya existe. Desde su lado no hay ningún aviso, ningún error y ninguna
- * interrupción: solo respuestas algo más estándar.
+ * Es un decorador del mismo puerto que envuelve, así que `useAiConversation` no cambia ni
+ * sabe que existe. Mismo patrón que `OutboxConversationRepository`.
  *
- * Decir "no tienes créditos" en un canal de atención municipal sería, además de inútil
- * para el ciudadano —que no eligió el plan ni puede hacer nada—, una invitación a probar
- * cómo saltárselo.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * POR QUÉ UN DECORADOR Y NO UN `if` EN EL HOOK
- *
- * Este objeto implementa el mismo puerto que envuelve, así que `useAiConversation` no
- * cambia ni sabe que existe. Es el mismo patrón que `OutboxConversationRepository`, que
- * envuelve un repositorio delegado para añadirle una cola durable sin que nadie más se
- * entere.
- *
- * La alternativa —comprobar la cuota dentro del hook— habría metido lógica de proveedor
- * en la capa de aplicación y habría obligado a que el hook conociera a los dos
- * proveedores a la vez.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * LA SUSPENSIÓN LA DECIDE EL SERVIDOR
- *
- * El cliente no lleva la cuenta de la cuota: no es asunto suyo y mentiría. Solo obedece el
- * `retryAfterSeconds` que el proxy envía en su respuesta:
- *
- *   · ráfaga (429 rate_limited)        -> ~60 s: se atiende esta consulta con el banco y
- *                                        se vuelve a intentar en la siguiente
- *   · cuota agotada (429 quota_...)    -> ~1 h o hasta medianoche: Gemini queda apagado
- *   · servicio caído (503)             -> espera prudencial, para no insistir en balde
- *   · fallo de transporte              -> sin suspensión: puede ser la red del ciudadano
- *
- * El momento de reanudación se guarda en `sessionStorage`, de modo que recargar la página
- * no reintenta una llamada que ya se sabe que va a fallar.
- * ─────────────────────────────────────────────────────────────────────────────
+ * La suspensión la decide el servidor vía `retryAfterSeconds`; el cliente no lleva la
+ * cuenta. Un fallo de transporte no suspende: puede ser la red del ciudadano. El momento
+ * de reanudación va en `sessionStorage` para que recargar no reintente en balde.
  */
 
 import { assertImplementsAiProvider } from "../../ports/AiProviderPort.js";

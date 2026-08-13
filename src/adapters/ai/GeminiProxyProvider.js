@@ -1,28 +1,12 @@
 /**
  * Adaptador de IA contra el proxy del backend. Implementa `ports/AiProviderPort`.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * ES EL PROVEEDOR QUE CIERRA H-01
+ * Es el proveedor que cierra H-01: con `VITE_AI_PROXY_URL` definida la clave se queda en
+ * el servidor y no llega al navegador. Además habilita el control de gasto, que necesita
+ * ver la IP y contar por sesión.
  *
- * `GeminiApiProvider` llama a Google desde el navegador con la clave en la cabecera, lo
- * que la deja visible para quien abra las herramientas de desarrollo (hallazgo H-01 de
- * `SECURITY.md`). Este adaptador llama a nuestro propio backend, que guarda la clave del
- * lado del servidor. Con `VITE_AI_PROXY_URL` definida, la credencial no llega nunca al
- * navegador.
- *
- * Y es el que hace posible el control de gasto: el servidor ve la IP, cuenta las
- * peticiones por sesión y acota el tamaño de cada llamada. Nada de eso se puede hacer
- * desde el cliente.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * CÓMO SE COMUNICA UN LÍMITE ALCANZADO
- *
- * El proxy responde con un motivo y, cuando aplica, con `retryAfterSeconds`. Este
- * adaptador NO decide qué hacer con eso: lo traduce a un campo `fallback` de la respuesta
- * y deja la decisión a `QuotaAwareProvider`, que es quien sabe degradar al banco de
- * preguntas. Separarlo así permite probar cada mitad por separado y evita que este
- * archivo tenga que conocer al proveedor local.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Ante un límite alcanzado no decide nada: traduce el motivo y `retryAfterSeconds` a un
+ * campo `fallback` y deja la degradación a `QuotaAwareProvider`.
  */
 
 import { post, HttpError } from "../http/httpClient.js";

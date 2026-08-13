@@ -1,24 +1,12 @@
 /**
  * Construcción de la petición a Gemini. Capa de adaptadores.
  *
- * Extraído de `GeminiApiProvider` cuando apareció el segundo proveedor que habla el mismo
- * protocolo: el que llama a Google directamente (desarrollo local) y el que pasa por el
- * proxy del backend (producción). Los dos necesitan exactamente el mismo cuerpo, y
- * duplicarlo habría significado que las reglas anti-inyección de prompt —el orden de los
- * turnos, el aislamiento del contexto de página— se mantuvieran en dos sitios.
+ * Compartida entre el proveedor directo y el del proxy: duplicarla dejaría las reglas
+ * anti-inyección mantenidas en dos sitios.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * LO QUE ESTE MÓDULO PROTEGE
- *
- * El contexto de la página anfitriona NO ES CONFIABLE: lo escribe el DOM del portal en el
- * que el widget está embebido. Por eso viaja como turno de datos delimitado
- * (`promptSerializer.toDataTurn`) e INSERTADO ANTES del último mensaje del ciudadano,
- * nunca dentro de `systemInstruction`. Si se colara en la instrucción de sistema, un
- * portal comprometido podría reescribir las reglas del asistente.
- *
- * El contexto de FAQ sí es confiable —viene del repositorio del proyecto— así que ese sí
- * entra en la instrucción de sistema.
- * ─────────────────────────────────────────────────────────────────────────────
+ * El contexto de página NO es confiable (lo escribe el DOM del portal anfitrión), así que
+ * viaja como turno de datos delimitado e insertado ANTES del último mensaje del ciudadano,
+ * nunca en `systemInstruction`. El contexto de FAQ sí es confiable y sí entra ahí.
  */
 
 import { buildSystemPrompt } from "./systemPrompt.js";

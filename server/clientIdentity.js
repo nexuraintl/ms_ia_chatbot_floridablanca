@@ -1,32 +1,14 @@
 /**
  * Identificación del cliente para los limitadores. Lógica pura.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * POR QUÉ ESTE ARCHIVO ES EL QUE DECIDE SI EL LÍMITE POR IP ES REAL O DECORATIVO
+ * Detrás del balanceador, `req.socket.remoteAddress` es la IP del BALANCEADOR, no la del
+ * ciudadano. La real llega en `X-Forwarded-For`, que es una lista donde el cliente
+ * controla la parte inicial y Google añade al final. La única entrada fiable es la que
+ * está a `trustedHops` posiciones del FINAL; tomar la primera deja el límite decorativo,
+ * porque basta enviar un `X-Forwarded-For` distinto en cada petición.
  *
- * El servicio corre detrás de un balanceador de carga (el `cloudbuild.yaml` despliega con
- * `--ingress=internal-and-cloud-load-balancing`), así que `req.socket.remoteAddress` es
- * la dirección del BALANCEADOR, no del ciudadano. Limitar por ese valor equivale a
- * limitar a todo el mundo con un mismo contador.
- *
- * La IP real llega en `X-Forwarded-For`. El detalle crítico es que esa cabecera es una
- * lista y el cliente puede escribir la parte inicial. El balanceador de Google AÑADE al
- * final:
- *
- *     X-Forwarded-For: <lo que envió el cliente>, <IP real del cliente>, <IP del balanceador>
- *                       └── falsificable ──┘        └── la que sirve ──┘   └─ nuestra ─┘
- *
- * Por tanto la única entrada fiable es la que está a `trustedHops` posiciones del final.
- * Tomar la PRIMERA —el error habitual, y lo que hacen casi todos los ejemplos que se
- * encuentran por ahí— convierte el limitador en un adorno: basta con enviar
- * `X-Forwarded-For: 1.2.3.4` distinto en cada petición para tener cuota infinita.
- *
- * `trustedHops` es configurable porque el número de saltos depende del despliegue:
- *   · 2 → balanceador externo de GCP por delante de Cloud Run (el despliegue previsto)
- *   · 1 → Cloud Run expuesto directamente en `*.run.app`
- * Si el valor se configura mal, el fallo es silencioso y grave, así que el arranque avisa
- * (ver `describeIpResolution`).
- * ─────────────────────────────────────────────────────────────────────────────
+ * `trustedHops`: 2 con balanceador externo por delante, 1 con Cloud Run en `*.run.app`.
+ * Mal configurado el fallo es silencioso, así que el arranque avisa (`describeIpResolution`).
  */
 
 import { CONVERSATION_HEADER } from "./correlation.js";
