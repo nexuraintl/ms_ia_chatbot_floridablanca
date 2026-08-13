@@ -30,34 +30,12 @@
  */
 
 import { post, HttpError } from "../http/httpClient.js";
-import { buildSystemPrompt } from "./systemPrompt.js";
 import { degradedReply } from "../../ports/AiProviderPort.js";
-import { toDataTurn } from "../../domain/pageContext/promptSerializer.js";
-import { findBestFaq, formatFaqAsContext } from "../../domain/faq/faqMatcher.js";
+import { buildGeminiPayload } from "./geminiRequest.js";
 import { estimateApiUsage, readActualUsage } from "../../domain/tokens/tokenEstimator.js";
-import { sanitizeText } from "../../domain/security/textSanitizer.js";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const DEFAULT_MODEL = "gemini-2.5-flash-lite";
-
-/** Tope de turnos de conversación enviados, para acotar coste y ventana. */
-const MAX_HISTORY_TURNS = 20;
-
-/** Tope de caracteres por turno. */
-const MAX_TURN_CHARS = 4000;
-
-/**
- * Traduce los turnos internos al formato de `contents` de Gemini.
- * @param {import("../../ports/AiProviderPort.js").ConversationTurn[]} history
- */
-const toGeminiContents = (history) =>
-  (Array.isArray(history) ? history : [])
-    .filter((m) => m && typeof m.text === "string" && m.text.trim() !== "")
-    .slice(-MAX_HISTORY_TURNS)
-    .map((m) => ({
-      role: m.sender === "user" ? "user" : "model",
-      parts: [{ text: sanitizeText(m.text).substring(0, MAX_TURN_CHARS) }]
-    }));
 
 /**
  * Crea el adaptador de Gemini.
@@ -79,32 +57,14 @@ export const createGeminiApiProvider = ({ getApiKey, faqCatalog = [], model = DE
       return degradedReply();
     }
 
-    const userMessage = history?.[history.length - 1]?.text || "";
-
-    // Contexto de FAQ: CONFIABLE (proviene del repositorio del proyecto),
-    // así que puede entrar en la instrucción de sistema.
-    const faqMatch = findBestFaq(userMessage, faqCatalog);
-    const systemPrompt = buildSystemPrompt({
-      faqContext: faqMatch ? formatFaqAsContext(faqMatch) : ""
-    });
-
-    const contents = toGeminiContents(history);
-
-    // Contexto de la página: NO CONFIABLE. Va como turno de datos delimitado, antes
-    // del último mensaje del usuario, y explícitamente fuera de systemInstruction.
-    const dataTurn = toDataTurn(pageContext);
-    if (dataTurn) {
-      contents.splice(Math.max(0, contents.length - 1), 0, dataTurn);
-    }
+    // La construcción del cuerpo —y con ella el aislamiento del contexto de página— vive
+    // en `geminiRequest.js`, compartida con el proveedor que pasa por el proxy.
+    const { payload, faqMatch } = buildGeminiPayload({ history, pageContext, faqCatalog });
 
     try {
       const data = await post(
         `${API_BASE}/${encodeURIComponent(model)}:generateContent`,
-        {
-          contents,
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: { maxOutputTokens: 200, temperature: 0.6 }
-        },
+        payload,
         {
           headers: {
             // Cabecera en lugar de `?key=`: no queda en historiales ni en Referer.
@@ -122,6 +82,8 @@ export const createGeminiApiProvider = ({ getApiKey, faqCatalog = [], model = DE
       return {
         text: replyText,
         contextIntent: faqMatch?.intencion ?? null,
+        // Esta llamada sí gastó cuota de Google: la consola puede contarla.
+        billable: true,
         ...usage
       };
     } catch (error) {

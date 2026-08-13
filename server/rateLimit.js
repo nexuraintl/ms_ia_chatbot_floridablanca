@@ -1,0 +1,332 @@
+/**
+ * Limitadores de tasa y de cuota. Lógica pura, sin dependencias.
+ *
+ * Son dos porque frenan cosas distintas: `createRateLimiter` usa ventana corta por IP y
+ * frena ráfagas; `createDailyQuota` reparte la ración diaria por sesión.
+ *
+ * Las entradas caducadas se purgan de forma incremental (una barrida cada N operaciones,
+ * sin temporizadores) y el mapa tiene tope: sin eso, cada IP nueva deja una clave para
+ * siempre y la instancia crece hasta que Cloud Run la mata, borrando los contadores.
+ *
+ * El estado es de la instancia, así que la cuota diaria es APROXIMADA con varias
+ * instancias. Decisión consciente para no provisionar Firestore; el almacén está tras una
+ * interfaz mínima (`get`, `set`, `delete`, `entries`) por si hay que cambiarlo.
+ */
+
+/** Cada cuántas operaciones se barre el mapa en busca de entradas caducadas. */
+const SWEEP_EVERY_OPS = 500;
+
+/**
+ * Tope de claves vivas. Alcanzarlo significa tráfico anómalo (o un ataque desde muchas
+ * IPs); se descartan las entradas más antiguas en lugar de crecer sin freno.
+ */
+const MAX_KEYS = 50_000;
+
+/**
+ * @typedef {Object} LimitDecision
+ * @property {boolean} allowed
+ * @property {number} remaining        Operaciones restantes en la ventana.
+ * @property {number} retryAfterSeconds Segundos hasta que la ventana se reinicie.
+ * @property {number} used
+ * @property {number} limit
+ */
+
+/**
+ * Almacén en memoria con purga incremental.
+ *
+ * @param {Object} [opts]
+ * @param {number} [opts.maxKeys]
+ */
+const createMemoryStore = ({ maxKeys = MAX_KEYS } = {}) => {
+  /** @type {Map<string, {count: number, resetAt: number}>} */
+  const entries = new Map();
+  let opsSinceSweep = 0;
+
+  /**
+   * Elimina las entradas cuya ventana ya expiró.
+   * @param {number} now
+   */
+  const sweep = (now) => {
+    for (const [key, entry] of entries) {
+      if (now >= entry.resetAt) entries.delete(key);
+    }
+  };
+
+  return {
+    /** Número de claves vivas. Expuesto para las pruebas y para diagnóstico. */
+    get size() {
+      return entries.size;
+    },
+
+    /**
+     * @param {string} key
+     * @returns {{count: number, resetAt: number}|undefined}
+     */
+    read(key) {
+      return entries.get(key);
+    },
+
+    /**
+     * @param {string} key
+     * @param {{count: number, resetAt: number}} value
+     * @param {number} now
+     */
+    write(key, value, now) {
+      opsSinceSweep += 1;
+      if (opsSinceSweep >= SWEEP_EVERY_OPS) {
+        opsSinceSweep = 0;
+        sweep(now);
+      }
+
+      // Si tras la purga se sigue en el tope, se sacrifica la entrada más antigua.
+      // `Map` conserva el orden de inserción, así que la primera es la más vieja.
+      if (!entries.has(key) && entries.size >= maxKeys) {
+        sweep(now);
+        if (entries.size >= maxKeys) {
+          const oldest = entries.keys().next().value;
+          if (oldest !== undefined) entries.delete(oldest);
+        }
+      }
+
+      entries.set(key, value);
+    },
+
+    /** Vacía el almacén. Solo para pruebas. */
+    clear() {
+      entries.clear();
+      opsSinceSweep = 0;
+    }
+  };
+};
+
+/**
+ * Limitador de ventana fija. Se elige fija y no deslizante a propósito: la deslizante
+ * guarda una marca por petición (memoria proporcional al tráfico). Su caso peor —hasta 2x
+ * el límite a caballo entre dos ventanas— es aceptable para cortar bots.
+ *
+ * @param {Object} params
+ * @param {number} params.windowMs
+ * @param {number} params.max            Operaciones permitidas por ventana.
+ * @param {() => number} [params.now]    Inyectable para las pruebas.
+ * @param {number} [params.maxKeys]
+ */
+export const createRateLimiter = ({ windowMs, max, now = () => Date.now(), maxKeys }) => {
+  const store = createMemoryStore({ maxKeys });
+
+  return {
+    get size() {
+      return store.size;
+    },
+
+    /**
+     * Registra una operación y decide si se permite.
+     *
+     * @param {string} key
+     * @returns {LimitDecision}
+     */
+    hit(key) {
+      // Un límite de 0 o negativo se interpreta como "desactivado": es lo que se espera
+      // al poner la variable de entorno a 0, y no como "bloquear todo".
+      if (!Number.isFinite(max) || max <= 0) {
+        return { allowed: true, remaining: Infinity, retryAfterSeconds: 0, used: 0, limit: 0 };
+      }
+
+      const current = now();
+      const existing = store.read(key);
+
+      if (!existing || current >= existing.resetAt) {
+        const resetAt = current + windowMs;
+        store.write(key, { count: 1, resetAt }, current);
+        return {
+          allowed: true,
+          remaining: max - 1,
+          retryAfterSeconds: Math.ceil(windowMs / 1000),
+          used: 1,
+          limit: max
+        };
+      }
+
+      existing.count += 1;
+      store.write(key, existing, current);
+
+      const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - current) / 1000));
+      return {
+        allowed: existing.count <= max,
+        remaining: Math.max(0, max - existing.count),
+        retryAfterSeconds,
+        used: existing.count,
+        limit: max
+      };
+    },
+
+    /** Consulta sin consumir. */
+    peek(key) {
+      const entry = store.read(key);
+      const current = now();
+      if (!entry || current >= entry.resetAt) return { used: 0, limit: max };
+      return { used: entry.count, limit: max };
+    },
+
+    reset() {
+      store.clear();
+    }
+  };
+};
+
+/**
+ * Milisegundos hasta la medianoche UTC del día en curso.
+ *
+ * UTC y no hora de Bogotá: el reinicio debe ser igual en todas las instancias sin
+ * depender de la zona horaria del contenedor. La cuota se renueva a las 19:00 en
+ * Colombia; para medianoche local, restar el desplazamiento aquí.
+ *
+ * @param {number} now
+ * @returns {number}
+ */
+export const millisecondsUntilUtcMidnight = (now) => {
+  const date = new Date(now);
+  const nextMidnight = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0
+  );
+  return nextMidnight - now;
+};
+
+/**
+ * Cuota de un día natural. Ventana fija que termina a medianoche UTC, para que la ración
+ * no dependa de cuándo fue la primera consulta.
+ *
+ * @param {Object} params
+ * @param {number} params.limit
+ * @param {() => number} [params.now]
+ * @param {number} [params.maxKeys]
+ */
+export const createDailyQuota = ({ limit, now = () => Date.now(), maxKeys }) => {
+  const store = createMemoryStore({ maxKeys });
+
+  return {
+    get size() {
+      return store.size;
+    },
+
+    /**
+     * Consume una unidad de cuota.
+     *
+     * @param {string} key
+     * @returns {LimitDecision}
+     */
+    hit(key) {
+      if (!Number.isFinite(limit) || limit <= 0) {
+        return { allowed: true, remaining: Infinity, retryAfterSeconds: 0, used: 0, limit: 0 };
+      }
+
+      const current = now();
+      const existing = store.read(key);
+
+      if (!existing || current >= existing.resetAt) {
+        const resetAt = current + millisecondsUntilUtcMidnight(current);
+        store.write(key, { count: 1, resetAt }, current);
+        return {
+          allowed: true,
+          remaining: limit - 1,
+          retryAfterSeconds: Math.ceil((resetAt - current) / 1000),
+          used: 1,
+          limit
+        };
+      }
+
+      existing.count += 1;
+      store.write(key, existing, current);
+
+      return {
+        allowed: existing.count <= limit,
+        remaining: Math.max(0, limit - existing.count),
+        retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - current) / 1000)),
+        used: existing.count,
+        limit
+      };
+    },
+
+    peek(key) {
+      const entry = store.read(key);
+      const current = now();
+      if (!entry || current >= entry.resetAt) return { used: 0, limit };
+      return { used: entry.count, limit };
+    },
+
+    reset() {
+      store.clear();
+    }
+  };
+};
+
+/**
+ * Cortacircuitos de gasto: acumula los tokens REALMENTE consumidos en el día y corta
+ * cuando se pasa del techo.
+ *
+ * Es la única de las tres capas que mide gasto y no número de peticiones, y es la que
+ * cubre el escenario que ninguna cuota por usuario cubre: mucha gente legítima a la vez.
+ * Se alimenta de `usageMetadata`, así que cuenta lo que Google va a facturar, no una
+ * estimación.
+ *
+ * @param {Object} params
+ * @param {number} params.dailyTokenCeiling  0 o negativo desactiva el cortacircuitos.
+ * @param {() => number} [params.now]
+ */
+export const createTokenBudget = ({ dailyTokenCeiling, now = () => Date.now() }) => {
+  let spent = 0;
+  let resetAt = 0;
+
+  /** Reinicia el acumulado si cambió el día. */
+  const rollover = (current) => {
+    if (current >= resetAt) {
+      spent = 0;
+      resetAt = current + millisecondsUntilUtcMidnight(current);
+    }
+  };
+
+  const isEnabled = () => Number.isFinite(dailyTokenCeiling) && dailyTokenCeiling > 0;
+
+  return {
+    /** ¿Queda presupuesto para atender una petición más? */
+    hasBudget() {
+      if (!isEnabled()) return true;
+      const current = now();
+      rollover(current);
+      return spent < dailyTokenCeiling;
+    },
+
+    /**
+     * Registra el consumo real de una llamada.
+     * @param {number} tokens
+     */
+    record(tokens) {
+      const amount = Number(tokens);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      const current = now();
+      rollover(current);
+      spent += Math.round(amount);
+    },
+
+    /** Estado, para logs y diagnóstico. */
+    snapshot() {
+      const current = now();
+      rollover(current);
+      return {
+        spent,
+        ceiling: isEnabled() ? dailyTokenCeiling : 0,
+        retryAfterSeconds: Math.max(1, Math.ceil((resetAt - current) / 1000))
+      };
+    },
+
+    reset() {
+      spent = 0;
+      resetAt = 0;
+    }
+  };
+};

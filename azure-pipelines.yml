@@ -1,0 +1,111 @@
+# Pipeline de Azure DevOps (GOB-GCP-STD-01).
+#
+# Función: validar el código y sincronizar el repositorio hacia GitHub (nexuraintl),
+# que es el puente desde el cual Cloud Build dispara el despliegue.
+#
+# Flujo completo de la plataforma:
+#   Azure DevOps  →  GitHub (bridge)  →  Cloud Build  →  Cloud Run
+#
+# Ramas y ambientes según la convención del estándar:
+#   dev / qa  →  QAM   (qam-)
+#   master    →  PREM  (prem-)
+#   main      →  PROD  (prod-)   ← requiere RFC aprobado (GOB-GCP-GOB-04)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# PENDIENTE DE CONFIGURAR antes del primer uso
+#
+#   githubConnection   nombre de la service connection a GitHub en Azure DevOps
+#   githubRepo         repositorio destino en la organización nexuraintl
+#
+# El despliegue a PROD no se automatiza a propósito: GOB-GCP-GOB-04 exige ticket de
+# mesa de servicios y RFC GS-F-007_V4.0 aprobados antes de liberar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+      - dev
+      - qa
+      - master
+      - main
+
+pr:
+  branches:
+    include:
+      - master
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  nodeVersion: "22.x"
+  # Ambiente derivado de la rama, según la convención del estándar.
+  ${{ if in(variables['Build.SourceBranchName'], 'dev', 'qa') }}:
+    targetEnvironment: "qam"
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    targetEnvironment: "prem"
+  ${{ if eq(variables['Build.SourceBranchName'], 'main') }}:
+    targetEnvironment: "prod"
+
+stages:
+  # ── Validación ─────────────────────────────────────────────────────────────
+  - stage: Validate
+    displayName: "Validación (lint, build, seguridad)"
+    jobs:
+      - job: Checks
+        displayName: "Comprobaciones de calidad"
+        steps:
+          - task: NodeTool@0
+            displayName: "Instalar Node $(nodeVersion)"
+            inputs:
+              versionSpec: $(nodeVersion)
+
+          - script: npm ci
+            displayName: "Instalar dependencias"
+
+          - script: npm run lint
+            displayName: "ESLint"
+
+          # La suite de seguridad es parte del criterio de aceptación: verifica el
+          # tratamiento de datos personales, la política de URLs y las defensas
+          # frente a inyección de prompt. Ver SECURITY.md.
+          - script: npm run test:security
+            displayName: "Pruebas de seguridad"
+
+          - script: npm run build
+            displayName: "Build de producción"
+
+          # Verificación explícita del hallazgo H-01: ninguna credencial puede quedar
+          # incrustada en el bundle. Falla el pipeline si aparece una.
+          - script: |
+              if grep -rqE "AIzaSy[A-Za-z0-9_-]{30,}" dist/; then
+                echo "##vso[task.logissue type=error]Se detectó una API key incrustada en el bundle."
+                exit 1
+              fi
+              echo "Sin credenciales en el bundle."
+            displayName: "Verificar que no haya credenciales en el bundle"
+
+  # ── Sincronización hacia GitHub (bridge de Cloud Build) ────────────────────
+  - stage: SyncToGitHub
+    displayName: "Sincronizar con GitHub (bridge)"
+    dependsOn: Validate
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Mirror
+        displayName: "Espejo del repositorio"
+        steps:
+          - checkout: self
+            persistCredentials: true
+            fetchDepth: 0
+
+          - script: |
+              set -e
+              git remote add github "https://$(githubToken)@github.com/nexuraintl/$(githubRepo).git" || \
+                git remote set-url github "https://$(githubToken)@github.com/nexuraintl/$(githubRepo).git"
+              git push github HEAD:$(Build.SourceBranchName) --force-with-lease
+            displayName: "Push a GitHub"
+            env:
+              # El token se define como variable secreta del pipeline, nunca aquí.
+              githubToken: $(githubToken)
+              githubRepo: $(githubRepo)

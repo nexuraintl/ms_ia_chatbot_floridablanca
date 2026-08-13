@@ -164,6 +164,9 @@ export const createLocalMockProvider = ({ faqCatalog = [], latencyMs = SIMULATED
     return {
       text: reply,
       contextIntent: matchedIntent,
+      // No hubo red ni cuota: las cifras de tokens de una respuesta local son una
+      // referencia interna, no consumo. La consola no las suma al consumo de la API.
+      billable: false,
       ...estimateLocalUsage(reply)
     };
   }

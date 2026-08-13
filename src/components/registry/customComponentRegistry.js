@@ -23,6 +23,7 @@ import { PqrsdConsultCard } from "../molecules/PqrsdConsultCard";
 import { PqrsdResultCard } from "../molecules/PqrsdResultCard";
 import { PredialForm } from "../molecules/PredialForm";
 import { PredioCardList } from "../molecules/PredioCardList";
+import { IdentityCardConnected } from "../molecules/IdentityCardConnected";
 
 /**
  * @typedef {Object} CustomComponentEntry
@@ -34,6 +35,11 @@ import { PredioCardList } from "../molecules/PredioCardList";
 
 /** @type {Record<string, CustomComponentEntry>} */
 export const CUSTOM_COMPONENTS = {
+  identity_form: {
+    Component: IdentityCardConnected,
+    mapProps: () => ({})
+  },
+
   pqrsd_crear: {
     Component: PqrsdCreateCard,
     mapProps: () => ({})

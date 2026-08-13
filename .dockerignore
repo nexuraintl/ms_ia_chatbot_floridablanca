@@ -1,0 +1,38 @@
+# Exclusiones del contexto de build (GOB-GCP-STD-01).
+# Reduce el tamaño del contexto y, sobre todo, evita que secretos o artefactos
+# locales acaben dentro de la imagen.
+
+# Secretos y configuración local — NUNCA deben entrar a la imagen
+.env
+.env.*
+!.env.example
+
+# Dependencias y artefactos: se reconstruyen dentro del builder
+node_modules
+dist
+dist-ssr
+*.local
+
+# Control de versiones y herramientas
+.git
+.gitignore
+.claude
+.vscode
+.idea
+
+# Pruebas: no se ejecutan en la imagen de producción
+tests
+security-tests
+
+# Logs
+*.log
+logs
+token_usage.log*
+
+# Documentación: no aporta a la imagen en ejecución
+*.md
+docs
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

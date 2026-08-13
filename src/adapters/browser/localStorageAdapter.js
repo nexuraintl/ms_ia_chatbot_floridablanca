@@ -17,7 +17,13 @@ const KEY_PREFIX = "avi_chatbot.";
 /** Claves conocidas. Centralizadas para evitar literales repartidos por el código. */
 export const STORAGE_KEYS = Object.freeze({
   apiKey: "gemini_api_key",
-  theme: "chatbot_theme"
+  theme: "chatbot_theme",
+  /**
+   * Momento hasta el que la IA queda apagada para esta sesión, por límite del backend.
+   * Se guarda en `sessionStorage`, no en `localStorage`: describe el estado de hoy de este
+   * navegador y no debe sobrevivir al cierre de la pestaña.
+   */
+  aiSuspendedUntil: "ai_suspended_until"
 });
 
 /**

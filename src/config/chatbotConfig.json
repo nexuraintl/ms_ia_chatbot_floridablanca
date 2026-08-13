@@ -1,4 +1,22 @@
 {
+  "tenantId": "floridablanca",
+  "identity": {
+    "_comment": "Cómo se solicitan nombre y correo. Modos: 'off' (no se piden), 'progressive' (solo al iniciar un trámite que los necesita), 'gate_skippable' (al abrir el chat, con opción de omitir), 'gate' (al abrir el chat, obligatorio antes de escribir).",
+    "mode": "gate",
+    "title": "Antes de empezar",
+    "subtitle": "Necesitamos tus datos para poder responderte y notificarte el resultado de tu trámite.",
+    "consentText": "Autorizo a la Alcaldía de Floridablanca a tratar mis datos personales (nombre y correo electrónico) para atender mi consulta, notificarme el resultado y conservar el registro de esta atención, conforme a la Ley 1581 de 2012 y a la Política de Tratamiento de Datos Personales del municipio. Puedo solicitar el acceso, la corrección o la supresión de mis datos en cualquier momento.",
+    "policyUrl": ""
+  },
+  "observability": {
+    "_comment": "GOB-GCP-STD-01 exige propagar X-Correlation-ID entre servicios. Este widget es el ORIGEN de la traza, así que lo emite. ATENCIÓN: enviar cabeceras personalizadas cross-origin obliga al navegador a hacer preflight OPTIONS; si un microservicio destino no incluye X-Correlation-ID y X-Conversation-ID en su Access-Control-Allow-Headers, la petición falla. Poner en false si algún backend aún no lo admite.",
+    "sendCorrelationId": true
+  },
+  "persistence": {
+    "_comment": "Dónde se guarda el registro de la conversación. Modos: 'off' (no se guarda nada), 'console' (solo imprime lo que se enviaría, para desarrollo), 'http' (envía al backend definido en VITE_CONVERSATION_API_URL). La variable de entorno VITE_PERSISTENCE_MODE tiene prioridad sobre este valor.",
+    "mode": "off",
+    "retentionNoticeDays": 365
+  },
   "municipality": {
     "name": "Floridablanca",
     "slogan": "Capital Dulce",
@@ -13,10 +31,6 @@
     "privacyNotice": "🔒 Aviso de Privacidad: Al interactuar, enviar un mensaje o seleccionar una opción, autorizas el Tratamiento de Datos Personales (Ley 1581 de 2012) y aceptas los Términos y Condiciones oficiales."
   },
   "quickReplies": [
-    {
-      "label": "🟡 Consultar Trámite de Sisbén",
-      "flow": "sisben"
-    },
     {
       "label": "🟡 Pagar Impuesto Predial",
       "flow": "predial"
@@ -40,7 +54,6 @@
     ]
   },
   "routing": {
-    "sisben": ["sisben", "puntaje", "grupo", "afiliacion"],
     "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],
     "pqrsd_crear": ["radicar", "peticion", "queja", "reclamo", "sugerencia", "denuncia", "crear pqrsd", "hacer pqrsd", "poner queja", "radicar pqrsd", "radicar pqrs", "nueva pqrsd"],
     "pqrsd_consultar": ["consultar radicado", "estado radicado", "buscar radicado", "trazabilidad", "mi radicado", "consultar pqrsd", "consultar mi pqrsd", "consultar estado", "consultarlo", "consultar pqrs"],
