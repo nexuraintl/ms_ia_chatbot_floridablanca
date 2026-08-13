@@ -1166,6 +1166,48 @@ section("21. Cuota de IA: degradación silenciosa al banco de preguntas");
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("22. Alcance de las cabeceras internas");
+// ══════════════════════════════════════════════════════════════════════════════
+// Enviar X-Correlation-ID a una API de terceros fuerza un preflight CORS que el destino
+// rechaza. Verificado contra Google: con la cabecera responde 403, sin ella 200.
+{
+  const { isOwnBackendUrl, environment: environmentConfig } =
+    await import("../src/config/environment.js");
+
+  const terceros = [
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent",
+    "https://example.com/api",
+    "http://sitio-del-atacante.example.com/recolector"
+  ];
+  for (const url of terceros) {
+    check(
+      `no correlaciona un host de terceros: ${new URL(url).hostname}`,
+      isOwnBackendUrl(url) === false
+    );
+  }
+
+  check(
+    "correlaciona el proxy de IA propio (ruta relativa)",
+    isOwnBackendUrl("/api/ai/chat") === true
+  );
+  check(
+    "correlaciona el propio origen del portal",
+    isOwnBackendUrl(`${ORIGIN}/api/v1/pqrsd/crear`) === true
+  );
+
+  const rpaHost = new URL(environmentConfig.pqrsdApiUrl).hostname;
+  check(
+    `correlaciona el RPA configurado: ${rpaHost}`,
+    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/api/v1/pqrsd/consultar`) === true
+  );
+
+  check(
+    "una URL malformada no se trata como backend propio",
+    isOwnBackendUrl("http://") === false
+  );
+}
+
 // ── Resumen ────────────────────────────────────────────────────────────────────
 const fallos = results.filter((r) => !r.passed);
 console.log(`\n\x1b[1m${"═".repeat(74)}\x1b[0m`);

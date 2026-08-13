@@ -237,3 +237,37 @@ export const getBackendHosts = () => {
   }
   return Array.from(hosts);
 };
+
+/** Hosts propios que pueden recibir cabeceras internas. */
+const getInternalHosts = () => {
+  const hosts = new Set(getBackendHosts());
+  for (const url of [environment.aiProxyUrl, environment.conversationApiUrl]) {
+    if (!url) continue;
+    try {
+      hosts.add(new URL(url).hostname);
+    } catch {
+      /* URL inválida */
+    }
+  }
+  return hosts;
+};
+
+/**
+ * ¿La URL apunta a un backend propio? Las APIs de terceros no reciben cabeceras
+ * internas: `X-Correlation-ID` fuerza un preflight CORS que Google rechaza, lo que
+ * tumbaba toda llamada directa a Gemini.
+ *
+ * @param {string} url
+ * @returns {boolean}
+ */
+export const isOwnBackendUrl = (url) => {
+  const base = globalThis.window?.location?.href;
+  try {
+    const target = new URL(url, base);
+    if (base && target.origin === new URL(base).origin) return true;
+    return getInternalHosts().has(target.hostname);
+  } catch {
+    // Relativa y sin base: mismo origen.
+    return !/^[a-z][a-z0-9+.-]*:/i.test(String(url));
+  }
+};

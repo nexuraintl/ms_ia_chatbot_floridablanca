@@ -14,6 +14,7 @@
  */
 
 import { buildCorrelationHeaders, createCorrelationId } from "../../domain/observability/correlation.js";
+import { isOwnBackendUrl } from "../../config/environment.js";
 
 /** Timeout por defecto de las peticiones, en milisegundos. */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -85,9 +86,12 @@ export const request = async (
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const isPlainObject = body !== undefined && body !== null && !isFormData && typeof body === "object";
 
-  // GOB-GCP-STD-01: toda petición sale correlacionada. Este widget es el ORIGEN de la
-  // traza, así que emite el identificador en lugar de propagarlo.
+  // GOB-GCP-STD-01: el widget es el ORIGEN de la traza, así que emite el identificador.
   const correlationId = createCorrelationId();
+
+  // Solo los backends propios reciben la correlación. En una API de terceros la cabecera
+  // fuerza un preflight CORS que la rechaza y tumba la llamada.
+  const correlationHeaders = isOwnBackendUrl(url) ? buildCorrelationHeaders(correlationId) : {};
 
   /** @type {RequestInit} */
   const init = {
@@ -97,7 +101,7 @@ export const request = async (
       Accept: "application/json",
       // No fijar Content-Type con FormData: el navegador debe añadir el boundary.
       ...(isPlainObject ? { "Content-Type": "application/json" } : {}),
-      ...buildCorrelationHeaders(correlationId),
+      ...correlationHeaders,
       ...headers
     }
   };
