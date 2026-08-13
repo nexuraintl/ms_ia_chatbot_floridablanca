@@ -1,50 +1,15 @@
 /**
- * Lectura y validación de la configuración de entorno.
+ * Configuración de entorno.
  *
- * Antes cada servicio hacía su propio
- * `import.meta.env.VITE_X || "http://localhost:8000"`, con dos consecuencias malas:
+ * Leer `import.meta.env` solo con acceso estático y literal: un acceso dinámico
+ * (`import.meta.env[nombre]`) hace que Vite incruste el objeto de entorno COMPLETO en el
+ * bundle. No convertirlo en un bucle ni en un helper parametrizado.
  *
- *   1. Si la variable no estaba definida al compilar, el bundle de PRODUCCIÓN salía
- *      apuntando a `http://localhost:8000`. Los trámites fallaban de forma silenciosa
- *      en el navegador del ciudadano, sin ninguna señal de por qué.
- *   2. Un `http://` en una página servida por `https://` es contenido mixto: el
- *      navegador bloquea la petición. Y si la página fuera `http://`, la cédula, el
- *      teléfono y el correo del ciudadano viajarían en claro.
- *
- * Ahora la validación es explícita y ruidosa al arrancar.
- *
- * NOTA DELIBERADA: aquí NO se lee `VITE_GEMINI_API_KEY`. Vite incrusta el valor de
- * toda variable `VITE_*` literalmente en el JavaScript compilado, así que definirla
- * publicaba la credencial en un archivo estático descargable por cualquiera. Se
- * verificó compilando: la clave aparecía en claro dentro de `dist/assets/*.js`.
- * La clave se introduce ahora solo desde la consola y queda en el navegador del
- * operador.
+ * Nunca leer aquí `VITE_GEMINI_API_KEY`. Ver SECURITY.md (H-01).
  */
 
 /** Valor por defecto para desarrollo local. */
 const LOCAL_DEFAULT = "http://localhost:8000";
-
-/**
- * ─────────────────────────────────────────────────────────────────────────────
- * LEER `import.meta.env` SIEMPRE CON ACCESO ESTÁTICO
- *
- * Vite reemplaza `import.meta.env.NOMBRE_LITERAL` por su valor en tiempo de
- * compilación mediante sustitución textual. Pero ante un acceso DINÁMICO
- * —`import.meta.env[variable]`— no puede saber qué clave se pedirá, así que emite el
- * OBJETO COMPLETO de variables en el bundle.
- *
- * Eso significa que un helper aparentemente inocente como
- *
- *     const readEnv = (name) => import.meta.env?.[name]
- *
- * publica TODAS las variables `VITE_*` en el JavaScript compilado, incluida
- * `VITE_GEMINI_API_KEY`, aunque este archivo nunca la mencione. Se comprobó
- * compilando: la clave aparecía dentro del objeto inlineado.
- *
- * Por eso cada variable se lee aquí de forma explícita y literal. No convertir esto
- * en un bucle ni en un helper parametrizado.
- * ─────────────────────────────────────────────────────────────────────────────
- */
 
 /**
  * Envuelve una lectura estática para que no falle fuera de un bundle de Vite

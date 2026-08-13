@@ -100,13 +100,9 @@ const createMemoryStore = ({ maxKeys = MAX_KEYS } = {}) => {
 };
 
 /**
- * Limitador de ventana fija.
- *
- * Se elige ventana fija y no ventana deslizante a propósito: la deslizante exige guardar
- * la marca de tiempo de cada petición (memoria proporcional al tráfico), y para frenar
- * ráfagas la diferencia práctica es despreciable. El caso peor conocido de la ventana
- * fija —hasta 2× el límite a caballo entre dos ventanas— es aceptable cuando el propósito
- * es cortar bots, no facturar.
+ * Limitador de ventana fija. Se elige fija y no deslizante a propósito: la deslizante
+ * guarda una marca por petición (memoria proporcional al tráfico). Su caso peor —hasta 2x
+ * el límite a caballo entre dos ventanas— es aceptable para cortar bots.
  *
  * @param {Object} params
  * @param {number} params.windowMs
@@ -178,13 +174,11 @@ export const createRateLimiter = ({ windowMs, max, now = () => Date.now(), maxKe
 };
 
 /**
- * Milisegundos que quedan hasta la medianoche UTC del día en curso.
+ * Milisegundos hasta la medianoche UTC del día en curso.
  *
- * Se usa UTC y no la hora de Bogotá deliberadamente: el reinicio tiene que ser el mismo
- * en todas las instancias sin depender de la zona horaria del contenedor, que en Cloud Run
- * es UTC pero no está garantizado por contrato. La consecuencia es que la cuota se
- * renueva a las 19:00 hora de Colombia; si se prefiere medianoche local, es cuestión de
- * restar el desplazamiento aquí, en un solo sitio.
+ * UTC y no hora de Bogotá: el reinicio debe ser igual en todas las instancias sin
+ * depender de la zona horaria del contenedor. La cuota se renueva a las 19:00 en
+ * Colombia; para medianoche local, restar el desplazamiento aquí.
  *
  * @param {number} now
  * @returns {number}
@@ -204,11 +198,8 @@ export const millisecondsUntilUtcMidnight = (now) => {
 };
 
 /**
- * Cuota de un día natural.
- *
- * Es un limitador de ventana fija cuya ventana termina en la medianoche UTC, para que la
- * ración no dependa de cuándo el usuario hizo su primera consulta: si empieza a las 23:50
- * se le renueva a los diez minutos, que es el comportamiento esperado de "cuota diaria".
+ * Cuota de un día natural. Ventana fija que termina a medianoche UTC, para que la ración
+ * no dependa de cuándo fue la primera consulta.
  *
  * @param {Object} params
  * @param {number} params.limit

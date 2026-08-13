@@ -1,23 +1,10 @@
 /**
  * Puerto del proveedor de IA. Define el contrato que la aplicación consume.
  *
- * Esta es la pieza de INVERSIÓN DE DEPENDENCIAS del refactor.
- *
- * ANTES: `ChatContext` importaba `queryGemini` directamente, y dentro de
- * `queryGemini` había un `if (!apiKey) return queryMockGemini(...)`. Es decir, la
- * política de "qué proveedor usar" estaba enterrada en el detalle de implementación
- * de uno de los proveedores, y el código de alto nivel dependía de un módulo
- * concreto. Cambiar de proveedor —o añadir un proxy de backend— obligaba a editar
- * tanto el consumidor como el proveedor.
- *
- * AHORA: la aplicación depende de este contrato. Los proveedores lo implementan
- * (`GeminiApiProvider`, `LocalMockProvider`) y la selección ocurre una sola vez, en
- * `createAiProvider`. Añadir un proveedor nuevo —por ejemplo uno que hable con un
- * backend propio en lugar de exponer la clave en el navegador— no requiere tocar ni
- * la aplicación ni los proveedores existentes.
- *
- * El proyecto es JavaScript, así que el contrato se expresa con JSDoc y se valida en
- * tiempo de construcción con `assertImplementsAiProvider`.
+ * La aplicación depende de este contrato, no de un proveedor concreto: la selección
+ * ocurre una sola vez en `createAiProvider`, así que añadir uno nuevo no obliga a tocar
+ * ni la aplicación ni los existentes. Se expresa con JSDoc y se valida al arrancar con
+ * `assertImplementsAiProvider`.
  */
 
 /**
@@ -98,9 +85,8 @@ export const assertImplementsAiProvider = (candidate) => {
 };
 
 /**
- * Respuesta de degradación estándar, usada cuando un proveedor falla.
- * Centralizarla evita que cada proveedor invente su propio texto y garantiza que
- * nunca se filtre el mensaje de error interno al ciudadano.
+ * Respuesta de degradación estándar. Centralizarla evita que cada proveedor invente su
+ * propio texto y que se filtre un error interno al ciudadano.
  *
  * @param {string} [text]
  * @returns {AiReply}

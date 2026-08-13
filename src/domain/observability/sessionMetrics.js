@@ -1,43 +1,10 @@
 /**
- * Métricas de la sesión de atención. Capa de dominio.
+ * Métricas de la sesión de atención. Capa de dominio, JavaScript puro.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * POR QUÉ EXISTE ESTE MÓDULO
- *
- * La consola mostraba tres tarjetas —TOKENS CONSUMIDOS, TOKENS AHORRADOS y
- * EFICIENCIA DE COSTOS— construidas sobre dos contadores de React que vivían en
- * `ChatContext`. Ninguna de las tres medía algo comprobable:
- *
- *   · `tokensSavedTotal` era `max(0, 150 - tokensDeLaRespuesta)`, es decir la
- *     diferencia contra un presupuesto imaginario de 150 tokens. El proveedor local
- *     devolvía directamente la constante 120. No es una medición, es una constante
- *     disfrazada de métrica.
- *   · "EFICIENCIA DE COSTOS" multiplicaba ese número inventado por un precio fijo
- *     escrito en el componente. El resultado era una cifra en dólares presentada como
- *     ahorro real: exactamente el tipo de dato que alguien copia a un informe.
- *   · Sin clave de API el proveedor local reportaba `40 + longitud/4` tokens por
- *     respuesta, así que "TOKENS CONSUMIDOS" contaba consumo de una API a la que nunca
- *     se llamó.
- *   · Todo vivía en estado de React, así que cualquier recarga lo devolvía a cero.
- *
- * Este módulo mide en su lugar lo que un operador puede verificar y necesita saber:
- * cuántas respuestas se dieron, cuántas salieron degradadas, cuánto tardaron, qué
- * trámites se iniciaron y cuáles terminaron, y cuántos tokens reportó realmente la API.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * REGLAS DE HONESTIDAD DE LAS CIFRAS
- *
- *   1. Los tokens solo se acumulan cuando el proveedor declara que la llamada consumió
- *      cuota remota (`billable`). Una respuesta del catálogo local suma a
- *      `localReplies`, nunca a los tokens.
- *   2. Lo que reporta la API (`usageMetadata`) y lo que estimamos por longitud de texto
- *      se acumulan SEPARADOS. Un total mezclado no se puede auditar.
- *   3. No se calcula dinero. El precio por token depende del modelo, del volumen y del
- *      contrato, y ninguno de esos datos está en el navegador.
- *
- * Es JavaScript puro: no importa React ni toca el navegador, así que se puede ejercitar
- * desde la suite de pruebas sin montar un componente.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Reglas de honestidad de las cifras: los tokens solo se acumulan cuando el proveedor
+ * declara consumo remoto (`billable`); lo que reporta la API y lo estimado por longitud
+ * se acumulan SEPARADOS, porque un total mezclado no se puede auditar; y no se calcula
+ * dinero, que depende del modelo y del contrato.
  */
 
 /** Eventos que la aplicación puede reportar. */
@@ -78,9 +45,7 @@ const MAX_DETAIL_CHARS = 160;
  */
 
 /**
- * Estado inicial. Se usa también en `reset()`, de modo que reiniciar la conversación
- * reinicia las métricas y no arrastra las de la atención anterior.
- *
+ * Estado inicial, usado también en `reset()`.
  * @param {number} startedAt
  */
 const createEmptyState = (startedAt) => ({
@@ -104,9 +69,8 @@ const createEmptyState = (startedAt) => ({
 });
 
 /**
- * Percentil sobre una lista YA ORDENADA.
- * Se usa el método del rango más cercano por arriba, que es el que se espera de un p50
- * o un p95 con pocas muestras: con 3 valores, el p95 es el mayor y no una interpolación.
+ * Percentil sobre una lista ya ordenada, por rango más cercano por arriba: con 3
+ * muestras el p95 es el mayor, no una interpolación.
  *
  * @param {number[]} sorted
  * @param {number} p  Percentil entre 0 y 100.
@@ -160,10 +124,8 @@ const flowEntry = (flows, id, label) => {
 };
 
 /**
- * Crea un registro de métricas de sesión.
- *
- * Es un almacén observable: `subscribe` permite que la consola se repinte cuando algo
- * cambia, sin que ningún componente tenga que sondear.
+ * Crea un registro de métricas de sesión. Almacén observable: `subscribe` repinta la
+ * consola sin que ningún componente sondee.
  *
  * @param {Object} [deps]
  * @param {() => number} [deps.now]                Inyectable para las pruebas.
@@ -179,9 +141,8 @@ export const createSessionMetrics = ({
   let state = createEmptyState(now());
 
   /**
-   * Instantánea memorizada. `useSyncExternalStore` exige que dos lecturas sin cambios
-   * devuelvan la MISMA referencia; construir un objeto nuevo en cada lectura provocaría
-   * un bucle infinito de renders.
+   * Instantánea memorizada. `useSyncExternalStore` exige la MISMA referencia entre
+   * lecturas sin cambios; un objeto nuevo por lectura daría renders infinitos.
    * @type {MetricsSnapshot|null}
    */
   let cached = null;
@@ -280,10 +241,7 @@ export const createSessionMetrics = ({
 
   return {
     /**
-     * Reporta un evento.
-     *
-     * Nunca lanza: un fallo de instrumentación no debe romper una atención en curso.
-     * Un evento desconocido se avisa por consola y se descarta.
+     * Reporta un evento. Nunca lanza: un fallo de instrumentación no rompe la atención.
      *
      * @param {string} event  Uno de `METRIC_EVENTS`.
      * @param {Object} [payload]
@@ -360,12 +318,7 @@ export const createSessionMetrics = ({
 };
 
 /**
- * Instancia por defecto de la aplicación.
- *
- * Es un singleton de módulo, igual que la configuración de `urlPolicy` y de
- * `correlation`. La alternativa —pasar el registro por props o por contexto hasta cada
- * hook de trámite— añadiría un parámetro a media docena de firmas para reportar un
- * contador. Los módulos que quieran aislamiento (las pruebas) construyen el suyo con
- * `createSessionMetrics()`.
+ * Instancia por defecto. Singleton de módulo, igual que `urlPolicy` y `correlation`.
+ * Las pruebas construyen la suya con `createSessionMetrics()`.
  */
 export const sessionMetrics = createSessionMetrics();

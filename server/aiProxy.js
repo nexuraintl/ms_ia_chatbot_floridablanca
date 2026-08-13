@@ -63,11 +63,9 @@ const readNumber = (name, fallback) => {
 };
 
 /**
- * Configuración del proxy, resuelta una vez al cargar el módulo.
- *
- * Los valores por defecto están elegidos para que un despliegue sin configurar sea
- * conservador y no generoso: es preferible que un ciudadano se quede antes con el banco de
- * preguntas que descubrir el gasto en la factura.
+ * Configuración del proxy, resuelta una vez al cargar el módulo. Los valores por defecto
+ * son conservadores a propósito: sin configurar, mejor degradar al banco de preguntas que
+ * descubrir el gasto en la factura.
  */
 export const createProxyConfig = (env = process.env) => ({
   apiKey: String(env.GEMINI_API_KEY || "").trim(),
@@ -85,16 +83,9 @@ export const createProxyConfig = (env = process.env) => ({
 });
 
 /**
- * ¿El origen está autorizado a llamar al proxy?
- *
- * Tres reglas, en orden:
- *   1. Mismo origen que el servidor (el `Host` de la petición). Es el caso del widget
- *      servido por este mismo Cloud Run, y siempre se permite.
- *   2. Coincidencia con `ALLOWED_ORIGINS`. Una entrada que empieza por punto es comodín
- *      de sufijo, la misma convención que `security.allowedLinkHosts` en
- *      `chatbotConfig.json`, para no tener dos gramáticas distintas en el proyecto.
- *   3. En ambiente local, cualquier `localhost`/`127.0.0.1`, para que `npm run dev`
- *      funcione sin configurar nada.
+ * ¿El origen está autorizado a llamar al proxy? En orden: mismo origen que el servidor,
+ * coincidencia con `ALLOWED_ORIGINS` (una entrada con punto inicial es comodín de sufijo,
+ * misma convención que `security.allowedLinkHosts`), o localhost en ambiente local.
  *
  * Nunca se responde con `*`: el endpoint gasta dinero, así que quién puede invocarlo es
  * parte del control de gasto.
@@ -132,12 +123,8 @@ export const isOriginAllowed = (origin, host, config) => {
 };
 
 /**
- * Reconstruye la petición a Gemini a partir de la que llegó, aplicando lista blanca y
- * topes. Es la capa 1 del control de gasto.
- *
- * El historial se recorta por el PRINCIPIO cuando excede el techo de caracteres: los
- * turnos recientes son los que sostienen la conversación, así que si hay que sacrificar
- * contexto se sacrifica el más antiguo.
+ * Reconstruye la petición a Gemini con lista blanca y topes. Capa 1 del control de gasto.
+ * El historial se recorta por el PRINCIPIO: si hay que sacrificar contexto, el más antiguo.
  *
  * @param {unknown} payload
  * @returns {{ ok: true, request: Object, inputChars: number } | { ok: false, detail: string }}
@@ -211,10 +198,8 @@ export const buildGeminiRequest = (payload) => {
 };
 
 /**
- * Crea el manejador del proxy con sus limitadores.
- *
- * Los limitadores se crean una sola vez por proceso: su estado ES el control de gasto de
- * esta instancia.
+ * Crea el manejador del proxy. Los limitadores se crean una vez por proceso: su estado
+ * ES el control de gasto de esta instancia.
  *
  * @param {Object} [deps]
  * @param {ReturnType<createProxyConfig>} [deps.config]
@@ -240,9 +225,8 @@ export const createAiProxyHandler = ({
   });
 
   /**
-   * Cabeceras CORS de la respuesta. Se refleja el origen concreto —nunca `*`— y se
-   * declaran las cabeceras personalizadas que el widget envía, sin las cuales el
-   * navegador rechaza la petición en el preflight.
+   * Cabeceras CORS. Refleja el origen concreto, nunca `*`, y declara las cabeceras
+   * personalizadas del widget: sin ellas el navegador falla en el preflight.
    *
    * @param {string|undefined} origin
    */

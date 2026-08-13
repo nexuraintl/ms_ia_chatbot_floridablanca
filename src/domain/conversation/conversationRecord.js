@@ -1,28 +1,13 @@
 /**
  * Registro de conversación. Capa de dominio.
  *
- * Define la forma exacta de lo que se persiste. Al ser evidencia legal, el diseño
- * prioriza tres propiedades por encima de la comodidad:
+ * Al ser evidencia legal prioriza idempotencia (`messageId` estable, para que un
+ * reintento no duplique), orden verificable (`sequence` monótono, porque el reloj del
+ * cliente lo controla el usuario) y aislamiento multi-tenant (`tenantId` en cada
+ * registro, no solo en la conversación).
  *
- *   1. IDEMPOTENCIA. Cada mensaje lleva un `messageId` estable. Si un reintento
- *      reenvía el mismo mensaje, el backend puede descartar el duplicado. Sin esto,
- *      una red inestable produce un historial con mensajes repetidos, y un registro
- *      con duplicados pierde credibilidad como prueba.
- *
- *   2. ORDEN VERIFICABLE. Cada mensaje lleva un `sequence` monótono dentro de su
- *      conversación. No se puede confiar en las marcas de tiempo del cliente para
- *      ordenar: el reloj del navegador lo controla el usuario y puede ir atrasado,
- *      adelantado o cambiar a mitad de conversación. La secuencia además permite
- *      detectar huecos, es decir, mensajes que nunca llegaron.
- *
- *   3. AISLAMIENTO MULTI-TENANT. `tenantId` va en cada registro, no solo en la
- *      conversación, para que ninguna consulta mal escrita pueda cruzar datos entre
- *      alcaldías.
- *
- * Sobre las marcas de tiempo: `occurredAt` es hora del CLIENTE y por tanto no es
- * confiable. El backend debe estampar su propio `receivedAt` al recibir el registro,
- * y ése es el que tiene valor probatorio. Se conservan ambos: la diferencia entre uno
- * y otro es en sí misma una señal útil.
+ * `occurredAt` es hora del cliente y no es confiable: el backend debe estampar su propio
+ * `receivedAt`, que es el que tiene valor probatorio. Ver REGISTRO_Y_IDENTIDAD.md.
  */
 
 import { createMessageId } from "../messages/messageFactory.js";
@@ -68,9 +53,8 @@ const MAX_TEXT_LENGTH = 8000;
 export const createConversationId = () => createMessageId();
 
 /**
- * Construye la cabecera de la conversación: los datos que no cambian mensaje a mensaje.
- * Se envía junto al primer registro y cada vez que la identidad o la autorización
- * cambian, de modo que el backend siempre pueda reconstruir el contexto.
+ * Cabecera de la conversación: lo que no cambia mensaje a mensaje. Se reenvía cuando la
+ * identidad o la autorización cambian.
  *
  * @param {Object} params
  * @param {string} params.tenantId
@@ -96,9 +80,7 @@ export const createEnvelope = ({
   identity,
   consent,
   context: {
-    // La URL sitúa la atención, que es información útil en una auditoría.
-    // Deliberadamente NO se recoge el user-agent ni la huella del dispositivo: no
-    // aportan al registro de la atención y sí aumentarían la exposición.
+    // Sin user-agent ni huella del dispositivo: no aportan y aumentan la exposición.
     pageUrl: truncate(String(pageUrl || ""), 500),
     locale: "es-CO"
   }
@@ -118,8 +100,7 @@ export const createMessageRecord = ({ tenantId, conversationId, sequence, messag
   schemaVersion: RECORD_SCHEMA_VERSION,
   tenantId,
   conversationId,
-  // Se reutiliza el id del mensaje de la interfaz: así el registro y lo que el
-  // ciudadano vio en pantalla son trazables entre sí, y el id ya es único.
+  // Reutiliza el id de la interfaz: el registro y lo que el ciudadano vio son trazables.
   messageId: message.id,
   sequence,
   occurredAt: new Date().toISOString(),
@@ -129,11 +110,8 @@ export const createMessageRecord = ({ tenantId, conversationId, sequence, messag
 });
 
 /**
- * Extrae los datos no textuales relevantes de un mensaje.
- *
- * No se persiste el mensaje entero a propósito: contiene props de React, callbacks y
- * los datos crudos de respuestas de los RPA (`pqrsdData`, `predios`), que abultarían
- * el registro y duplicarían información que ya vive en los sistemas de origen.
+ * Extrae los datos no textuales de un mensaje. No se persiste el mensaje entero: lleva
+ * props de React y datos crudos de los RPA que ya viven en los sistemas de origen.
  *
  * @param {import("../messages/messageFactory.js").ChatMessage} message
  * @returns {Object|null}
@@ -158,10 +136,7 @@ const extractMetadata = (message) => {
 };
 
 /**
- * ¿Debe este mensaje formar parte del registro?
- *
- * Se excluyen los mensajes de bienvenida, que son texto fijo idéntico en toda
- * conversación y solo añadirían ruido a la evidencia.
+ * ¿Debe este mensaje formar parte del registro? Se excluye la bienvenida: es texto fijo.
  *
  * @param {import("../messages/messageFactory.js").ChatMessage} message
  * @returns {boolean}
