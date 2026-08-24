@@ -79,9 +79,15 @@ substitutions:
   _CONVERSATION_API_URL: ""
   _PERSISTENCE_MODE: "off"
 
-  # Origen del backend del chatbot visto desde el navegador. Vacío = mismo origen que sirve
-  # el widget, que es el caso normal: el proxy vive en este mismo servicio.
-  _BACKEND_ORIGIN: ""
+  # Origen del backend del chatbot visto desde el navegador.
+  #
+  # OBLIGATORIO cuando el widget va incrustado en un portal de otro dominio, que es el caso
+  # de `pruebas-se-floridablanca.nexura.com`: desde una página de ese dominio, una ruta como
+  # `/rpa/factura/...` resolvería contra el portal y no contra este servicio, y todos los
+  # trámites darían 404.
+  #
+  # Al montar el balanceador externo con un dominio propio, cambiar este valor por él.
+  _BACKEND_ORIGIN: "https://qam-ia-chatbot-floridablanca-58937908768.us-central1.run.app"
   _AI_PROXY_URL: ""
 
   # ── Microservicios RPA ─────────────────────────────────────────────────────

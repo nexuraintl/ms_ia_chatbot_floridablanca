@@ -181,6 +181,18 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         embed: path.resolve(__dirname, 'src/embed.jsx')
+      },
+      output: {
+        /**
+         * El punto de entrada del widget embebido necesita una URL ESTABLE: el portal que
+         * lo incrusta lleva ese `<script src>` escrito en su plantilla, y con un nombre con
+         * hash cada despliegue lo dejaría apuntando a un archivo que ya no existe.
+         *
+         * El resto de los assets conserva el hash, que es lo que permite cachearlos para
+         * siempre. `assets/embed.js` se sirve con `no-cache` justamente por no llevarlo.
+         */
+        entryFileNames: (chunk) =>
+          chunk.name === 'embed' ? 'assets/embed.js' : 'assets/[name]-[hash].js'
       }
     }
   },

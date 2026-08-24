@@ -319,6 +319,9 @@ jsonPayload.correlation_id="<el identificador>"
 | Síntoma | Causa probable | Acción |
 |---|---|---|
 | El widget no carga en el portal | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante | Verificar el LB externo. Es la causa más frecuente en el primer despliegue. |
+| La consola del portal dice `violates the following Content Security Policy directive: script-src` | La CSP del portal anfitrión no admite el origen del chatbot | No se arregla desde aquí: quien opere el portal debe añadir el origen del servicio a `script-src` y a `connect-src`. |
+| El script del widget carga HTML en vez de JavaScript | La etiqueta apunta a `/src/embed.jsx`, que no existe en el contenedor: el servidor responde `index.html` a toda ruta desconocida | Usar `/assets/embed.js`, que es el punto de entrada compilado y **no lleva hash**, para que el portal no tenga que cambiar la etiqueta en cada despliegue. |
+| Embebido en otro dominio, los trámites dan 404 | `VITE_BACKEND_ORIGIN` sin definir al compilar: `/rpa/...` resuelve contra el portal anfitrión | Compilar con `_BACKEND_ORIGIN` apuntando a la URL pública del chatbot. |
 | Los trámites fallan con error de CORS | El RPA no admite `X-Correlation-ID` en `Access-Control-Allow-Headers` | Añadirlo en el RPA, o poner `observability.sendCorrelationId: false` en `chatbotConfig.json` como medida temporal |
 | El chatbot responde siempre desde el catálogo local | Sin `GEMINI_API_KEY` en el contenedor, o clave inválida | Revisar que el secreto `gemini-api-key` esté montado y que la SA tenga `secretAccessor`. El log de arranque `ai_proxy_configured` trae `ai_enabled`. Sin clave degrada al catálogo a propósito. |
 | El widget pide la clave de Gemini en el navegador estando desplegado | `VITE_AI_PROXY_ENABLED=false` en el build | Quitarla. En producción el proxy debe estar activo: la clave vive en el servidor (SECURITY.md, H-01). |
