@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import { getClientes, prewarmCaptcha } from "../../services/rpaPredialService";
+import { useChat } from "../../context/ChatContext";
 
 export const PredialForm = ({ onSubmit, onCancel }) => {
+  // Si el ciudadano ya se identificó, no volver a pedirle el correo.
+  const { identityPrefill } = useChat();
+
   const [searchTypes, setSearchTypes] = useState([
     "Código Predial",
     "Número Cuenta",
@@ -15,7 +19,7 @@ export const PredialForm = ({ onSubmit, onCancel }) => {
     searchType: "Código Predial",
     searchValue: "",
     phone: "",
-    email: ""
+    email: identityPrefill?.email || ""
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);

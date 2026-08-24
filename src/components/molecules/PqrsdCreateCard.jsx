@@ -1,9 +1,14 @@
 import { useState, useEffect } from "react";
-import { getCatalogos, crearPqrsd } from "../../services/pqrsdService";
+import { getCatalogos, crearPqrsd, validateAttachments, FILE_CONSTRAINTS } from "../../services/pqrsdService";
 import { useChat } from "../../context/ChatContext";
+import { sessionMetrics, METRIC_EVENTS } from "../../domain/observability/sessionMetrics";
+
+/** Identificador del trámite en el panel. Coincide con el del registro de flujos. */
+const FLOW = { flowId: "pqrsd_crear", label: "Radicación de PQRSD" };
 
 export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
-  const { scheduleFollowUp } = useChat();
+  // Si el ciudadano ya se identificó, no volver a pedirle el correo.
+  const { scheduleFollowUp, identityPrefill } = useChat();
   const [loadingCatalogos, setLoadingCatalogos] = useState(true);
   const [catalogos, setCatalogos] = useState({
     tipos: [],
@@ -12,7 +17,7 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
   const [formData, setFormData] = useState({
     asunto: "",
-    email: "",
+    email: identityPrefill?.email || "",
     telefonoCelular: "",
     esAnonimo: true,
     numeroIdentificacion: "",
@@ -62,9 +67,22 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files) {
-      setFiles(Array.from(e.target.files));
+    if (!e.target.files) return;
+
+    const selected = Array.from(e.target.files);
+
+    // Validar antes de aceptar: la versión anterior admitía cualquier tipo, tamaño y
+    // cantidad, y el ciudadano solo descubría el rechazo tras esperar la subida.
+    const { valid, error } = validateAttachments(selected);
+    if (!valid) {
+      setErrorMsg(error);
+      setFiles([]);
+      e.target.value = "";
+      return;
     }
+
+    setErrorMsg(null);
+    setFiles(selected);
   };
 
   const handleSubmit = async (e) => {
@@ -102,14 +120,21 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
       if (res.success) {
         setResult(res);
+        // El radicado entregado es el resultado del trámite. No se reporta su número:
+        // el panel de monitoreo no necesita el dato y el radicado es PII.
+        sessionMetrics.record(METRIC_EVENTS.FLOW_COMPLETED, FLOW);
         if (onSubmitSuccess) {
           onSubmitSuccess(res);
         }
       } else {
-        setErrorMsg(res.message || "No se pudo radicar la PQRSD. Intenta nuevamente.");
+        const reason = res.message || "No se pudo radicar la PQRSD. Intenta nuevamente.";
+        setErrorMsg(reason);
+        sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
       }
     } catch (err) {
-      setErrorMsg(err.message || "Ocurrió un error inesperado al conectar con el RPA.");
+      const reason = err.message || "Ocurrió un error inesperado al conectar con el RPA.";
+      setErrorMsg(reason);
+      sessionMetrics.record(METRIC_EVENTS.FLOW_FAILED, { ...FLOW, reason });
     } finally {
       setIsSubmitting(false);
       if (scheduleFollowUp) scheduleFollowUp(20000);
@@ -290,13 +315,18 @@ export const PqrsdCreateCard = ({ onSubmitSuccess, onCancel }) => {
 
             <div className="form-group">
               <label>Adjuntar Documentos / Fotos (Opcional):</label>
-              <input 
+              <input
                 type="file"
                 multiple
+                accept={FILE_CONSTRAINTS.allowedExtensions.map((e) => `.${e}`).join(",")}
                 onChange={handleFileChange}
                 disabled={isSubmitting}
                 className="file-input"
               />
+              <span className="file-hint" style={{ fontSize: "0.72rem", opacity: 0.75 }}>
+                Máximo {FILE_CONSTRAINTS.maxFiles} archivos de{" "}
+                {(FILE_CONSTRAINTS.maxBytesPerFile / 1024 / 1024).toFixed(0)} MB cada uno.
+              </span>
               {files.length > 0 && (
                 <span className="file-count">📎 {files.length} archivo(s) seleccionado(s)</span>
               )}

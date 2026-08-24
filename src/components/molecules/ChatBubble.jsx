@@ -1,130 +1,23 @@
 import { ChatForm } from "../organisms/ChatForm";
-import { PqrsdCreateCard } from "./PqrsdCreateCard";
-import { PqrsdConsultCard } from "./PqrsdConsultCard";
-import { PqrsdResultCard } from "./PqrsdResultCard";
-import { PredialForm } from "./PredialForm";
-import { PredioCardList } from "./PredioCardList";
-import { FileText, Download, Image as ImageIcon, ExternalLink } from "lucide-react";
-import { sanitizeUrl } from "../../utils/securityUtils";
+import { FileText, Download, Image as ImageIcon, ExternalLink, ShieldAlert } from "lucide-react";
+import { resolveCustomComponent } from "../registry/customComponentRegistry";
+import { RichText } from "./RichText";
+import { forBackendResource, sanitizeUrlScheme } from "../../domain/security/urlPolicy";
 
-const parseInlineMarkdown = (text, isUser, lineIdx) => {
-  if (!text) return [];
-
-  // Matcher para: [link](url), **bold** y URLs sueltas
-  const tokenRegex = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))|(\*\*([\s\S]+?)\*\*)|(https?:\/\/[^\s\)]+)/g;
-
-  const elements = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = tokenRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      elements.push(text.substring(lastIndex, match.index));
-    }
-
-    if (match[1]) {
-      // Enlace Markdown [Label](URL)
-      const label = match[2];
-      const safeUrl = sanitizeUrl(match[3]);
-      elements.push(
-        <a
-          key={`link-${lineIdx}-${match.index}`}
-          href={safeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            color: isUser ? "#ffffff" : "#1d4ed8",
-            fontWeight: 700,
-            textDecoration: "underline",
-            wordBreak: "break-all"
-          }}
-        >
-          {label} 🔗
-        </a>
-      );
-    } else if (match[4]) {
-      // Texto en negrilla **bold**
-      const boldText = match[5];
-      elements.push(
-        <strong key={`bold-${lineIdx}-${match.index}`} style={{ fontWeight: 700 }}>
-          {boldText}
-        </strong>
-      );
-    } else if (match[6]) {
-      // URL directa
-      const safeUrl = sanitizeUrl(match[6]);
-      elements.push(
-        <a
-          key={`rawlink-${lineIdx}-${match.index}`}
-          href={safeUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            color: isUser ? "#ffffff" : "#1d4ed8",
-            fontWeight: 700,
-            textDecoration: "underline",
-            wordBreak: "break-all"
-          }}
-        >
-          {match[6]} 🔗
-        </a>
-      );
-    }
-
-    lastIndex = tokenRegex.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    elements.push(text.substring(lastIndex));
-  }
-
-  return elements;
-};
-
-const renderFormattedText = (content, isUser) => {
-  if (!content) return null;
-
-  const lines = content.split("\n");
-
-  return lines.map((line, lineIdx) => {
-    let cleanLine = line;
-    let isBullet = false;
-
-    // Detectar viñetas tipo "* " o "- " o "* **"
-    if (/^\s*[\*\-]\s+/.test(cleanLine)) {
-      isBullet = true;
-      cleanLine = cleanLine.replace(/^\s*[\*\-]\s+/, "");
-    }
-
-    const parsedElements = parseInlineMarkdown(cleanLine, isUser, lineIdx);
-
-    return (
-      <span
-        key={lineIdx}
-        style={{
-          display: "block",
-          marginBottom: lineIdx < lines.length - 1 ? "4px" : "0",
-          paddingLeft: isBullet ? "12px" : "0"
-        }}
-      >
-        {isBullet && (
-          <span style={{ fontWeight: "bold", marginRight: "6px", color: isUser ? "#ffffff" : "#3b82f6" }}>
-            •
-          </span>
-        )}
-        {parsedElements}
-      </span>
-    );
-  });
-};
-
+/**
+ * Burbuja de mensaje del chat.
+ *
+ * Refactor: ya no conoce ninguna tarjeta de trámite concreta (lo resuelve
+ * `customComponentRegistry`) ni contiene el analizador de Markdown (está en
+ * `RichText`). Su única responsabilidad es la presentación de la burbuja.
+ */
 export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelectPredio }) => {
-  const { sender, text, timestamp, form, attachment, customComponent, sessionId, predios, buttonUrl, buttonText } = message;
+  const { sender, text, timestamp, form, attachment, customComponent, buttonUrl, buttonText } = message;
 
-  // Estilos según el remitente
   const isUser = sender === "user";
   const isSystem = sender === "system";
 
+  // Los mensajes de sistema (logs de RPA) se muestran centrados y sin formato rico.
   if (isSystem) {
     return (
       <div
@@ -158,8 +51,14 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
     );
   }
 
-  const safeButtonUrl = buttonUrl ? sanitizeUrl(buttonUrl) : null;
-  const safeFileUrl = attachment?.fileUrl ? sanitizeUrl(attachment.fileUrl) : null;
+  // Los enlaces de botón y de archivo provienen de los backends propios (pasarela PSE,
+  // factura PDF), no del modelo, así que se validan como recurso de backend: se exige
+  // esquema seguro pero no lista blanca de dominio, que rompería pagos legítimos.
+  const safeButtonUrl = buttonUrl ? forBackendResource(buttonUrl).href : null;
+  const safeFileUrl = attachment?.fileUrl ? forBackendResource(attachment.fileUrl).href : null;
+  const safeImageSrc = attachment?.src ? sanitizeUrlScheme(attachment.src) : null;
+
+  const customEntry = resolveCustomComponent(customComponent);
 
   return (
     <div
@@ -174,7 +73,7 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
     >
       <div
         style={{
-          maxWidth: customComponent ? "100%" : (isUser ? "82%" : "90%"),
+          maxWidth: customComponent ? "100%" : isUser ? "82%" : "90%",
           padding: customComponent ? "6px 6px" : "12px 16px",
           borderRadius: isUser ? "18px 18px 2px 18px" : "18px 18px 18px 2px",
           backgroundColor: isUser ? "var(--user-bubble-bg)" : "var(--bot-bubble-bg)",
@@ -188,41 +87,21 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
           boxSizing: "border-box"
         }}
       >
-        {/* Texto del mensaje */}
+        {/* Texto con formato ligero (negrillas, viñetas y enlaces verificados) */}
         {text && (
           <span style={{ fontSize: "0.98rem", lineHeight: "1.5", wordBreak: "break-word" }}>
-            {renderFormattedText(text, isUser)}
+            <RichText content={text} isUser={isUser} />
           </span>
         )}
 
-        {/* Componentes personalizados de PQRSD */}
-        {customComponent === "pqrsd_crear" && (
-          <PqrsdCreateCard />
-        )}
-
-        {customComponent === "pqrsd_consult" && (
-          <PqrsdConsultCard />
-        )}
-
-        {customComponent === "pqrsd_result" && (
-          <PqrsdResultCard data={message.pqrsdData} />
-        )}
-
-        {/* Componente interactivo de Impuesto Predial */}
-        {customComponent === "predial_form" && (
-          <PredialForm onSubmit={onSubmitPredialForm} />
-        )}
-
-        {/* Múltiples predios encontrados */}
-        {customComponent === "predial_multiples" && (
-          <PredioCardList
-            sessionId={sessionId}
-            predios={predios}
-            onSelectPredio={onSelectPredio}
+        {/* Componente interactivo, resuelto por el registro */}
+        {customEntry && (
+          <customEntry.Component
+            {...customEntry.mapProps(message, { onSubmitPredialForm, onSelectPredio })}
           />
         )}
 
-        {/* Botón de Enlace Externo (ej: Pago PSE) */}
+        {/* Botón de enlace externo (pago PSE) */}
         {safeButtonUrl && safeButtonUrl !== "#" && (
           <a
             href={safeButtonUrl}
@@ -249,16 +128,10 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
           </a>
         )}
 
-        {/* Formulario adjunto anterior */}
-        {form && (
-          <ChatForm
-            formType={form.type}
-            fields={form.fields}
-            onSubmit={onSubmitForm}
-          />
-        )}
+        {/* Formulario simple (Sisbén) */}
+        {form && <ChatForm formType={form.type} fields={form.fields} onSubmit={onSubmitForm} />}
 
-        {/* Archivos / Imágenes adjuntos */}
+        {/* Adjuntos */}
         {attachment && (
           <div
             style={{
@@ -271,10 +144,10 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
               flexDirection: "column"
             }}
           >
-            {attachment.type === "image" && (
+            {attachment.type === "image" && safeImageSrc && safeImageSrc !== "#" && (
               <>
                 <img
-                  src={attachment.src}
+                  src={safeImageSrc}
                   alt={attachment.label || "Imagen adjunta"}
                   style={{
                     width: "100%",
@@ -300,16 +173,18 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
               </>
             )}
 
-            {/* Enlace de descarga de archivo */}
             {safeFileUrl && (
               <a
                 href={safeFileUrl}
                 target={safeFileUrl.startsWith("#") ? "_self" : "_blank"}
                 rel="noopener noreferrer"
                 onClick={(e) => {
+                  // Los datos simulados usan anclas como marcador de descarga.
                   if (safeFileUrl.startsWith("#")) {
                     e.preventDefault();
-                    alert(`Simulando la descarga del archivo: ${attachment.fileLabel || "documento.pdf"}`);
+                    console.info(
+                      `[Demo] Descarga simulada: ${attachment.fileLabel || "documento.pdf"}`
+                    );
                   }
                 }}
                 style={{
@@ -331,10 +206,26 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
                 <span>{attachment.fileLabel || "Descargar Archivo"}</span>
               </a>
             )}
+
+            {/* Adjunto rechazado por esquema no seguro */}
+            {attachment.type === "image" && (!safeImageSrc || safeImageSrc === "#") && (
+              <div
+                style={{
+                  padding: "8px",
+                  fontSize: "0.75rem",
+                  color: "#f59e0b",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px"
+                }}
+              >
+                <ShieldAlert size={12} />
+                <span>Imagen bloqueada por seguridad.</span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Timestamp */}
         <span
           style={{
             alignSelf: "flex-end",
@@ -345,7 +236,6 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
         >
           {timestamp}
         </span>
-
       </div>
     </div>
   );
