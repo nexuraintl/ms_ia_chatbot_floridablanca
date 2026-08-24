@@ -116,7 +116,15 @@ substitutions:
 
   # ── Control de gasto de Gemini ─────────────────────────────────────────────
   # Nombre del secreto en Secret Manager que guarda la clave.
-  _GEMINI_SECRET: "gemini-api-key"
+  #
+  # VACÍO A PROPÓSITO: crear el secreto exige permisos de Secret Manager que no todo el
+  # equipo tiene. Mientras esté vacío, el despliegue no monta ninguna clave, el proxy
+  # responde `ai_unavailable` y el widget atiende con el banco de preguntas frecuentes.
+  # Los trámites de predial y PQRSD no dependen de esto.
+  #
+  # Al crear el secreto, poner aquí su nombre (`gemini-api-key`) y conceder
+  # `roles/secretmanager.secretAccessor` a la SA de ejecución.
+  _GEMINI_SECRET: ""
   _GEMINI_MODEL: "gemini-2.5-flash-lite"
 
   # Ráfagas por IP. Frena bots y bucles de reintento.
@@ -189,31 +197,43 @@ steps:
   # en los portales municipales.
   - id: deploy
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
-    entrypoint: gcloud
+    entrypoint: bash
     args:
-      - run
-      - deploy
-      - ${_SERVICE_NAME}
-      - --image=${_IMAGE}:${COMMIT_SHA}
-      - --region=${_REGION}
-      - --platform=managed
-      - --ingress=internal-and-cloud-load-balancing
-      - --port=8080
-      - --min-instances=${_MIN_INSTANCES}
-      - --max-instances=${_MAX_INSTANCES}
-      - --cpu=${_CPU}
-      - --memory=${_MEMORY}
-      - --concurrency=${_CONCURRENCY}
-      - --timeout=${_TIMEOUT}
-      # No hace falta --no-cpu-throttling: el seguimiento de un trámite ocurre dentro de una
-      # petición (el stream SSE la mantiene abierta), así que nunca hay una tarea de fondo
-      # esperando CPU entre peticiones. Si alguna vez se añade una, hará falta el flag.
-      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS},RPA_FACTURA_URL=${_RPA_FACTURA_URL},RPA_PQRSD_URL=${_RPA_PQRSD_URL},RPA_AUTH_MODE=${_RPA_AUTH_MODE},RPA_GATEWAY_URL=${_RPA_GATEWAY_URL},RPA_STARTUP_PROBE=${_RPA_STARTUP_PROBE},RPA_RATE_LIMIT_PER_MINUTE=${_RPA_RATE_LIMIT_PER_MINUTE},RPA_EFFECTFUL_LIMIT_PER_HOUR=${_RPA_EFFECTFUL_LIMIT_PER_HOUR},RPA_MAX_CONCURRENT_TRAMITES=${_RPA_MAX_CONCURRENT_TRAMITES}
-      # La clave nunca como variable de compilación ni en --set-env-vars: se monta desde
-      # Secret Manager en tiempo de ejecución.
-      - --set-secrets=GEMINI_API_KEY=${_GEMINI_SECRET}:latest
-      - --labels=module=${_MODULE},environment=${_ENVIRONMENT},managed-by=cloudbuild
-      - --quiet
+      - -c
+      - |
+        set -euo pipefail
+
+        # El secreto de Gemini es OPCIONAL. Un --set-secrets apuntando a un secreto que no
+        # existe tumba el despliegue entero, y la clave es una dependencia accesoria: sin
+        # ella el widget atiende con el banco de preguntas y los trámites siguen intactos.
+        # Con `$$_GEMINI_SECRET` vacío, simplemente no se monta.
+        SECRET_ARG=""
+        if [ -n "${_GEMINI_SECRET}" ]; then
+          SECRET_ARG="--set-secrets=GEMINI_API_KEY=${_GEMINI_SECRET}:latest"
+        else
+          echo "AVISO: _GEMINI_SECRET vacio. Se despliega sin clave de Gemini; el chatbot"
+          echo "       respondera con el banco de preguntas frecuentes."
+        fi
+
+        # No hace falta --no-cpu-throttling: el seguimiento de un trámite ocurre dentro de
+        # una petición (el stream SSE la mantiene abierta), así que nunca hay una tarea de
+        # fondo esperando CPU entre peticiones. Si alguna vez se añade una, hará falta.
+        gcloud run deploy ${_SERVICE_NAME} \
+          --image=${_IMAGE}:${COMMIT_SHA} \
+          --region=${_REGION} \
+          --platform=managed \
+          --ingress=internal-and-cloud-load-balancing \
+          --port=8080 \
+          --min-instances=${_MIN_INSTANCES} \
+          --max-instances=${_MAX_INSTANCES} \
+          --cpu=${_CPU} \
+          --memory=${_MEMORY} \
+          --concurrency=${_CONCURRENCY} \
+          --timeout=${_TIMEOUT} \
+          --set-env-vars="SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS},RPA_FACTURA_URL=${_RPA_FACTURA_URL},RPA_PQRSD_URL=${_RPA_PQRSD_URL},RPA_AUTH_MODE=${_RPA_AUTH_MODE},RPA_GATEWAY_URL=${_RPA_GATEWAY_URL},RPA_STARTUP_PROBE=${_RPA_STARTUP_PROBE},RPA_RATE_LIMIT_PER_MINUTE=${_RPA_RATE_LIMIT_PER_MINUTE},RPA_EFFECTFUL_LIMIT_PER_HOUR=${_RPA_EFFECTFUL_LIMIT_PER_HOUR},RPA_MAX_CONCURRENT_TRAMITES=${_RPA_MAX_CONCURRENT_TRAMITES}" \
+          $$SECRET_ARG \
+          --labels=module=${_MODULE},environment=${_ENVIRONMENT},managed-by=cloudbuild \
+          --quiet
     waitFor: [push]
 
 # ─────────────────────────────────────────────────────────────────────────────

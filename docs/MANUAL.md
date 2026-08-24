@@ -181,10 +181,16 @@ incluye un paso que **falla el build** si detecta una clave incrustada en `dist/
 
 | Secreto | Uso | Estado |
 |---|---|---|
-| `gemini-api-key` | Clave de Google Gemini, montada como `GEMINI_API_KEY` de runtime | Requiere `roles/secretmanager.secretAccessor` para la SA de ejecución |
+| `gemini-api-key` | Clave de Google Gemini, montada como `GEMINI_API_KEY` de runtime | **Opcional.** Requiere `roles/secretmanager.secretAccessor` para la SA de ejecución |
 
-Sin el secreto el despliegue sigue funcionando: el proxy responde `ai_unavailable` y el
-widget atiende con el banco de preguntas frecuentes.
+`_GEMINI_SECRET` viene **vacío** en `cloudbuild.yaml`, y con él vacío el despliegue no monta
+ninguna clave. Es deliberado: crear el secreto exige permisos de Secret Manager que no todo
+el equipo tiene, y un `--set-secrets` apuntando a un secreto inexistente tumba el despliegue
+entero por una dependencia accesoria.
+
+Sin la clave el chatbot funciona: el proxy responde `ai_unavailable` y el widget atiende con
+el banco de preguntas frecuentes. Los trámites de predial y PQRSD no dependen de ella. Al
+crear el secreto, se pone su nombre en `_GEMINI_SECRET` y sale una revisión nueva.
 
 Los identity tokens de los RPA **no son un secreto que haya que guardar**: los acuña el
 servidor de metadatos en cada renovación y nunca se persisten.
