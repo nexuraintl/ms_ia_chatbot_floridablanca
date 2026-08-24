@@ -252,7 +252,33 @@ porque `EventSource` no admite cabeceras propias.
 
 ---
 
-## 10. Verificación antes de decir que funciona
+## 10. Desarrollo local
+
+La configuración local vive en `.env`, y la carga `npm run start:local`:
+
+```bash
+npm run build && npm run start:local
+```
+
+`npm start` no lee `.env` a propósito: es el arranque de producción, donde la
+configuración llega por `--set-env-vars` y Secret Manager. Y en el despliegue el archivo ni
+siquiera existe — `.gitignore` lo deja fuera del repositorio y `.dockerignore` fuera de la
+imagen, para que cambiar una URL no obligue a reconstruirla.
+
+Dos formas de trabajar:
+
+| Contra qué | Cómo |
+|---|---|
+| RPA locales o un stub | `RPA_AUTH_MODE=none` con las URLs de `localhost`. Es el valor por omisión de `.env` |
+| Los servicios reales de QAM | `RPA_AUTH_MODE=gcloud` con las URLs de QAM, tras `gcloud auth login`. El token se acuña con tu credencial: sin llaves y sin tokens escritos en ningún archivo |
+
+Con `npm run dev` el servidor de Vite reenvía `/rpa/*` y `/api/ai/*` al backend
+(`http://localhost:8080` por omisión, o `DEV_BACKEND_ORIGIN`), así que hay que tener los dos
+procesos levantados.
+
+---
+
+## 11. Verificación antes de decir que funciona
 
 Con `RPA_AUTH_MODE=gcloud` desde una máquina con `gcloud` autenticado, o desde el propio
 Cloud Run:
@@ -273,7 +299,7 @@ Lista mínima:
 
 ---
 
-## 11. Decisiones tomadas y lo que sigue abierto
+## 12. Decisiones tomadas y lo que sigue abierto
 
 ### Resuelto
 
@@ -294,7 +320,7 @@ Lista mínima:
 
 ---
 
-## 12. Documentos relacionados
+## 13. Documentos relacionados
 
 | Documento | Contenido |
 |---|---|

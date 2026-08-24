@@ -318,6 +318,7 @@ jsonPayload.correlation_id="<el identificador>"
 | `rpa_probe_fatal` con 401 | `audience` equivocado: barra final sobrante, o el del otro servicio | Revisar `RPA_FACTURA_URL` y `RPA_PQRSD_URL`. Son la URL exacta, sin barra final, y una por servicio. |
 | Los trámites fallan con `reason: rpa_ingress_blocked` | 404 con cuerpo HTML: respondió el balanceador de Google, no la aplicación | El ingress del RPA no admite este tráfico. En PREM y PROD hay que entrar por el gateway (`RPA_GATEWAY_URL`). |
 | `reason: rpa_not_configured` | Falta `RPA_FACTURA_URL` o `RPA_PQRSD_URL` | Definirlas como variables de runtime, no como `VITE_*`. |
+| Funciona en local pero no en Cloud Run, con la misma configuración | Los valores están solo en `.env`, que no entra a la imagen (`.dockerignore`) | La configuración del despliegue va en `--set-env-vars` de `cloudbuild.yaml` y en Secret Manager. `.env` es exclusivamente local. |
 | El ciudadano recibe "estás en espera" | Techo de 2 trámites simultáneos del RPA de factura | Es el comportamiento correcto. Si pasa a menudo, el cuello está en el RPA, no aquí. |
 | La consola avisa de `VITE_RPA_*_API_URL` ignorada | Variable de la etapa anterior | Quitarla del build. Apuntar el navegador directo a un Cloud Run con IAM da 403. |
 | Arranque en frío perceptible | `min-instances: 0` | Subir a 1 en PREM y PROD |

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server/index.js",
+    "start:local": "node --env-file-if-exists=.env server/index.js",
     "test": "npm run test:security && npm run test:server && npm run test:rpa",
     "test:security": "node tests/run-security-tests.mjs",
     "test:server": "node tests/run-server-tests.mjs",
