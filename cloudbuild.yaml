@@ -13,9 +13,11 @@
 #   _PROJECT_ID    proyecto GCP real de cada ambiente (QAM / PREM / PROD)
 #   _REGION        región del Cloud Run
 #   _AR_REPO       repositorio de Artifact Registry
-#   _RUN_SA        service account de ejecución
-#   _RPA_*_URL     URLs reales de los microservicios RPA
-#   _ALLOWED_ORIGINS  dominios de los portales que embeben el widget
+#   _RPA_*_URL     URLs de los microservicios RPA por ambiente. Son también el `audience`
+#                  del identity token: URL exacta, SIN barra final. Hoy solo existen las de
+#                  QAM; PREM y PROD se rellenan cuando esos servicios existan
+#   _RPA_GATEWAY_URL  host del API Gateway, si algún día el ingress de los RPA deja de
+#                  permitir tráfico directo (hoy no aplica en QAM)
 #
 # Los valores de abajo son la forma correcta según la convención de nomenclatura del
 # estándar, no valores verificados contra la infraestructura.
@@ -42,25 +44,75 @@ substitutions:
 
   _REGION: "us-central1"
   _AR_REPO: "cloud-run-source-deploy"
+
+  # Service account de ejecución. Vacío a propósito: el despliegue no pasa
+  # `--service-account`, así que Cloud Run usa la SA de compute por omisión,
+  # `<NÚMERO-PROYECTO>-compute@developer.gserviceaccount.com`. Ése es el principal al que
+  # hay que conceder `roles/run.invoker` sobre los dos RPA (ver el paso 4).
+  #
+  # Para verla en un servicio ya desplegado:
+  #   gcloud run services describe ${_SERVICE_NAME} --region=${_REGION} \
+  #     --format="value(spec.template.spec.serviceAccountName)"
+  #
+  # Conviene una SA dedicada con permisos mínimos cuando plataforma la cree: basta añadir
+  # `--service-account=<email>` al paso de despliegue.
   _RUN_SA: ""
 
   # Recursos por ambiente. QAM arranca en 0 para no gastar en reposo; PREM y PROD
   # mantienen 1 instancia caliente para evitar el arranque en frío al ciudadano.
   _MIN_INSTANCES: "0"
-  _MAX_INSTANCES: "10"
+  # Una sola instancia a propósito. El control de admisión que evita saturar el servicio de
+  # factura —techo real de 2 trámites simultáneos— cuenta en la memoria del proceso, así que
+  # con varias instancias el techo efectivo se multiplica. Con 80 peticiones concurrentes por
+  # instancia hay capacidad de sobra para la atención; subirlo exige mover ese contador a
+  # Firestore o Redis. Ver docs/INTEGRACION_RPA.md.
+  _MAX_INSTANCES: "1"
   _CPU: "1"
   _MEMORY: "512Mi"
   _CONCURRENCY: "80"
 
+  # Un stream SSE de un trámite dura hasta 300s del lado del RPA. Con el timeout por defecto
+  # (300s) la plataforma cortaría la conexión justo antes de que llegue el evento de cierre.
+  _TIMEOUT: "310s"
+
   # Configuración del widget incrustada en el bundle. Solo valores públicos.
-  _RPA_PREDIAL_API_URL: ""
-  _RPA_PQRSD_API_URL: ""
   _CONVERSATION_API_URL: ""
   _PERSISTENCE_MODE: "off"
 
-  # Origen del proxy de IA. Vacío = mismo origen que sirve el widget, que es el caso
-  # normal: el proxy vive en este mismo servicio.
+  # Origen del backend del chatbot visto desde el navegador. Vacío = mismo origen que sirve
+  # el widget, que es el caso normal: el proxy vive en este mismo servicio.
+  _BACKEND_ORIGIN: ""
   _AI_PROXY_URL: ""
+
+  # ── Microservicios RPA ─────────────────────────────────────────────────────
+  # Variables de RUNTIME, nunca de compilación: los servicios exigen IAM, así que los llama
+  # el servidor. Como VITE_* no servirían de nada y además quedarían fijas en la imagen.
+  #
+  # QAM (verificadas):
+  #   factura  https://qam-rpa-factura-58937908768.us-central1.run.app
+  #   pqrsd    https://qam-rpa-pqrsd-ghlnutfdwq-uc.a.run.app
+  # PREM y PROD: pendientes de plataforma. Hoy solo existen los de QAM.
+  _RPA_FACTURA_URL: ""
+  _RPA_PQRSD_URL: ""
+
+  # metadata = Cloud Run directo, o gateway con x-google-issuer accounts.google.com.
+  # signed_jwt (gateway que exige JWT auto-firmado) NO está implementado: hay que confirmar
+  # antes con plataforma cuál de las dos configuraciones tiene el gateway.
+  _RPA_AUTH_MODE: "metadata"
+
+  # Host del API Gateway. Vacío = directo a los Cloud Run (QAM). En PREM y PROD el ingress
+  # es internal-and-cloud-load-balancing y los Cloud Run no son alcanzables.
+  _RPA_GATEWAY_URL: ""
+
+  # strict: un fallo de configuración (401, 403, 404 o variable ausente) corta el arranque,
+  # en lugar de aparecer cuando un ciudadano pide su factura.
+  _RPA_STARTUP_PROBE: "strict"
+
+  # Control de carga del proxy de los RPA. Detrás hay trámites oficiales irreversibles y
+  # captchas pagados, y el proxy es público.
+  _RPA_RATE_LIMIT_PER_MINUTE: "30"
+  _RPA_EFFECTFUL_LIMIT_PER_HOUR: "10"
+  _RPA_MAX_CONCURRENT_TRAMITES: "2"
 
   # ── Control de gasto de Gemini ─────────────────────────────────────────────
   # Nombre del secreto en Secret Manager que guarda la clave.
@@ -77,11 +129,16 @@ substitutions:
   # Techo diario de tokens reales de todo el servicio: el cortacircuitos de gasto.
   _AI_DAILY_TOKEN_CEILING: "500000"
 
-  # Portales autorizados a llamar al proxy, separados por comas. Un valor que empieza por
-  # punto es comodín de sufijo (`.floridablanca.gov.co`). El mismo origen que sirve el
-  # widget se permite siempre. NUNCA se responde con `*`: quién puede invocar el endpoint
-  # es parte del control de gasto.
-  _ALLOWED_ORIGINS: ".floridablanca.gov.co"
+  # Portales autorizados a llamar al proxy de IA y al de los RPA, separados por comas. Un
+  # valor que empieza por punto es comodín de sufijo (`.floridablanca.gov.co`). El mismo
+  # origen que sirve el widget se permite siempre. NUNCA se responde con `*`: quién puede
+  # invocar el endpoint es parte del control de gasto, y por el proxy de los RPA pasan
+  # trámites oficiales irreversibles.
+  #
+  # `pruebas-se-floridablanca.nexura.com` va explícito: es donde se prueba el widget
+  # embebido y NO cae bajo el comodín `.floridablanca.gov.co` —son dominios distintos—, así
+  # que sin él los trámites responderían 403 con `reason: forbidden_origin`.
+  _ALLOWED_ORIGINS: ".floridablanca.gov.co,pruebas-se-floridablanca.nexura.com"
 
   # Saltos de confianza en X-Forwarded-For. 2 = balanceador externo de GCP por delante de
   # Cloud Run (el despliegue previsto). 1 = Cloud Run expuesto directo en *.run.app.
@@ -110,10 +167,9 @@ steps:
       - --build-arg=VITE_SERVICE_VERSION=${SHORT_SHA}
       - --build-arg=VITE_ENVIRONMENT=${_ENVIRONMENT}
       - --build-arg=VITE_GOOGLE_CLOUD_PROJECT=${PROJECT_ID}
-      - --build-arg=VITE_RPA_PREDIAL_API_URL=${_RPA_PREDIAL_API_URL}
-      - --build-arg=VITE_RPA_PQRSD_API_URL=${_RPA_PQRSD_API_URL}
       - --build-arg=VITE_CONVERSATION_API_URL=${_CONVERSATION_API_URL}
       - --build-arg=VITE_PERSISTENCE_MODE=${_PERSISTENCE_MODE}
+      - --build-arg=VITE_BACKEND_ORIGIN=${_BACKEND_ORIGIN}
       - --build-arg=VITE_AI_PROXY_URL=${_AI_PROXY_URL}
       - .
 
@@ -148,13 +204,39 @@ steps:
       - --cpu=${_CPU}
       - --memory=${_MEMORY}
       - --concurrency=${_CONCURRENCY}
-      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS}
+      - --timeout=${_TIMEOUT}
+      # No hace falta --no-cpu-throttling: el seguimiento de un trámite ocurre dentro de una
+      # petición (el stream SSE la mantiene abierta), así que nunca hay una tarea de fondo
+      # esperando CPU entre peticiones. Si alguna vez se añade una, hará falta el flag.
+      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS},RPA_FACTURA_URL=${_RPA_FACTURA_URL},RPA_PQRSD_URL=${_RPA_PQRSD_URL},RPA_AUTH_MODE=${_RPA_AUTH_MODE},RPA_GATEWAY_URL=${_RPA_GATEWAY_URL},RPA_STARTUP_PROBE=${_RPA_STARTUP_PROBE},RPA_RATE_LIMIT_PER_MINUTE=${_RPA_RATE_LIMIT_PER_MINUTE},RPA_EFFECTFUL_LIMIT_PER_HOUR=${_RPA_EFFECTFUL_LIMIT_PER_HOUR},RPA_MAX_CONCURRENT_TRAMITES=${_RPA_MAX_CONCURRENT_TRAMITES}
       # La clave nunca como variable de compilación ni en --set-env-vars: se monta desde
       # Secret Manager en tiempo de ejecución.
       - --set-secrets=GEMINI_API_KEY=${_GEMINI_SECRET}:latest
       - --labels=module=${_MODULE},environment=${_ENVIRONMENT},managed-by=cloudbuild
       - --quiet
     waitFor: [push]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PASO 4 — PERMISOS IAM: FUERA DE ESTE PIPELINE, A PROPÓSITO
+#
+# La service account de ejecución del chatbot necesita `roles/run.invoker` sobre los DOS
+# servicios RPA. Sin ese rol el token es válido y la respuesta es 403.
+#
+# No se concede desde aquí porque los RPA viven en su propio proyecto y esta cuenta de
+# Cloud Build no tiene permiso para modificar sus políticas. Es una tarea de plataforma, una
+# sola vez por ambiente:
+#
+#   gcloud run services add-iam-policy-binding qam-rpa-factura #     --region=us-central1 --project=pre-qa-functions #     --member="serviceAccount:<SA-DEL-CHATBOT>" --role="roles/run.invoker"
+#
+#   gcloud run services add-iam-policy-binding qam-rpa-pqrsd #     --region=us-central1 --project=pre-qa-functions #     --member="serviceAccount:<SA-DEL-CHATBOT>" --role="roles/run.invoker"
+#
+# Si el gateway de PREM/PROD exige un JWT auto-firmado, hace falta además
+# `roles/iam.serviceAccountTokenCreator` de la SA sobre sí misma. Confirmar antes con
+# plataforma: ver docs/INTEGRACION_RPA.md.
+#
+# La sonda de arranque (RPA_STARTUP_PROBE=strict) detecta el rol ausente en el primer
+# despliegue: el contenedor no arranca y el log dice `rpa_probe_fatal` con el 403.
+# ─────────────────────────────────────────────────────────────────────────────
 
 images:
   - "${_IMAGE}:${COMMIT_SHA}"

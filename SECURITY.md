@@ -240,15 +240,23 @@ sustituye por un objeto estructurado, lo que elimina toda esa clase de fallo.
 4. **Rellenar `security.allowedLinkHosts`** en `src/config/chatbotConfig.json` con los
    dominios reales de la Alcaldía. Los valores actuales son una base razonable, no una
    lista verificada.
-5. **Definir `VITE_RPA_*_API_URL` con `https://`** antes de compilar para producción.
+5. **Conceder `roles/run.invoker` a la service account del chatbot sobre los dos RPA**, y
+   definir `RPA_FACTURA_URL` y `RPA_PQRSD_URL` como variables de RUNTIME con la URL exacta y
+   sin barra final. Los dos servicios exigen un identity token de Google, así que el
+   navegador ya no los llama: lo hace el backend a través de `/rpa/factura` y `/rpa/pqrsd`.
+   Sin el rol, el token es válido y la respuesta es 403; con la barra final sobrante, 401.
+   La sonda de arranque (`RPA_STARTUP_PROBE=strict`) detecta las dos cosas antes de que un
+   ciudadano pida su factura. Ver `docs/INTEGRACION_RPA.md`.
 6. **Añadir una Content-Security-Policy.** `index.html` no tiene ninguna, y el widget se
    embebe en portales de terceros. Requiere decidirla con quien opere el portal, por eso
    no se incluyó aquí.
 7. **Revisar `services/apiMock.js`**: contiene datos de ciudadanos ficticios y carga
    imágenes desde `images.unsplash.com`. En un portal de gobierno eso filtra la IP del
    visitante a un tercero y rompe si no hay internet.
-8. **Valorar un almacén compartido para la cuota diaria.** Los contadores del proxy viven
-   en la memoria de cada instancia: con `max-instances=10` el tope real puede llegar a ~10x
-   el configurado, y un escalado a cero los borra. El límite por IP y el techo de tokens
-   siguen actuando, pero la cuota por sesión es aproximada. `server/rateLimit.js` deja el
-   almacén detrás de una interfaz mínima para poder cambiarlo sin tocar la lógica.
+8. **Valorar un almacén compartido para la cuota diaria y para el control de admisión.**
+   Los contadores viven en la memoria de cada instancia. El despliegue quedó en
+   `max-instances=1` justamente por eso —el techo de 2 trámites simultáneos del RPA de
+   factura solo es real con una instancia—, así que hoy los topes se cumplen; el día que haya
+   que escalar, el tope efectivo se multiplica por el número de instancias y un escalado a
+   cero los borra. `server/rateLimit.js` y `server/rpaAdmission.js` dejan el almacén detrás
+   de una interfaz mínima para poder cambiarlo sin tocar la lógica.

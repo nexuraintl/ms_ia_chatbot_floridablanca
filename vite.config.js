@@ -150,6 +150,15 @@ const tokenLogPlugin = () => {
   }
 }
 
+/**
+ * Backend del chatbot durante el desarrollo (`npm start` en otra terminal).
+ *
+ * El servidor de desarrollo de Vite no tiene los proxies: los RPA exigen un identity token
+ * y la clave de Gemini vive en el servidor. Así que `/rpa/*` y `/api/ai/*` se reenvían al
+ * backend real. Sin esto, en `npm run dev` los trámites responden con el index.html.
+ */
+const DEV_BACKEND = process.env.DEV_BACKEND_ORIGIN || 'http://localhost:8080'
+
 // https://vite.dev/config/
 export default defineConfig({
   server: {
@@ -160,6 +169,11 @@ export default defineConfig({
     cors: {
       origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/],
       credentials: false
+    },
+    proxy: {
+      // Solo `/api/ai`, no todo `/api`: `/api/log-tokens` lo atiende el plugin de abajo.
+      '/api/ai': { target: DEV_BACKEND, changeOrigin: false },
+      '/rpa': { target: DEV_BACKEND, changeOrigin: false }
     }
   },
   build: {

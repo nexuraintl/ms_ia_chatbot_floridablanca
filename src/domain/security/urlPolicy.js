@@ -130,10 +130,30 @@ export const forModelOutput = (url, { baseOrigin } = {}) => {
  * No aplica lista blanca de host — bloquearla rompería pagos legítimos — pero exige
  * un esquema seguro y avisa si el host es inesperado.
  *
+ * Admite rutas del propio origen (`/rpa/factura/v1/facturas/...`): el PDF de la factura
+ * está detrás de IAM, así que llega por el proxy del backend y no por su host. Una ruta
+ * relativa no puede apuntar a otro sitio, así que se da por confiable —salvo la forma
+ * `//host`, que sí cambia de origen y por eso se trata como absoluta.
+ *
  * @param {unknown} url
  * @returns {{ safe: boolean, href: string, trusted: boolean }}
  */
 export const forBackendResource = (url) => {
+  const raw = typeof url === "string" ? url.trim() : "";
+
+  if (raw.startsWith("/") && !raw.startsWith("//")) {
+    const origin = globalThis.window?.location?.origin;
+    if (!origin) {
+      // Sin `window` (entorno de pruebas) la ruta se acepta tal cual: no hay origen contra
+      // el que resolverla y no hay navegador que la siga.
+      return { safe: true, href: raw, trusted: true };
+    }
+    const resolved = parseSafe(raw, origin);
+    return resolved
+      ? { safe: true, href: resolved.href, trusted: true }
+      : { safe: false, href: RESULT_BLOCKED, trusted: false };
+  }
+
   const parsed = parseSafe(url);
   if (!parsed) {
     return { safe: false, href: RESULT_BLOCKED, trusted: false };

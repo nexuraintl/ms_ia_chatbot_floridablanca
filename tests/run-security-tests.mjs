@@ -121,6 +121,28 @@ for (const url of [
 {
   const pse = urlPolicy.forBackendResource("https://pasarela-pse.example/pagar?ref=123");
   check("permite recurso de backend con esquema seguro", pse.safe, `-> ${pse.href}`);
+
+  // El PDF de la factura llega por el proxy del backend, no por el host del RPA: está
+  // detrás de IAM y el navegador del ciudadano no lleva token.
+  const factura = urlPolicy.forBackendResource("/rpa/factura/v1/facturas/Factura3205346.pdf");
+  check(
+    "permite una ruta del propio origen (el PDF por el proxy)",
+    factura.safe && factura.href.endsWith("/rpa/factura/v1/facturas/Factura3205346.pdf"),
+    `-> ${factura.href}`
+  );
+
+  // `//host` no es una ruta relativa: cambia de origen, así que pasa por la vía absoluta.
+  const protocoloRelativo = urlPolicy.forBackendResource("//sitio-del-atacante.example.com/f.pdf");
+  check(
+    "una URL protocolo-relativa no se da por propia",
+    protocoloRelativo.trusted === false,
+    `-> ${protocoloRelativo.href} trusted=${protocoloRelativo.trusted}`
+  );
+
+  check(
+    "un esquema peligroso sigue bloqueado",
+    urlPolicy.forBackendResource("javascript:alert(1)").href === "#"
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -446,8 +468,13 @@ section("12. Validación de archivos adjuntos de PQRSD");
   );
   check(
     "rechaza cuando el total excede el tope",
+    // Derivado de las constantes: cada archivo cabe por separado y el conjunto no. Así el
+    // caso sigue siendo el que interesa aunque cambien los límites del servicio.
     !validateAttachments(
-      Array.from({ length: 4 }, (_, i) => fakeFile(`a${i}.pdf`, 4.5 * 1024 * 1024, "application/pdf"))
+      Array.from(
+        { length: Math.floor(FILE_CONSTRAINTS.maxTotalBytes / FILE_CONSTRAINTS.maxBytesPerFile) + 1 },
+        (_, i) => fakeFile(`a${i}.pdf`, FILE_CONSTRAINTS.maxBytesPerFile, "application/pdf")
+      )
     ).valid
   );
   check("sin adjuntos es válido", validateAttachments([]).valid);
@@ -1193,13 +1220,24 @@ section("22. Alcance de las cabeceras internas");
   );
   check(
     "correlaciona el propio origen del portal",
-    isOwnBackendUrl(`${ORIGIN}/api/v1/pqrsd/crear`) === true
+    isOwnBackendUrl(`${ORIGIN}/rpa/pqrsd/v1/pqrsd/crear`) === true
   );
 
-  const rpaHost = new URL(environmentConfig.pqrsdApiUrl).hostname;
+  // Los RPA ya no se llaman por su host: exigen IAM y el navegador no puede acuñar el token,
+  // así que la base es una ruta del backend propio.
   check(
-    `correlaciona el RPA configurado: ${rpaHost}`,
-    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/api/v1/pqrsd/consultar`) === true
+    "la base del RPA de PQRSD es una ruta del backend propio, no un host externo",
+    environmentConfig.pqrsdApiUrl.startsWith("/rpa/pqrsd"),
+    environmentConfig.pqrsdApiUrl
+  );
+  check(
+    "la base del RPA de Predial es una ruta del backend propio",
+    environmentConfig.predialApiUrl.startsWith("/rpa/factura"),
+    environmentConfig.predialApiUrl
+  );
+  check(
+    "correlaciona el RPA a través del proxy propio",
+    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/v1/pqrsd/consultar`) === true
   );
 
   check(

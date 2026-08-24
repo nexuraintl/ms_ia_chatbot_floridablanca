@@ -77,6 +77,41 @@ export const translateRpaError = (error, { fallback = GENERIC_ERROR } = {}) => {
 };
 
 /**
+ * Fallos que el servicio marca como reintentables, con la espera medida para cada uno.
+ * Todo lo que no esté aquí NO se reintenta: cada intento abre un navegador, gasta un captcha
+ * pagado y degrada el portal (está medido que facturas repetidas sobre el mismo predio hacen
+ * que la generación pase de 2.6s a 32s).
+ *
+ * @type {{ match: RegExp, delayMs: number }[]}
+ */
+const RETRYABLE = [
+  { match: /abandon(ó|o) la p(á|a)gina de factura/i, delayMs: 30_000 },
+  { match: /No apareci(ó|o) el popup de (é|e)xito/i, delayMs: 30_000 },
+  { match: /CAPSOLVER/i, delayMs: 0 },
+  { match: /Error esperando respuesta del portal/i, delayMs: 15_000 }
+];
+
+/**
+ * ¿Este fallo admite UN reintento?
+ *
+ * Nunca en bucle: quien llama debe consumir el único reintento disponible y no volver a
+ * preguntar. Un 502 en la radicación de una PQRSD no entra nunca aquí, porque el trámite
+ * pudo haber quedado creado y un reenvío lo duplicaría.
+ *
+ * @param {unknown} error
+ * @returns {{ retryable: boolean, delayMs: number }}
+ */
+export const classifyRetry = (error) => {
+  const raw = typeof error === "string" ? error : error?.message ? String(error.message) : "";
+  if (!raw) return { retryable: false, delayMs: 0 };
+
+  for (const rule of RETRYABLE) {
+    if (rule.match.test(raw)) return { retryable: true, delayMs: rule.delayMs };
+  }
+  return { retryable: false, delayMs: 0 };
+};
+
+/**
  * Traduce un error de búsqueda de predio incluyendo el criterio usado.
  * El valor buscado puede ser una cédula, así que se recorta y no se registra en logs.
  *

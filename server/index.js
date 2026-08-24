@@ -23,9 +23,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { withCorrelation } from "./correlation.js";
-import { setupLogging, info, warning, error } from "./logging.js";
+import { setupLogging, info, warning, error, critical } from "./logging.js";
 import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
 import { describeIpResolution } from "./clientIdentity.js";
+import { createIdentityTokenProvider, warnIfModeLooksWrong } from "./googleIdentity.js";
+import { createRpaProxyConfig, createRpaProxyHandler, matchMount } from "./rpaProxy.js";
+import { resolveTargets } from "./rpaTargets.js";
+import { PROBE_POLICIES, describeDependencies, runStartupChecks } from "./startupChecks.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,6 +57,30 @@ setupLogging({
  */
 const aiProxyConfig = createProxyConfig();
 const aiProxy = createAiProxyHandler({ config: aiProxyConfig });
+
+// ── Integración con los microservicios RPA ────────────────────────────────────
+// El navegador no puede acuñar un identity token de Google, así que todo el tráfico hacia
+// los RPA pasa por aquí: el token se pone en el servidor, por servicio.
+const rpaTargets = resolveTargets();
+const identity = createIdentityTokenProvider();
+const rpaProxyConfig = createRpaProxyConfig();
+const rpaProxy = createRpaProxyHandler({
+  config: rpaProxyConfig,
+  services: rpaTargets.services,
+  identity
+});
+
+/**
+ * Política de la sonda de arranque. En un ambiente desplegado, un fallo de configuración debe
+ * cortar el arranque; en local se avisa y se sigue, porque lo normal es no tener los dos RPA
+ * levantados mientras se trabaja en el widget.
+ */
+const STARTUP_PROBE_POLICY =
+  process.env.RPA_STARTUP_PROBE ||
+  (ENVIRONMENT.toLowerCase() === "local" ? PROBE_POLICIES.OFF : PROBE_POLICIES.STRICT);
+
+/** Resultado de las sondas, para exponerlo en /health. */
+let rpaDependencies = {};
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -200,6 +228,22 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  // ── Proxy de los RPA ──────────────────────────────────────────────────────
+  // También antes de la comprobación de método: admite POST y OPTIONS.
+  if (matchMount(urlPath)) {
+    rpaProxy
+      .handle(req, res)
+      .then(complete)
+      .catch((err) => {
+        error("rpa_proxy_unhandled", { error: err?.message });
+        if (!res.headersSent) {
+          sendJson(res, 502, { error: "Bad Gateway", reason: "rpa_upstream_unavailable" });
+        }
+        complete(502);
+      });
+    return;
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     sendJson(res, 405, { error: "Method Not Allowed" });
     complete(405);
@@ -208,7 +252,9 @@ const handleRequest = (req, res) => {
 
   // ── Endpoints de infraestructura (sin prefijo de versión, sin autenticación) ──
   if (urlPath === "/health") {
-    sendJson(res, 200, { status: "UP" });
+    // `status` no depende de los RPA: es la sonda con la que Cloud Run decide si mata la
+    // instancia, y matarla no arregla una dependencia caída. El detalle va aparte.
+    sendJson(res, 200, { status: "UP", dependencies: rpaDependencies });
     complete(200);
     return;
   }
@@ -294,6 +340,42 @@ server.listen(PORT, "0.0.0.0", () => {
         "atenderá con el banco de preguntas frecuentes."
     });
   }
+
+  // La configuración del RPA se deja registrada antes de sondear: si el arranque se corta,
+  // este log es el que dice con qué valores lo intentó.
+  info("rpa_proxy_configured", {
+    auth_mode: identity.mode,
+    via_gateway: rpaTargets.viaGateway,
+    startup_probe: STARTUP_PROBE_POLICY,
+    max_concurrent_tramites: rpaProxyConfig.maxConcurrentTramites,
+    rate_limit_per_minute: rpaProxyConfig.ratePerMinute,
+    effectful_limit_per_hour: rpaProxyConfig.effectfulPerHour,
+    services: Object.fromEntries(
+      Object.values(rpaTargets.services).map((s) => [s.id, { audience: s.audience, mount: s.mountPrefix }])
+    )
+  });
+  warnIfModeLooksWrong(identity.mode, ENVIRONMENT);
+
+  // Falla al arrancar, no en el primer trámite de un ciudadano.
+  runStartupChecks({
+    services: rpaTargets.services,
+    configErrors: rpaTargets.errors,
+    identity,
+    policy: STARTUP_PROBE_POLICY
+  })
+    .then(({ fatal, results }) => {
+      rpaDependencies = describeDependencies(results);
+      if (fatal && STARTUP_PROBE_POLICY === PROBE_POLICIES.STRICT) {
+        critical("startup_aborted", {
+          note: "Configuración inválida de los RPA. Ver los registros rpa_config_invalid y rpa_probe_fatal."
+        });
+        process.exit(1);
+      }
+    })
+    .catch((err) => {
+      // Un fallo de la propia comprobación no debe dejar el servicio en un estado ambiguo.
+      critical("startup_checks_failed", { error: err?.message });
+    });
 });
 
-export { server, handleRequest, aiProxy };
+export { server, handleRequest, aiProxy, rpaProxy, identity };

@@ -31,6 +31,14 @@ process.env.TRUSTED_PROXY_HOPS = "2";
 // Sin credencial: se comprueba que el proxy degrada en lugar de romperse.
 delete process.env.GEMINI_API_KEY;
 
+// ── Integración con los RPA ───────────────────────────────────────────────────
+// Sin token y sin sonda de arranque: estas pruebas no tocan los servicios reales. La
+// integración se prueba entera, con respuestas simuladas, en tests/run-rpa-tests.mjs.
+process.env.RPA_AUTH_MODE = "none";
+process.env.RPA_STARTUP_PROBE = "off";
+process.env.RPA_FACTURA_URL = "http://localhost:8000";
+process.env.RPA_PQRSD_URL = "http://localhost:8001";
+
 const results = [];
 let currentSection = "";
 

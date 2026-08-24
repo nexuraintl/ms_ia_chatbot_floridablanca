@@ -18,6 +18,11 @@
 # de este archivo: la monta Cloud Run desde Secret Manager al arrancar el contenedor, y la
 # lee el proxy `server/aiProxy.js`. Esa es la diferencia que hace que la credencial no
 # llegue al navegador: el bundle no la contiene porque nunca estuvo en el build.
+#
+# Las URLs de los RPA (RPA_FACTURA_URL, RPA_PQRSD_URL) también son de RUNTIME, y por el
+# mismo motivo no están aquí: los servicios exigen IAM, así que los llama el servidor y no
+# el navegador. Incrustarlas en el bundle además las congelaría en la imagen, y ya pasó una
+# vez que renombrar un servicio cambió el hash de su host.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Etapa 1: compilación del bundle
@@ -31,22 +36,21 @@ ARG VITE_SERVICE_NAME=ia-chatbot-floridablanca
 ARG VITE_SERVICE_VERSION=0.0.0
 ARG VITE_ENVIRONMENT=qam
 ARG VITE_GOOGLE_CLOUD_PROJECT=""
-ARG VITE_RPA_PREDIAL_API_URL=""
-ARG VITE_RPA_PQRSD_API_URL=""
 ARG VITE_CONVERSATION_API_URL=""
 ARG VITE_PERSISTENCE_MODE=off
-# Origen del proxy de IA. Es una URL pública y por tanto puede ir en el bundle; vacío
-# significa "mismo origen", que es el caso cuando este servicio sirve también el widget.
+# Origen del backend del chatbot, visto desde el navegador. Es una URL pública y por tanto
+# puede ir en el bundle; vacío significa "mismo origen", que es el caso cuando este servicio
+# sirve también el widget.
+ARG VITE_BACKEND_ORIGIN=""
 ARG VITE_AI_PROXY_URL=""
 
 ENV VITE_SERVICE_NAME=$VITE_SERVICE_NAME \
     VITE_SERVICE_VERSION=$VITE_SERVICE_VERSION \
     VITE_ENVIRONMENT=$VITE_ENVIRONMENT \
     VITE_GOOGLE_CLOUD_PROJECT=$VITE_GOOGLE_CLOUD_PROJECT \
-    VITE_RPA_PREDIAL_API_URL=$VITE_RPA_PREDIAL_API_URL \
-    VITE_RPA_PQRSD_API_URL=$VITE_RPA_PQRSD_API_URL \
     VITE_CONVERSATION_API_URL=$VITE_CONVERSATION_API_URL \
     VITE_PERSISTENCE_MODE=$VITE_PERSISTENCE_MODE \
+    VITE_BACKEND_ORIGIN=$VITE_BACKEND_ORIGIN \
     VITE_AI_PROXY_URL=$VITE_AI_PROXY_URL
 
 # Copiar solo los manifiestos primero: así la capa de dependencias se reutiliza

@@ -70,8 +70,8 @@ API Gateway.
 
 | Servicio | Uso | Criticidad |
 |---|---|---|
-| RPA Impuesto Predial | Consulta de predios y generación de factura | Alta |
-| RPA PQRSD | Radicación y consulta de radicados | Alta |
+| RPA Impuesto Predial | Consulta de predios y generación de factura. Protegido por IAM: se consume a través del proxy de este servicio | Alta |
+| RPA PQRSD | Radicación y consulta de radicados. Protegido por IAM: ídem | Alta |
 | Google Gemini API | Respuesta libre conversacional | Media — degrada a catálogo local |
 | Backend de conversaciones | Registro de la atención | ⚠️ PENDIENTE — sin definir |
 
@@ -81,32 +81,44 @@ API Gateway.
 Navegador del ciudadano
   └─ Portal municipal (tercero)
        └─ <script> widget  ──────────▶  Cloud Run (este servicio)
-                                          └─ sirve dist/ + /health + /version
+            │                             └─ sirve dist/ + /health + /version
             │
-            ├──▶ RPA Predial      (X-Correlation-ID)
-            ├──▶ RPA PQRSD        (X-Correlation-ID)
-            ├──▶ Gemini API       (clave en el navegador — ver SECURITY.md H-01)
-            └──▶ Backend conversaciones  ⚠️ PENDIENTE
+            ├──▶ POST /api/ai/chat        proxy de Gemini (clave en el servidor)
+            ├──▶ /rpa/factura/v1/...      proxy del RPA de factura
+            ├──▶ /rpa/pqrsd/v1/...        proxy del RPA de PQRSD
+            └──▶ Backend conversaciones   ⚠️ PENDIENTE
+                        │
+                        ▼
+              Este mismo Cloud Run ─── Authorization: Bearer <identity token>
+                        │              (uno por servicio; lo acuña el metadata server)
+                        ├──▶ ms_rpa_factura   (X-Correlation-ID)
+                        └──▶ ms_rpa_pqrsd     (X-Correlation-ID)
 ```
+
+El navegador **no** llama a los RPA: exigen un identity token de Google y acuñarlo en el
+cliente obligaría a publicar una llave de service account. Ver `docs/INTEGRACION_RPA.md`.
 
 ---
 
 ## 3. Endpoints
 
-El contenedor expone únicamente endpoints de infraestructura. No hay endpoints de
-negocio: la lógica corre en el navegador y consume los RPA directamente.
+La lógica de conversación corre en el navegador, pero el contenedor sí expone dos proxies:
+la clave de Gemini y los identity tokens de los RPA solo pueden vivir del lado del servidor.
 
 | Método | Path | Descripción | Autenticación |
 |---|---|---|---|
-| GET | `/health` | Estado del servicio. Devuelve `{"status": "UP"}` | No |
+| GET | `/health` | Estado del servicio. `{"status": "UP", "dependencies": {...}}` | No |
 | GET | `/version` | `service`, `version`, `environment` | No |
+| POST | `/api/ai/chat` | Proxy de Gemini con control de gasto | Origen + límite por IP y cuota |
+| GET·POST | `/rpa/factura/v1/*` | Proxy del RPA de Impuesto Predial | Origen + límite por IP + admisión |
+| GET·POST | `/rpa/pqrsd/v1/*` | Proxy del RPA de PQRSD | Origen + límite por IP |
 | GET | `/*` | Bundle estático del widget | No |
 
-Ambos endpoints de infraestructura van **sin prefijo de versión**, según el estándar.
+Los endpoints de infraestructura van **sin prefijo de versión**, según el estándar.
 
-> **Sobre `/v1`**: el estándar exige que los endpoints de negocio vivan bajo `/v1/`.
-> Aquí no aplica porque el servicio no expone ninguno. Los endpoints versionados que
-> consume el widget pertenecen a los RPA y están versionados en sus propios manuales.
+Los dos proxies son **listas blancas de rutas y métodos**, no túneles: detrás hay endpoints
+que crean trámites oficiales irreversibles y gastan captchas pagados. El detalle de rutas
+admitidas, diagnóstico y reglas de reintento está en `docs/INTEGRACION_RPA.md`.
 
 ---
 
@@ -122,6 +134,18 @@ Ambos endpoints de infraestructura van **sin prefijo de versión**, según el es
 | `ENVIRONMENT` | `qam` / `prem` / `prod` | Configuración | Env var |
 | `LOG_LEVEL` | Nivel mínimo de log | Configuración | Env var |
 | `GOOGLE_CLOUD_PROJECT` | Proyecto GCP, para correlacionar trazas | Configuración | Env var |
+| `RPA_FACTURA_URL` | URL del RPA de factura. Es también el `audience` del token: exacta y **sin barra final** | Configuración | Env var |
+| `RPA_PQRSD_URL` | URL del RPA de PQRSD. Ídem | Configuración | Env var |
+| `RPA_AUTH_MODE` | `metadata` / `gcloud` / `none` / `signed_jwt` | Configuración | Env var |
+| `RPA_GATEWAY_URL` | Host del API Gateway. Vacío = directo a los Cloud Run | Configuración | Env var |
+| `RPA_STARTUP_PROBE` | `strict` / `warn` / `off`. Corta el arranque ante una configuración inválida | Configuración | Env var |
+| `RPA_RATE_LIMIT_PER_MINUTE` | Peticiones por minuto y por IP al proxy de los RPA | Configuración | Env var |
+| `RPA_EFFECTFUL_LIMIT_PER_HOUR` | Trámites por hora y por IP | Configuración | Env var |
+| `RPA_MAX_CONCURRENT_TRAMITES` | Trámites de factura simultáneos. 2 es el techo del servicio | Configuración | Env var |
+| `RPA_MAX_UPLOAD_BYTES` | Tope del cuerpo de una radicación con anexos | Configuración | Env var |
+| `GEMINI_API_KEY` | Clave de Gemini | **Secreto** | Secret Manager |
+| `ALLOWED_ORIGINS` | Portales autorizados a invocar los proxies | Configuración | Env var |
+| `TRUSTED_PROXY_HOPS` | Saltos de confianza en `X-Forwarded-For` | Configuración | Env var |
 
 ### Variables de compilación (`VITE_*`)
 
@@ -133,10 +157,14 @@ Se incrustan **literalmente** en el bundle durante el build.
 | `VITE_SERVICE_VERSION` | Versión desplegada | Configuración |
 | `VITE_ENVIRONMENT` | Ambiente | Configuración |
 | `VITE_GOOGLE_CLOUD_PROJECT` | Proyecto GCP | Configuración |
-| `VITE_RPA_PREDIAL_API_URL` | URL del RPA de Predial | Configuración |
-| `VITE_RPA_PQRSD_API_URL` | URL del RPA de PQRSD | Configuración |
+| `VITE_BACKEND_ORIGIN` | Origen del backend propio. Vacío = mismo origen que sirve el widget | Configuración |
+| `VITE_AI_PROXY_URL` | Origen del proxy de IA si vive separado. Vacío = `VITE_BACKEND_ORIGIN` | Configuración |
 | `VITE_CONVERSATION_API_URL` | Backend de conversaciones | Configuración |
 | `VITE_PERSISTENCE_MODE` | `off` / `console` / `http` | Configuración |
+
+**Retiradas:** `VITE_RPA_PREDIAL_API_URL` y `VITE_RPA_PQRSD_API_URL` ya no se leen. Los RPA
+exigen IAM, así que sus URLs son variables de runtime del contenedor. Si siguen definidas, el
+widget avisa por consola y las ignora.
 
 ### 🔴 Regla crítica sobre secretos
 
@@ -152,11 +180,13 @@ incluye un paso que **falla el build** si detecta una clave incrustada en `dist/
 
 | Secreto | Uso | Estado |
 |---|---|---|
-| — | — | Este servicio no consume secretos desde el contenedor |
+| `gemini-api-key` | Clave de Google Gemini, montada como `GEMINI_API_KEY` de runtime | Requiere `roles/secretmanager.secretAccessor` para la SA de ejecución |
 
-> **Excepción documentada:** la clave de Google Gemini se introduce desde el panel de
-> control del chatbot y vive en el navegador del operador. No puede moverse a Secret
-> Manager sin un proxy de backend. Ver `SECURITY.md`, H-01.
+Sin el secreto el despliegue sigue funcionando: el proxy responde `ai_unavailable` y el
+widget atiende con el banco de preguntas frecuentes.
+
+Los identity tokens de los RPA **no son un secreto que haya que guardar**: los acuña el
+servidor de metadatos en cada renovación y nunca se persisten.
 
 ---
 
@@ -164,11 +194,33 @@ incluye un paso que **falla el build** si detecta una clave incrustada en `dist/
 
 | Rol | Service account | Permisos requeridos |
 |---|---|---|
-| Ejecución (`run-sa`) | ⚠️ PENDIENTE | `roles/logging.logWriter`, `roles/cloudtrace.agent` |
+| Ejecución | SA de compute por omisión: `<NÚMERO-PROYECTO>-compute@developer.gserviceaccount.com` | `roles/logging.logWriter`, `roles/cloudtrace.agent`, `roles/secretmanager.secretAccessor` sobre `gemini-api-key`, y **`roles/run.invoker` sobre los dos RPA** |
 | Despliegue (`deploy-sa`) | ⚠️ PENDIENTE | `roles/run.admin`, `roles/artifactregistry.writer`, `roles/iam.serviceAccountUser` |
 
-El servicio no accede a bases de datos ni a Secret Manager, así que su SA de ejecución
-necesita permisos mínimos: solo escribir logs y trazas.
+### `roles/run.invoker` sobre los dos RPA
+
+Es el permiso que hace falta para consumirlos. Sin él el token es válido y la respuesta es
+**403**. Se concede una vez por ambiente, y no desde el pipeline: los RPA viven en su propio
+proyecto y la cuenta de Cloud Build no puede modificar sus políticas.
+
+El principal es la SA con la que corre el chatbot. Al no pasarse `--service-account` en el
+despliegue, es la de compute por omisión del proyecto. Para verla:
+
+```bash
+gcloud run services describe qam-ia-chatbot-floridablanca --region=us-central1 --format="value(spec.template.spec.serviceAccountName)"
+```
+
+```bash
+gcloud run services add-iam-policy-binding qam-rpa-factura --region=us-central1 --project=pre-qa-functions --member="serviceAccount:SA-DEL-CHATBOT@pre-qa-functions.iam.gserviceaccount.com" --role="roles/run.invoker"
+```
+
+```bash
+gcloud run services add-iam-policy-binding qam-rpa-pqrsd --region=us-central1 --project=pre-qa-functions --member="serviceAccount:SA-DEL-CHATBOT@pre-qa-functions.iam.gserviceaccount.com" --role="roles/run.invoker"
+```
+
+Si el gateway de PREM/PROD exigiera un JWT auto-firmado, haría falta además
+`roles/iam.serviceAccountTokenCreator` de la SA sobre sí misma. Está pendiente de confirmar
+con plataforma: ver `docs/INTEGRACION_RPA.md`, sección 3.
 
 ---
 
@@ -179,16 +231,28 @@ necesita permisos mínimos: solo escribir logs y trazas.
 | Nombre | `qam-ia-chatbot-floridablanca` | `prem-ia-chatbot-floridablanca` | `prod-ia-chatbot-floridablanca` |
 | Rama | `dev` / `qa` | `master` | `main` |
 | min-instances | 0 | 1 | 1 |
-| max-instances | 10 | 10 | ⚠️ PENDIENTE (según tráfico esperado) |
+| max-instances | 1 | 1 | 1 |
 | CPU | 1 | 1 | 1 |
 | Memoria | 512 Mi | 512 Mi | 512 Mi |
 | Concurrencia | 80 | 80 | 80 |
+| Timeout | 310s | 310s | 310s |
 | Ingress | `internal-and-cloud-load-balancing` | ídem | ídem |
 
-**Justificación de recursos:** el contenedor solo sirve archivos estáticos y responde
-dos endpoints de infraestructura; no compila ni consulta bases de datos. 512 Mi y 1 CPU
-son holgados. `min-instances: 1` en PREM y PROD evita que el ciudadano sufra el arranque
-en frío al abrir el chat.
+**Justificación de recursos:** el contenedor sirve archivos estáticos y reenvía peticiones;
+no compila ni consulta bases de datos. 512 Mi y 1 CPU son holgados. `min-instances: 1` en
+PREM y PROD evita que el ciudadano sufra el arranque en frío al abrir el chat.
+
+**Por qué `max-instances: 1`.** El control de admisión que evita saturar el RPA de factura
+—techo real de 2 trámites simultáneos— cuenta en la memoria del proceso, así que con varias
+instancias el techo efectivo se multiplica. Con 80 peticiones concurrentes por instancia hay
+capacidad de sobra para la atención; subirlo exige mover ese contador a Firestore o Redis.
+
+**Por qué `timeout: 310s`.** Un stream SSE de un trámite dura hasta 300s del lado del RPA.
+Con el timeout por omisión (300s) la plataforma cortaría la conexión justo antes de que
+llegue el evento de cierre.
+
+No hace falta `--no-cpu-throttling`: el seguimiento de un trámite ocurre dentro de una
+petición, no en una tarea de fondo.
 
 ---
 
@@ -250,7 +314,12 @@ jsonPayload.correlation_id="<el identificador>"
 | El widget no carga en el portal | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante | Verificar el LB externo. Es la causa más frecuente en el primer despliegue. |
 | Los trámites fallan con error de CORS | El RPA no admite `X-Correlation-ID` en `Access-Control-Allow-Headers` | Añadirlo en el RPA, o poner `observability.sendCorrelationId: false` en `chatbotConfig.json` como medida temporal |
 | El chatbot responde siempre desde el catálogo local | Sin clave de Gemini configurada, o clave inválida | Revisar el panel de control. Sin clave, degrada al catálogo local a propósito. |
-| Los trámites apuntan a `localhost:8000` | `VITE_RPA_*_API_URL` sin definir al compilar | Redefinir las variables y reconstruir. La consola del navegador lo avisa con un error. |
+| El contenedor no arranca y el log dice `rpa_probe_fatal` con 403 | Falta `roles/run.invoker` de la SA sobre ese RPA | Conceder el rol (sección 5). Es lo que la sonda de arranque está ahí para detectar. |
+| `rpa_probe_fatal` con 401 | `audience` equivocado: barra final sobrante, o el del otro servicio | Revisar `RPA_FACTURA_URL` y `RPA_PQRSD_URL`. Son la URL exacta, sin barra final, y una por servicio. |
+| Los trámites fallan con `reason: rpa_ingress_blocked` | 404 con cuerpo HTML: respondió el balanceador de Google, no la aplicación | El ingress del RPA no admite este tráfico. En PREM y PROD hay que entrar por el gateway (`RPA_GATEWAY_URL`). |
+| `reason: rpa_not_configured` | Falta `RPA_FACTURA_URL` o `RPA_PQRSD_URL` | Definirlas como variables de runtime, no como `VITE_*`. |
+| El ciudadano recibe "estás en espera" | Techo de 2 trámites simultáneos del RPA de factura | Es el comportamiento correcto. Si pasa a menudo, el cuello está en el RPA, no aquí. |
+| La consola avisa de `VITE_RPA_*_API_URL` ignorada | Variable de la etapa anterior | Quitarla del build. Apuntar el navegador directo a un Cloud Run con IAM da 403. |
 | Arranque en frío perceptible | `min-instances: 0` | Subir a 1 en PREM y PROD |
 | `/health` responde pero el widget da 404 | `dist/` ausente en la imagen | Revisar la etapa `builder` del Dockerfile |
 | Los logs no se filtran por severidad | Campo `severity` ausente o mal escrito | Debe ser `severity`, nunca `level` ni `levelname` |
@@ -286,6 +355,7 @@ jsonPayload.correlation_id="<el identificador>"
 | `cloudbuild.yaml` con `$COMMIT_SHA` y sustituciones | ✅ |
 | `azure-pipelines.yml` con bridge a GitHub | ✅ |
 | `tests/` con cobertura de health, version y correlación | ✅ |
+| Suite de la integración con los RPA, con respuestas simuladas | ✅ `tests/run-rpa-tests.mjs` |
 | `docs/MANUAL.md` | ✅ (con campos pendientes marcados) |
 | Nomenclatura `ms_[módulo]_[microservicio]` | ✅ en Azure DevOps |
 
@@ -298,7 +368,7 @@ jsonPayload.correlation_id="<el identificador>"
 | `api/core/logging.py` | Equivalente: `server/logging.js` |
 | `api/core/middleware.py` | Equivalente: `server/correlation.js` |
 | `api/routers/health.py` | Equivalente: rutas `/health` y `/version` en `server/index.js` |
-| `api/routers/v1/` | El servicio no expone endpoints de negocio |
+| `api/routers/v1/` | Los proxies (`/api/ai/chat`, `/rpa/*`) no son endpoints de negocio propios: reenvían a servicios que ya versionan su contrato |
 | `openapi/openapi.yaml` | No hay API que contratar |
 | `scripts/export_openapi.py` | Ídem |
 | `requirements.txt` / `requirements-dev.txt` | Proyecto Node; el equivalente es `package.json` |
@@ -309,8 +379,11 @@ jsonPayload.correlation_id="<el identificador>"
 | Ítem | Responsable |
 |---|---|
 | Datos de proyectos GCP, región y Artifact Registry | Equipo de plataforma |
-| Service accounts de ejecución y despliegue | Equipo de plataforma |
+| SA dedicada de ejecución (hoy se usa la de compute por omisión) | Equipo de plataforma |
 | Balanceador de carga externo delante del Cloud Run | Equipo de plataforma |
+| `roles/run.invoker` de la SA del chatbot sobre los dos RPA | Equipo de plataforma |
+| URLs de los RPA en PREM y PROD | Pendiente de que esos servicios existan |
+| Configuración de `x-google-issuer` del API Gateway | Solo si algún día se entra por gateway |
 | Dashboard y alertas de Cloud Monitoring | Equipo de plataforma |
 | RFC GS-F-007_V4.0 para PROD (GOB-GCP-GOB-04) | Responsable técnico |
 
@@ -320,6 +393,7 @@ jsonPayload.correlation_id="<el identificador>"
 
 | Documento | Contenido |
 |---|---|
+| `docs/INTEGRACION_RPA.md` | Integración con los dos RPA: autenticación IAM, rutas, diagnóstico y reglas |
 | `SECURITY.md` | Auditoría de seguridad y hallazgos, incluido H-01 (clave en el navegador) |
 | `REGISTRO_Y_IDENTIDAD.md` | Registro de conversaciones, identificación e Ley 1581 de 2012 |
 | `saas_architecture_guide.md` | Arquitectura multi-tenant del widget |
