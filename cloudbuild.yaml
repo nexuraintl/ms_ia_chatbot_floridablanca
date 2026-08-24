@@ -92,8 +92,8 @@ substitutions:
   #   factura  https://qam-rpa-factura-58937908768.us-central1.run.app
   #   pqrsd    https://qam-rpa-pqrsd-ghlnutfdwq-uc.a.run.app
   # PREM y PROD: pendientes de plataforma. Hoy solo existen los de QAM.
-  _RPA_FACTURA_URL: ""
-  _RPA_PQRSD_URL: ""
+  _RPA_FACTURA_URL: "https://qam-rpa-factura-58937908768.us-central1.run.app"
+  _RPA_PQRSD_URL: "https://qam-rpa-pqrsd-ghlnutfdwq-uc.a.run.app"
 
   # metadata = Cloud Run directo, o gateway con x-google-issuer accounts.google.com.
   # signed_jwt (gateway que exige JWT auto-firmado) NO está implementado: hay que confirmar
