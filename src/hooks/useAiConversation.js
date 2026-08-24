@@ -46,11 +46,17 @@ export const useAiConversation = ({ apiKey, sitemapLinks }) => {
    * `getApiKey` se pasa como función para que el adaptador lea el valor vigente en
    * el momento de la petición y no una copia congelada en el cierre.
    *
-   * Con `VITE_AI_PROXY_URL` definida gana el proxy del backend, que es donde viven la
-   * clave y el control de gasto; la clave local solo se usa en desarrollo.
+   * En un despliegue gana el proxy del backend, que es donde viven la clave y el control
+   * de gasto; la clave local solo se usa en desarrollo.
    */
   const provider = useMemo(
-    () => createAiProvider({ getApiKey: () => apiKey, faqCatalog, proxyUrl: environment.aiProxyUrl }),
+    () =>
+      createAiProvider({
+        getApiKey: () => apiKey,
+        faqCatalog,
+        proxyUrl: environment.aiProxyUrl,
+        proxyEnabled: environment.aiProxyEnabled
+      }),
     [apiKey]
   );
 

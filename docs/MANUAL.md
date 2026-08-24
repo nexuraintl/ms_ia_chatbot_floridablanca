@@ -159,6 +159,7 @@ Se incrustan **literalmente** en el bundle durante el build.
 | `VITE_GOOGLE_CLOUD_PROJECT` | Proyecto GCP | Configuración |
 | `VITE_BACKEND_ORIGIN` | Origen del backend propio. Vacío = mismo origen que sirve el widget | Configuración |
 | `VITE_AI_PROXY_URL` | Origen del proxy de IA si vive separado. Vacío = `VITE_BACKEND_ORIGIN` | Configuración |
+| `VITE_AI_PROXY_ENABLED` | Usar el proxy del backend para la IA. Activo por omisión en un build de producción | Configuración |
 | `VITE_CONVERSATION_API_URL` | Backend de conversaciones | Configuración |
 | `VITE_PERSISTENCE_MODE` | `off` / `console` / `http` | Configuración |
 
@@ -313,7 +314,8 @@ jsonPayload.correlation_id="<el identificador>"
 |---|---|---|
 | El widget no carga en el portal | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante | Verificar el LB externo. Es la causa más frecuente en el primer despliegue. |
 | Los trámites fallan con error de CORS | El RPA no admite `X-Correlation-ID` en `Access-Control-Allow-Headers` | Añadirlo en el RPA, o poner `observability.sendCorrelationId: false` en `chatbotConfig.json` como medida temporal |
-| El chatbot responde siempre desde el catálogo local | Sin clave de Gemini configurada, o clave inválida | Revisar el panel de control. Sin clave, degrada al catálogo local a propósito. |
+| El chatbot responde siempre desde el catálogo local | Sin `GEMINI_API_KEY` en el contenedor, o clave inválida | Revisar que el secreto `gemini-api-key` esté montado y que la SA tenga `secretAccessor`. El log de arranque `ai_proxy_configured` trae `ai_enabled`. Sin clave degrada al catálogo a propósito. |
+| El widget pide la clave de Gemini en el navegador estando desplegado | `VITE_AI_PROXY_ENABLED=false` en el build | Quitarla. En producción el proxy debe estar activo: la clave vive en el servidor (SECURITY.md, H-01). |
 | El contenedor no arranca y el log dice `rpa_probe_fatal` con 403 | Falta `roles/run.invoker` de la SA sobre ese RPA | Conceder el rol (sección 5). Es lo que la sonda de arranque está ahí para detectar. |
 | `rpa_probe_fatal` con 401 | `audience` equivocado: barra final sobrante, o el del otro servicio | Revisar `RPA_FACTURA_URL` y `RPA_PQRSD_URL`. Son la URL exacta, sin barra final, y una por servicio. |
 | Los trámites fallan con `reason: rpa_ingress_blocked` | 404 con cuerpo HTML: respondió el balanceador de Google, no la aplicación | El ingress del RPA no admite este tráfico. En PREM y PROD hay que entrar por el gateway (`RPA_GATEWAY_URL`). |

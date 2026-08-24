@@ -192,6 +192,22 @@ export const environment = Object.freeze({
   aiProxyUrl: normalizeBaseUrl(safeRead(() => import.meta.env.VITE_AI_PROXY_URL)) || backendOrigin,
 
   /**
+   * ¿Hay un backend con el proxy de IA montado?
+   *
+   * No basta con mirar `aiProxyUrl`: en el despliegue normal el widget lo sirve su propio
+   * backend, así que el proxy está en el MISMO origen y su URL base es la cadena vacía. Sin
+   * esta bandera, ese caso —el de producción— caía en el modo de desarrollo y volvía a
+   * pedir la clave de Gemini en el navegador. Ver SECURITY.md (H-01).
+   *
+   * Por defecto activo en un build de producción, que siempre lo sirve este servidor.
+   * `VITE_AI_PROXY_ENABLED=false` lo desactiva para trabajar con la clave del navegador.
+   */
+  aiProxyEnabled:
+    safeRead(() => import.meta.env.VITE_AI_PROXY_ENABLED).toLowerCase() === "false"
+      ? false
+      : safeRead(() => import.meta.env.VITE_AI_PROXY_ENABLED).toLowerCase() === "true" || isProduction,
+
+  /**
    * Activa el registro de consumo de tokens en el servidor de desarrollo.
    * En producción está apagado por defecto: el endpoint `/api/log-tokens` solo
    * existe en el plugin del servidor de Vite y no debería llevarse a producción

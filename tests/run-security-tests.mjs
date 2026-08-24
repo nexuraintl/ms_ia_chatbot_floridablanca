@@ -382,6 +382,17 @@ section("8. Coste de CPU (DoS algorítmico)");
 section("9. Selección de proveedor de IA (inversión de dependencias)");
 // ══════════════════════════════════════════════════════════════════════════════
 check("sin clave se elige el mock local", selectProviderId({ apiKey: "" }) === "local-mock");
+// El caso del despliegue: el widget lo sirve su propio backend, así que el proxy está en el
+// mismo origen y NO tiene URL que mirar. Sin la bandera, producción caía en el modo de
+// desarrollo y volvía a pedir la clave en el navegador.
+check(
+  "con backend en el mismo origen gana el proxy aunque no haya URL",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy"
+);
+check(
+  "y una clave olvidada en el navegador no se salta el control de gasto",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) !== "gemini-api"
+);
 check("con clave se elige la API", selectProviderId({ apiKey: "AIzaSy" + "a".repeat(33) }) === "gemini-api");
 check("clave en blanco cuenta como ausente", selectProviderId({ apiKey: "   " }) === "local-mock");
 
