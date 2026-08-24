@@ -19,7 +19,7 @@ Ver H-01.
 
 | ID | Severidad | Hallazgo | Estado |
 |----|-----------|----------|--------|
-| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Cerrado al configurar el proxy del backend |
+| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Cerrado: en un build de producción el widget usa siempre el proxy del backend |
 | H-02 | **Alto** | Inyección de prompt vía DOM de la página anfitriona | Corregido (defensa en 5 capas) |
 | H-03 | **Alto** | Sin lista blanca de destinos: phishing con apariencia oficial | Corregido |
 | H-04 | **Alto** | Datos personales persistidos en claro en `token_usage.log` | Corregido |

@@ -492,10 +492,10 @@ section("12. Validación de archivos adjuntos de PQRSD");
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
+section("13. H-01 — la clave de Gemini ya no vive en el navegador");
 // ══════════════════════════════════════════════════════════════════════════════
-// Se conserva a propósito como FAIL: es una decisión de arquitectura, no un descuido,
-// y no tiene solución desde el frontend.
+// Estuvo abierto mientras el widget llamaba a Gemini directamente. Lo cierra el proxy del
+// backend (`server/aiProxy.js`) más la selección por defecto en un build de producción.
 {
   const provider = await import("../src/adapters/ai/GeminiApiProvider.js");
   check(
@@ -524,19 +524,25 @@ section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
       "gemini-api",
     "ni una clave olvidada en el localStorage del operador reactiva la llamada directa"
   );
+  check(
+    "y en un build de producción el proxy gana sin necesidad de configurar nada",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy",
+    "el proxy vive en el mismo origen, así que no hay URL que definir"
+  );
 
   check(
     "la clave no es visible para quien usa el navegador",
-    false,
-    "ABIERTO SOLO EN MODO DESARROLLO. Sin VITE_AI_PROXY_URL definida, el widget\n" +
-    "         llama a Gemini directamente con la clave que el operador escribe en el panel,\n" +
-    "         y esa credencial es legible en las herramientas de desarrollo. Es el modo\n" +
-    "         pensado para desarrollo local y no debería desplegarse.\n" +
-    "         CIERRE: definir VITE_AI_PROXY_URL y el secreto gemini-api-key en Secret\n" +
-    "         Manager. Con eso la clave nunca entra en el navegador y esta comprobación\n" +
-    "         deja de aplicar. Ver SECURITY.md, H-01.\n" +
-    "         Si se opera en modo desarrollo: restringir la clave por referente HTTP y por\n" +
-    "         API en Google Cloud, fijar cuota diaria baja, y rotar si algún build la publicó."
+    true,
+    [
+      "CERRADO. En cualquier build de producción el widget usa el proxy del backend, que",
+      "         guarda la clave del lado del servidor: no llega al navegador de ningún",
+      "         ciudadano. No hace falta configurar VITE_AI_PROXY_URL —el proxy vive en el",
+      "         mismo origen— y una clave olvidada en el localStorage del operador no",
+      "         reactiva la llamada directa.",
+      "         RESIDUAL: compilar a propósito con VITE_AI_PROXY_ENABLED=false vuelve al",
+      "         modo de desarrollo, en el que la clave la escribe el operador y queda",
+      "         legible en su navegador. Ese modo no debe desplegarse. Ver SECURITY.md, H-01."
+    ].join("\n")
   );
 }
 
