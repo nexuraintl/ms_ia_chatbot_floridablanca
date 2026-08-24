@@ -318,7 +318,7 @@ jsonPayload.correlation_id="<el identificador>"
 
 | Síntoma | Causa probable | Acción |
 |---|---|---|
-| El widget no carga en el portal | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante | Verificar el LB externo. Es la causa más frecuente en el primer despliegue. |
+| `/health` y `/version` devuelven un 404 con HTML de Google | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante: el tráfico no pasa del balanceador de Google | Es la causa más frecuente en el primer despliegue. Mientras no exista el LB externo, QAM se despliega con `_INGRESS: "all"`. PREM y PROD deben volver al valor del estándar. |
 | La consola del portal dice `violates the following Content Security Policy directive: script-src` | La CSP del portal anfitrión no admite el origen del chatbot | No se arregla desde aquí: quien opere el portal debe añadir el origen del servicio a `script-src` y a `connect-src`. |
 | El script del widget carga HTML en vez de JavaScript | La etiqueta apunta a `/src/embed.jsx`, que no existe en el contenedor: el servidor responde `index.html` a toda ruta desconocida | Usar `/assets/embed.js`, que es el punto de entrada compilado y **no lleva hash**, para que el portal no tenga que cambiar la etiqueta en cada despliegue. |
 | Embebido en otro dominio, los trámites dan 404 | `VITE_BACKEND_ORIGIN` sin definir al compilar: `/rpa/...` resuelve contra el portal anfitrión | Compilar con `_BACKEND_ORIGIN` apuntando a la URL pública del chatbot. |

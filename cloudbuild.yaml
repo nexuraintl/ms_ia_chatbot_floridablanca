@@ -75,6 +75,20 @@ substitutions:
   # (300s) la plataforma cortaría la conexión justo antes de que llegue el evento de cierre.
   _TIMEOUT: "310s"
 
+  # ── Ingress ────────────────────────────────────────────────────────────────
+  # `internal-and-cloud-load-balancing` es lo que exige GOB-GCP-STD-01, y es el valor al que
+  # hay que volver. Pero con él el servicio NO es alcanzable en *.run.app: hace falta un
+  # balanceador de carga externo por delante, y mientras no exista el widget no carga en
+  # ningún portal —ni responden /health ni /version, que devuelven un 404 con HTML de Google.
+  #
+  # QAM se queda en `all` hasta que plataforma monte el balanceador. Eso deja el proxy de los
+  # RPA expuesto a internet: la lista de orígenes no frena una llamada sin cabecera `Origin`
+  # (curl, un script), así que el único freno son los límites por IP —30 peticiones/min y 10
+  # trámites/hora—. Cada trámite gasta un captcha pagado y puede bloquear un predio.
+  #
+  # PREM y PROD deben desplegarse con `internal-and-cloud-load-balancing`.
+  _INGRESS: "all"
+
   # Configuración del widget incrustada en el bundle. Solo valores públicos.
   _CONVERSATION_API_URL: ""
   _PERSISTENCE_MODE: "off"
@@ -228,7 +242,7 @@ steps:
           --image=${_IMAGE}:${COMMIT_SHA} \
           --region=${_REGION} \
           --platform=managed \
-          --ingress=internal-and-cloud-load-balancing \
+          --ingress=${_INGRESS} \
           --port=8080 \
           --min-instances=${_MIN_INSTANCES} \
           --max-instances=${_MAX_INSTANCES} \
