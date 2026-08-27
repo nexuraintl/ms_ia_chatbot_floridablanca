@@ -93,20 +93,48 @@ Navegador del ciudadano
 
 ## 3. Endpoints
 
-El contenedor expone únicamente endpoints de infraestructura. No hay endpoints de
-negocio: la lógica corre en el navegador y consume los RPA directamente.
+El contenedor sirve el bundle, los endpoints de infraestructura y los proxies hacia las
+dependencias que exigen una credencial que el navegador no puede tener.
 
 | Método | Path | Descripción | Autenticación |
 |---|---|---|---|
 | GET | `/health` | Estado del servicio. Devuelve `{"status": "UP"}` | No |
 | GET | `/version` | `service`, `version`, `environment` | No |
+| POST | `/api/ai/chat` | Proxy de Gemini con control de gasto | No |
+| GET | `/rpa/factura/v1/clientes` | Municipios y tipos de búsqueda | No |
+| GET / POST | `/rpa/factura/v1/prewarm` | Precalienta el captcha del portal | No |
+| POST | `/rpa/factura/v1/generar_factura` | Inicia la generación de factura | No |
+| POST | `/rpa/factura/v1/seleccionar_predio` | Elige predio cuando hay varios | No |
 | GET | `/*` | Bundle estático del widget | No |
 
-Ambos endpoints de infraestructura van **sin prefijo de versión**, según el estándar.
+Los endpoints de infraestructura van **sin prefijo de versión**, según el estándar.
 
-> **Sobre `/v1`**: el estándar exige que los endpoints de negocio vivan bajo `/v1/`.
-> Aquí no aplica porque el servicio no expone ninguno. Los endpoints versionados que
-> consume el widget pertenecen a los RPA y están versionados en sus propios manuales.
+### Por qué el servicio proxea los RPA
+
+El API Gateway protege las rutas de los RPA con `google_sa_jwt`. Un navegador **no puede
+firmar ese token**: necesitaría la llave privada del service account dentro del bundle,
+que es exactamente el hallazgo H-01 que ya se corrigió con la clave de Gemini. Y dos de
+las rutas no admitirían la cabecera ni queriendo, porque el stream usa `EventSource` y la
+factura se abre como enlace de descarga.
+
+Por eso la credencial se firma en el servidor, contra el metadata server de Cloud Run
+(`server/googleIdentity.js`), y el navegador solo habla con este servicio.
+
+La tabla de rutas de `server/rpaProxy.js` traduce la nomenclatura del gateway
+(`/rpa/factura/v1/...`) a la que el RPA expone hoy (`/api/...`). Gracias a esa traducción
+**el RPA no tiene que renombrar nada**: el desajuste entre `/api` y `/v1` se resuelve en un
+solo sitio.
+
+Es una lista blanca, no un passthrough: un proxy que reenvía cualquier ruta que le llegue
+es un relé abierto hacia la red interna.
+
+> **Pendiente.** Faltan las dos rutas con enredo:
+> `GET /rpa/factura/v1/jobs/{jobId}/stream` (relay de SSE) y
+> `GET /rpa/factura/v1/facturas/{filename}` (paso del PDF). Mientras no estén, el
+> frontend **sigue llamando a los RPA directamente** y no usa este proxy: migrar solo la
+> mitad del flujo lo dejaría roto, porque `generar_factura` devuelve un `job_id` cuyo
+> stream iría por otra vía. Las rutas del prefijo que aún no existen devuelven 404 en
+> JSON, nunca `index.html`.
 
 ---
 
@@ -122,6 +150,22 @@ Ambos endpoints de infraestructura van **sin prefijo de versión**, según el es
 | `ENVIRONMENT` | `qam` / `prem` / `prod` | Configuración | Env var |
 | `LOG_LEVEL` | Nivel mínimo de log | Configuración | Env var |
 | `GOOGLE_CLOUD_PROJECT` | Proyecto GCP, para correlacionar trazas | Configuración | Env var |
+| `ALLOWED_ORIGINS` | Portales autorizados a llamar los proxies | Configuración | Env var |
+| `TRUSTED_PROXY_HOPS` | Saltos de confianza en `X-Forwarded-For` | Configuración | Env var |
+| `RPA_PREDIAL_API_URL` | Destino del proxy de factura | Configuración | Env var |
+| `RPA_PREDIAL_AUDIENCE` | Audiencia del JWT. Vacío = la URL de arriba | Configuración | Env var |
+| `RPA_RATE_LIMIT_PER_MINUTE` | Peticiones por minuto y por IP hacia los RPA | Configuración | Env var |
+| `RPA_REQUEST_TIMEOUT_MS` | Techo de espera de una llamada al RPA | Configuración | Env var |
+
+Las variables del proxy de los RPA van **sin prefijo `VITE_`** a propósito, y no deben
+llevarlo nunca: son de runtime, las lee el servidor y no llegan al bundle público.
+
+`RPA_PREDIAL_AUDIENCE` solo hace falta si el destino es el **gateway**; cuando se llama
+directo a un Cloud Run, la audiencia es su propia URL y basta con dejarla vacía.
+
+Si `RPA_PREDIAL_API_URL` está vacía, las rutas de factura responden
+`rpa_not_configured` y el arranque lo deja anotado con `rpa_upstream_missing`. El resto
+del widget se sirve con normalidad.
 
 ### Variables de compilación (`VITE_*`)
 
@@ -313,6 +357,12 @@ jsonPayload.correlation_id="<el identificador>"
 | Balanceador de carga externo delante del Cloud Run | Equipo de plataforma |
 | Dashboard y alertas de Cloud Monitoring | Equipo de plataforma |
 | RFC GS-F-007_V4.0 para PROD (GOB-GCP-GOB-04) | Responsable técnico |
+| Proxy de `jobs/{jobId}/stream` (relay de SSE) | Equipo de desarrollo |
+| Proxy de `facturas/{filename}` (paso del PDF) | Equipo de desarrollo |
+| Proxy de las rutas de PQRSD (incluye multipart con archivos) | Equipo de desarrollo |
+| Migrar el frontend a los proxies (despliegue coordinado) | Equipo de desarrollo |
+| Subir `deadline` del gateway en la operación del stream | Equipo de plataforma |
+| Subir `TRUSTED_PROXY_HOPS` a 3 si el gateway queda por delante | Equipo de plataforma |
 
 ---
 

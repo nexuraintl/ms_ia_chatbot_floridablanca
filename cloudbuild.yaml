@@ -86,7 +86,31 @@ substitutions:
   # Saltos de confianza en X-Forwarded-For. 2 = balanceador externo de GCP por delante de
   # Cloud Run (el despliegue previsto). 1 = Cloud Run expuesto directo en *.run.app.
   # Un valor incorrecto no da error: el límite por IP simplemente deja de funcionar.
+  #
+  # ATENCIÓN: si el API Gateway pasa a estar por delante, es un salto MÁS y hay que
+  # subirlo a 3. Con el valor viejo, los limitadores agruparían a todos los ciudadanos en
+  # un solo cubo, o se volverían falsificables.
   _TRUSTED_PROXY_HOPS: "2"
+
+  # ── Proxy de los RPA (server/rpaProxy.js) ──────────────────────────────────
+  # Variables de RUNTIME, no de compilación: las lee el servidor y no llegan al bundle.
+  # Van sin prefijo `VITE_` a propósito, y no deben llevarlo nunca.
+  #
+  # El proxy firma el `google_sa_jwt` del lado servidor, que es lo que el navegador no
+  # puede hacer. Vacío deja las rutas de factura en `rpa_not_configured` sin afectar al
+  # resto del widget.
+  _RPA_PREDIAL_API_URL: ""
+
+  # Audiencia del JWT. Vacío = la misma URL de arriba (convención al llamar a un Cloud
+  # Run). Si el destino es el GATEWAY hay que fijarla a la URL del gateway.
+  _RPA_PREDIAL_AUDIENCE: ""
+
+  # Peticiones por minuto y por IP hacia los RPA. Con el proxy en medio, el gateway ya no
+  # ve al ciudadano: este límite es lo único que separa al público del RPA.
+  _RPA_RATE_LIMIT_PER_MINUTE: "20"
+
+  # Techo de espera de una llamada al RPA: navega un portal externo y resuelve un captcha.
+  _RPA_REQUEST_TIMEOUT_MS: "60000"
 
   _IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_MICROSERVICE}"
 
@@ -148,7 +172,7 @@ steps:
       - --cpu=${_CPU}
       - --memory=${_MEMORY}
       - --concurrency=${_CONCURRENCY}
-      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS}
+      - --set-env-vars=SERVICE_NAME=${_MODULE}-${_MICROSERVICE},SERVICE_VERSION=${SHORT_SHA},ENVIRONMENT=${_ENVIRONMENT},LOG_LEVEL=INFO,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GEMINI_MODEL=${_GEMINI_MODEL},AI_RATE_LIMIT_PER_MINUTE=${_AI_RATE_LIMIT_PER_MINUTE},AI_DAILY_QUOTA_PER_SESSION=${_AI_DAILY_QUOTA_PER_SESSION},AI_DAILY_TOKEN_CEILING=${_AI_DAILY_TOKEN_CEILING},ALLOWED_ORIGINS=${_ALLOWED_ORIGINS},TRUSTED_PROXY_HOPS=${_TRUSTED_PROXY_HOPS},RPA_PREDIAL_API_URL=${_RPA_PREDIAL_API_URL},RPA_PREDIAL_AUDIENCE=${_RPA_PREDIAL_AUDIENCE},RPA_RATE_LIMIT_PER_MINUTE=${_RPA_RATE_LIMIT_PER_MINUTE},RPA_REQUEST_TIMEOUT_MS=${_RPA_REQUEST_TIMEOUT_MS}
       # La clave nunca como variable de compilación ni en --set-env-vars: se monta desde
       # Secret Manager en tiempo de ejecución.
       - --set-secrets=GEMINI_API_KEY=${_GEMINI_SECRET}:latest

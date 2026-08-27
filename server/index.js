@@ -12,6 +12,10 @@
  *   · Log `request_completed` con método, path, status, duration_ms y correlation_id
  *   · Respeta `$PORT` de Cloud Run
  *
+ * Además de servir el bundle, actúa de intermediario para las dependencias que exigen una
+ * credencial que el navegador no puede tener: `aiProxy` para Gemini y `rpaProxy` para los
+ * RPA. Ese es el motivo de que el servicio tenga rutas de API y no solo archivos.
+ *
  * Sin dependencias de terceros a propósito: usa solo módulos nativos de Node. Un
  * servidor de archivos estáticos no justifica arrastrar Express y su árbol de
  * dependencias a una imagen que sirve contenido público.
@@ -25,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { withCorrelation } from "./correlation.js";
 import { setupLogging, info, warning, error } from "./logging.js";
 import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
+import { createRpaProxyHandler, createRpaProxyConfig, RPA_PATH_PREFIX } from "./rpaProxy.js";
 import { describeIpResolution } from "./clientIdentity.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +58,14 @@ setupLogging({
  */
 const aiProxyConfig = createProxyConfig();
 const aiProxy = createAiProxyHandler({ config: aiProxyConfig });
+
+/**
+ * Proxy de los RPA. Firma el `google_sa_jwt` que el navegador no puede firmar, así que
+ * también mantiene su estado en el proceso: el limitador por IP es lo único que separa al
+ * público del RPA una vez que el gateway deja de ver al ciudadano.
+ */
+const rpaProxyConfig = createRpaProxyConfig();
+const rpaProxy = createRpaProxyHandler({ config: rpaProxyConfig });
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -200,6 +213,25 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  // ── Proxy de los RPA ──────────────────────────────────────────────────────
+  // Se compara por PREFIJO y no por ruta exacta, para que una ruta del prefijo que aún no
+  // está implementada devuelva un 404 en JSON. Si cayera al fallback de más abajo
+  // devolvería `index.html` con estado 200, y el frontend recibiría HTML donde espera
+  // JSON: un fallo silencioso, que es el más difícil de diagnosticar.
+  if (urlPath.startsWith(RPA_PATH_PREFIX)) {
+    rpaProxy
+      .handle(req, res)
+      .then(complete)
+      .catch((err) => {
+        error("rpa_proxy_unhandled", { path: urlPath, error: err?.message });
+        if (!res.headersSent) {
+          sendJson(res, 503, { error: "RPA unavailable", reason: "rpa_unavailable" });
+        }
+        complete(503);
+      });
+    return;
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     sendJson(res, 405, { error: "Method Not Allowed" });
     complete(405);
@@ -287,6 +319,25 @@ server.listen(PORT, "0.0.0.0", () => {
     ...describeIpResolution(aiProxyConfig.trustedProxyHops)
   });
 
+  // El proxy de los RPA falla en bloque si `RPA_PREDIAL_API_URL` no está definida, y sin
+  // este log no habría forma de notarlo hasta que un ciudadano intentara un trámite.
+  info("rpa_proxy_configured", {
+    path_prefix: RPA_PATH_PREFIX,
+    upstream_configured: rpaProxyConfig.predialBaseUrl !== "",
+    audience_configured: rpaProxyConfig.predialAudience !== "",
+    rate_limit_per_minute: rpaProxyConfig.ratePerMinute,
+    request_timeout_ms: rpaProxyConfig.requestTimeoutMs,
+    ...rpaProxy.snapshot()
+  });
+
+  if (rpaProxyConfig.predialBaseUrl === "") {
+    warning("rpa_upstream_missing", {
+      note:
+        "RPA_PREDIAL_API_URL no está definida: las rutas de factura responderán " +
+        "rpa_not_configured. El widget sigue sirviéndose con normalidad."
+    });
+  }
+
   if (aiProxyConfig.apiKey === "") {
     warning("ai_key_missing", {
       note:
@@ -296,4 +347,4 @@ server.listen(PORT, "0.0.0.0", () => {
   }
 });
 
-export { server, handleRequest, aiProxy };
+export { server, handleRequest, aiProxy, rpaProxy };
