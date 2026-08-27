@@ -713,6 +713,556 @@ section("8. Proxy de IA sobre HTTP real");
   aiProxy.reset();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("9. Proxy de los RPA: lista blanca, credencial y datos personales");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const {
+    createRpaProxyHandler,
+    createRpaProxyConfig,
+    matchRoute,
+    buildQuery,
+    ROUTES,
+    RPA_REASONS
+  } = await import("../server/rpaProxy.js");
+  const { readTokenExpiry, createIdentityTokenProvider } = await import("../server/googleIdentity.js");
+  const { Readable } = await import("node:stream");
+
+  const rpaConfig = createRpaProxyConfig({
+    RPA_PREDIAL_API_URL: "https://rpa-factura.example.com",
+    RPA_RATE_LIMIT_PER_MINUTE: "5",
+    ALLOWED_ORIGINS: ".floridablanca.gov.co",
+    ENVIRONMENT: "local",
+    TRUSTED_PROXY_HOPS: "2"
+  });
+
+  const fakeRequest = ({
+    method = "GET",
+    url = "/rpa/factura/v1/clientes",
+    headers = {},
+    body = ""
+  } = {}) => {
+    const req = Readable.from(body ? [Buffer.from(body)] : []);
+    req.method = method;
+    req.url = url;
+    req.headers = { ...headers };
+    req.socket = { remoteAddress: "10.0.0.9" };
+    return req;
+  };
+
+  const fakeResponse = () => {
+    const res = {
+      statusCode: 0,
+      headers: {},
+      body: "",
+      headersSent: false,
+      setHeader() {},
+      writeHead(status, headers) {
+        res.statusCode = status;
+        res.headers = headers || {};
+        res.headersSent = true;
+        return res;
+      },
+      end(chunk) {
+        if (chunk) res.body += chunk;
+      },
+      get json() {
+        try {
+          return JSON.parse(res.body);
+        } catch {
+          return null;
+        }
+      }
+    };
+    return res;
+  };
+
+  /** Espía del `fetch` saliente: registra a dónde y con qué se llamó. */
+  const spyFetch = ({ status = 200, payload = { status: "success" }, text } = {}) => {
+    const calls = [];
+    const impl = async (url, init) => {
+      calls.push({ url: String(url), init: init || {} });
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        async text() {
+          return text !== undefined ? text : JSON.stringify(payload);
+        }
+      };
+    };
+    impl.calls = calls;
+    return impl;
+  };
+
+  /** Identidad de mentira: evita tocar el metadata server en las pruebas. */
+  const identityWith = (token) => ({
+    getToken: async () => token,
+    snapshot: () => ({ cached_audiences: token ? 1 : 0, backed_off: 0 }),
+    reset: () => {}
+  });
+
+  // ── Enrutado y lista blanca ─────────────────────────────────────────────────
+  check(
+    "las cuatro rutas de JSON plano están declaradas",
+    ROUTES.length === 4 &&
+      ["clientes", "prewarm", "generar_factura", "seleccionar_predio"].every((n) =>
+        ROUTES.some((r) => r.path.endsWith("/" + n))
+      ),
+    ROUTES.map((r) => r.path.split("/").pop()).join(", ")
+  );
+
+  check(
+    "una ruta no declarada no la atiende el proxy",
+    matchRoute("/rpa/factura/v1/jobs/abc/stream") === undefined &&
+      matchRoute("/rpa/factura/v1/facturas/x.pdf") === undefined,
+    "el SSE y el PDF aún no están implementados: no se enrutan por error"
+  );
+
+  check(
+    "la barra final no cambia el enrutado",
+    matchRoute("/rpa/factura/v1/clientes/")?.upstream === "/api/clientes"
+  );
+
+  check(
+    "solo se copian los parámetros de query declarados",
+    buildQuery("/x?mode=async&cliente=hack&admin=1", ["mode"]).toString() === "mode=async",
+    "reenviar la query entera dejaría inyectar parámetros sin revisar"
+  );
+
+  check(
+    "un valor de query desmedido se recorta",
+    buildQuery("/x?mode=" + "a".repeat(500), ["mode"]).get("mode").length === 200
+  );
+
+  // ── Traducción de ruta y credencial ─────────────────────────────────────────
+  {
+    const fetchImpl = spyFetch({ payload: { status: "success", clientes: [] } });
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl,
+      identity: identityWith("jwt-de-prueba")
+    });
+
+    const res = fakeResponse();
+    await proxy.handle(fakeRequest({ url: "/rpa/factura/v1/clientes" }), res);
+
+    const call = fetchImpl.calls[0];
+    check(
+      "la ruta pública se traduce a la del RPA",
+      call?.url === "https://rpa-factura.example.com/api/clientes",
+      "llamó a " + call?.url
+    );
+    check(
+      "el JWT se firma en el servidor y viaja en Authorization",
+      call?.init?.headers?.Authorization === "Bearer jwt-de-prueba",
+      "es justo lo que el navegador no puede hacer"
+    );
+    check(
+      "la respuesta del RPA se retransmite",
+      res.statusCode === 200 && res.json?.status === "success"
+    );
+  }
+
+  // ── Sin metadata server (desarrollo local) ──────────────────────────────────
+  {
+    const fetchImpl = spyFetch();
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl,
+      identity: identityWith(null)
+    });
+
+    await proxy.handle(fakeRequest({ url: "/rpa/factura/v1/clientes" }), fakeResponse());
+    check(
+      "sin token no se manda una cabecera Authorization vacía",
+      fetchImpl.calls[0]?.init?.headers?.Authorization === undefined,
+      "en local el RPA se llama sin credencial en lugar de romperse"
+    );
+  }
+
+  // ── Correlación ─────────────────────────────────────────────────────────────
+  {
+    const { withCorrelation } = await import("../server/correlation.js");
+    const fetchImpl = spyFetch();
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl,
+      identity: identityWith("t")
+    });
+
+    const req = fakeRequest({
+      url: "/rpa/factura/v1/clientes",
+      headers: { "x-correlation-id": "corr-1234" }
+    });
+    const res = fakeResponse();
+    await new Promise((resolve) => {
+      withCorrelation(req, res, () => proxy.handle(req, res).then(resolve));
+    });
+
+    check(
+      "la correlación se propaga al RPA",
+      fetchImpl.calls[0]?.init?.headers?.["x-correlation-id"] === "corr-1234",
+      "hoy la cadena se rompe: el navegador no puede añadir cabeceras a un tercero"
+    );
+  }
+
+  // ── El error del RPA llega íntegro al traductor de dominio ──────────────────
+  {
+    const MENSAJE = "El boton Generar Factura no se habilito para este predio";
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl: spyFetch({ status: 422, payload: { message: MENSAJE } }),
+      identity: identityWith("t")
+    });
+
+    const res = fakeResponse();
+    await proxy.handle(
+      fakeRequest({
+        method: "POST",
+        url: "/rpa/factura/v1/generar_factura?mode=async",
+        body: JSON.stringify({ search_type: "Codigo Predial", search_value: "123" })
+      }),
+      res
+    );
+
+    check(
+      "el mensaje de error del RPA se retransmite sin tocarlo",
+      res.statusCode === 422 && res.json?.message === MENSAJE,
+      "rpaErrorTranslator lo reconoce por regex: alterarlo daría un texto genérico"
+    );
+  }
+
+  // ── Una respuesta que no es JSON no se retransmite ──────────────────────────
+  {
+    const { setupLogging } = await import("../server/logging.js");
+    // El caso registra un ERROR a propósito. Se silencia para no ensuciar la salida de
+    // una corrida en verde.
+    setupLogging({
+      logLevel: "CRITICAL",
+      serviceName: "prueba",
+      serviceVersion: "t",
+      environment: "local"
+    });
+
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl: spyFetch({ status: 502, text: "<html><body>Bad Gateway</body></html>" }),
+      identity: identityWith("t")
+    });
+
+    const res = fakeResponse();
+    await proxy.handle(fakeRequest({ url: "/rpa/factura/v1/clientes" }), res);
+
+    setupLogging({
+      logLevel: "ERROR",
+      serviceName: "prueba",
+      serviceVersion: "t",
+      environment: "local"
+    });
+
+    check(
+      "una página HTML del RPA se convierte en 503, no se pasa al frontend",
+      res.statusCode === 503 && res.json?.reason === RPA_REASONS.UPSTREAM_UNAVAILABLE,
+      "status=" + res.statusCode + " reason=" + res.json?.reason
+    );
+  }
+
+  // ── prewarm se llama sin cuerpo ─────────────────────────────────────────────
+  {
+    const fetchImpl = spyFetch();
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl,
+      identity: identityWith("t")
+    });
+
+    await proxy.handle(
+      fakeRequest({ method: "POST", url: "/rpa/factura/v1/prewarm?cliente=floridablanca" }),
+      fakeResponse()
+    );
+
+    const call = fetchImpl.calls[0];
+    check(
+      "un POST sin cuerpo no inventa un body ni un Content-Type",
+      call?.init?.body === undefined && call?.init?.headers?.["Content-Type"] === undefined,
+      "url=" + call?.url
+    );
+    check(
+      "el parámetro cliente sí se propaga",
+      call?.url?.endsWith("/api/prewarm?cliente=floridablanca") === true
+    );
+  }
+
+  // ── Métodos ─────────────────────────────────────────────────────────────────
+  {
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl: spyFetch(),
+      identity: identityWith("t")
+    });
+
+    const res = fakeResponse();
+    await proxy.handle(fakeRequest({ method: "GET", url: "/rpa/factura/v1/generar_factura" }), res);
+    check(
+      "un método no permitido responde 405 y anuncia los válidos",
+      res.statusCode === 405 && res.headers.Allow === "POST, OPTIONS",
+      "status=" + res.statusCode + " allow=" + res.headers.Allow
+    );
+
+    const pre = fakeResponse();
+    await proxy.handle(
+      fakeRequest({ method: "OPTIONS", url: "/rpa/factura/v1/generar_factura" }),
+      pre
+    );
+    check("el preflight responde 204 antes de cualquier límite", pre.statusCode === 204);
+  }
+
+  // ── Sin configuración no se llama a nadie ───────────────────────────────────
+  {
+    const fetchImpl = spyFetch();
+    const proxy = createRpaProxyHandler({
+      config: { ...rpaConfig, predialBaseUrl: "" },
+      fetchImpl,
+      identity: identityWith("t")
+    });
+
+    const res = fakeResponse();
+    await proxy.handle(fakeRequest({ url: "/rpa/factura/v1/clientes" }), res);
+    check(
+      "sin RPA_PREDIAL_API_URL responde 503 y no llama a nadie",
+      res.statusCode === 503 &&
+        res.json?.reason === RPA_REASONS.NOT_CONFIGURED &&
+        fetchImpl.calls.length === 0,
+      "status=" + res.statusCode + " reason=" + res.json?.reason
+    );
+  }
+
+  // ── Límite por IP ───────────────────────────────────────────────────────────
+  {
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl: spyFetch(),
+      identity: identityWith("t")
+    });
+
+    let last = fakeResponse();
+    for (let i = 0; i < rpaConfig.ratePerMinute + 1; i += 1) {
+      last = fakeResponse();
+      await proxy.handle(fakeRequest({ url: "/rpa/factura/v1/clientes" }), last);
+    }
+    check(
+      "el límite por IP corta la ráfaga",
+      last.statusCode === 429 && last.json?.reason === RPA_REASONS.RATE_LIMITED,
+      "con el proxy en medio, este limitador es lo único que separa al público del RPA"
+    );
+  }
+
+  // ── Cuerpos desmedidos y JSON inválido ──────────────────────────────────────
+  {
+    const proxy = createRpaProxyHandler({
+      config: rpaConfig,
+      fetchImpl: spyFetch(),
+      identity: identityWith("t")
+    });
+
+    const grande = fakeResponse();
+    await proxy.handle(
+      fakeRequest({
+        method: "POST",
+        url: "/rpa/factura/v1/generar_factura",
+        body: JSON.stringify({ x: "a".repeat(9 * 1024) })
+      }),
+      grande
+    );
+    check(
+      "un cuerpo desmedido se corta con 413",
+      grande.statusCode === 413 && grande.json?.reason === RPA_REASONS.PAYLOAD_TOO_LARGE,
+      "tope 8 KB"
+    );
+
+    proxy.reset();
+    const malo = fakeResponse();
+    await proxy.handle(
+      fakeRequest({
+        method: "POST",
+        url: "/rpa/factura/v1/generar_factura",
+        body: "{ no soy json"
+      }),
+      malo
+    );
+    check("un JSON inválido responde 400", malo.statusCode === 400, "status=" + malo.statusCode);
+  }
+
+  // ── Los datos personales no llegan a los logs ───────────────────────────────
+  {
+    const { setupLogging } = await import("../server/logging.js");
+    setupLogging({
+      logLevel: "DEBUG",
+      serviceName: "prueba",
+      serviceVersion: "t",
+      environment: "local"
+    });
+
+    const captured = [];
+    const originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (chunk, ...rest) => {
+      captured.push(String(chunk));
+      return typeof rest[rest.length - 1] === "function" ? rest[rest.length - 1]() : true;
+    };
+
+    const CEDULA = "1098765432";
+    const CORREO = "ciudadano@correo.com";
+    try {
+      const proxy = createRpaProxyHandler({
+        config: rpaConfig,
+        fetchImpl: spyFetch({ payload: { job_id: "j-1" } }),
+        identity: identityWith("jwt-super-secreto")
+      });
+      await proxy.handle(
+        fakeRequest({
+          method: "POST",
+          url: "/rpa/factura/v1/generar_factura?mode=async",
+          body: JSON.stringify({
+            search_type: "Numero Cuenta",
+            search_value: CEDULA,
+            email: CORREO,
+            phone: "3001234567"
+          })
+        }),
+        fakeResponse()
+      );
+    } finally {
+      process.stdout.write = originalWrite;
+      setupLogging({
+        logLevel: "ERROR",
+        serviceName: "prueba",
+        serviceVersion: "t",
+        environment: "local"
+      });
+    }
+
+    const logs = captured.join("\n");
+    check(
+      "el cuerpo con datos personales no se registra (Ley 1581)",
+      logs !== "" &&
+        !logs.includes(CEDULA) &&
+        !logs.includes(CORREO) &&
+        !logs.includes("3001234567"),
+      captured.length + " entradas emitidas, ninguna con el payload"
+    );
+    check(
+      "el token tampoco se registra",
+      !logs.includes("jwt-super-secreto"),
+      "una credencial en los logs es una credencial filtrada"
+    );
+    check(
+      "sí se registra lo necesario para operar (ruta y estado)",
+      logs.includes("rpa_proxied") && logs.includes("upstream_status"),
+      "hace falta poder auditar sin ver datos del ciudadano"
+    );
+  }
+
+  // ── Token de identidad ──────────────────────────────────────────────────────
+  {
+    const futuro = Math.floor(Date.now() / 1000) + 3600;
+    const jwt = "x." + Buffer.from(JSON.stringify({ exp: futuro })).toString("base64url") + ".y";
+    check(
+      "readTokenExpiry lee el exp del JWT",
+      readTokenExpiry(jwt) === futuro * 1000,
+      "se lee para saber cuándo renovar, no para confiar en el token"
+    );
+    check("un token ilegible no rompe: expiry 0", readTokenExpiry("no-es-un-jwt") === 0);
+
+    let llamadas = 0;
+    const metaFetch = async () => {
+      llamadas += 1;
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return jwt;
+        }
+      };
+    };
+    const provider = createIdentityTokenProvider({
+      fetchImpl: metaFetch,
+      metadataBase: "http://fake-metadata"
+    });
+
+    await provider.getToken("https://destino");
+    await provider.getToken("https://destino");
+    check(
+      "el token se cachea: no se pide uno nuevo en cada petición",
+      llamadas === 1,
+      llamadas + " llamada(s) al metadata server para 2 peticiones"
+    );
+
+    let fallos = 0;
+    const caido = async () => {
+      fallos += 1;
+      throw new Error("ECONNREFUSED");
+    };
+    const offline = createIdentityTokenProvider({
+      fetchImpl: caido,
+      metadataBase: "http://fake-metadata"
+    });
+    const t1 = await offline.getToken("https://destino");
+    const t2 = await offline.getToken("https://destino");
+    check(
+      "sin metadata server devuelve null y no reintenta en cada petición",
+      t1 === null && t2 === null && fallos === 1,
+      fallos + " intento(s) para 2 peticiones: hay backoff"
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("10. Proxy de los RPA sobre HTTP real");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { rpaProxy } = await import("../server/index.js");
+
+  const routed = await fetch(`${BASE}/rpa/factura/v1/clientes`);
+  check(
+    "el endpoint está enrutado y responde JSON",
+    routed.headers.get("content-type")?.includes("application/json") === true,
+    `status=${routed.status} (sin RPA_PREDIAL_API_URL en las pruebas)`
+  );
+
+  // Esta es la razón de comparar por PREFIJO en `index.js`. Sin eso, la ruta caería al
+  // fallback de SPA y devolvería index.html con estado 200: el frontend recibiría HTML
+  // donde espera JSON y el fallo sería invisible.
+  const pendiente = await fetch(`${BASE}/rpa/factura/v1/jobs/abc123/stream`);
+  const cuerpo = await pendiente.text();
+  check(
+    "una ruta del prefijo aún no implementada devuelve 404 en JSON, no index.html",
+    pendiente.status === 404 &&
+      pendiente.headers.get("content-type")?.includes("application/json") === true &&
+      !cuerpo.toLowerCase().includes("<!doctype html>"),
+    `status=${pendiente.status} content-type=${pendiente.headers.get("content-type")}`
+  );
+
+  const preflight = await fetch(`${BASE}/rpa/factura/v1/generar_factura`, { method: "OPTIONS" });
+  check(
+    "el preflight anuncia los métodos de la ruta",
+    preflight.status === 204 &&
+      preflight.headers.get("access-control-allow-methods") === "POST, OPTIONS",
+    `allow-methods=${preflight.headers.get("access-control-allow-methods")}`
+  );
+
+  const malMetodo = await fetch(`${BASE}/rpa/factura/v1/generar_factura`);
+  check(
+    "GET sobre una ruta de POST responde 405",
+    malMetodo.status === 405 && malMetodo.headers.get("allow") === "POST, OPTIONS",
+    `status=${malMetodo.status} allow=${malMetodo.headers.get("allow")}`
+  );
+
+  const noCache = await fetch(`${BASE}/rpa/factura/v1/clientes`);
+  check("no se cachea", noCache.headers.get("cache-control") === "no-store");
+
+  rpaProxy.reset();
+}
+
 // ── Cierre ─────────────────────────────────────────────────────────────────────
 // `closeAllConnections` corta las conexiones keep-alive que deja `fetch`. Sin esto,
 // `close()` espera a que expiren y el proceso termina de forma sucia.
