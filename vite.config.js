@@ -159,8 +159,25 @@ const tokenLogPlugin = () => {
  */
 const DEV_BACKEND = process.env.DEV_BACKEND_ORIGIN || 'http://localhost:8080'
 
+/**
+ * Prefijo bajo el que se sirve el widget, normalizado a la forma que espera Vite: con
+ * barra inicial y con barra final. `/` cuando no hay prefijo, que es el caso de siempre.
+ *
+ * Detras del API Gateway o del balanceador hace falta ponerle su ruta, porque
+ * `index.html` referencia los assets desde la raiz y sin esto los pediria fuera del
+ * prefijo. Incluye el ambiente, asi que es un build-arg y no un valor fijo.
+ *
+ * El servidor necesita `BASE_PATH` con el MISMO valor para recortarlo al enrutar.
+ */
+const BASE_PATH = (() => {
+  const raw = String(process.env.VITE_BASE_PATH || '').trim()
+  if (raw === '' || raw === '/') return '/'
+  return `/${raw.replace(/^\/+/, '').replace(/\/+$/, '')}/`
+})()
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: BASE_PATH,
   server: {
     // Antes era `cors: true`, que responde con `Access-Control-Allow-Origin: *` y
     // permite a cualquier sitio web leer las respuestas del servidor de desarrollo.

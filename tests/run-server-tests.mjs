@@ -721,6 +721,75 @@ section("8. Proxy de IA sobre HTTP real");
   aiProxy.reset();
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("9. Prefijo de ruta: el widget servido detrás del gateway");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { stripBasePath } = await import("../server/index.js");
+  const PREFIJO = "/apig/qa/chatbot/floridablanca";
+
+  // Sin prefijo nada cambia: es el valor por defecto y el de QAM mientras el ingress
+  // sea `all` y no haya balanceador por delante.
+  check(
+    "sin prefijo la ruta se devuelve intacta",
+    stripBasePath("/health", "") === "/health" &&
+      stripBasePath("/rpa/factura/v1/clientes", "") === "/rpa/factura/v1/clientes",
+    "vacío = comportamiento de siempre"
+  );
+
+  check(
+    "el prefijo exacto se resuelve a la raíz",
+    stripBasePath(PREFIJO, PREFIJO) === "/",
+    "es la petición de index.html sin barra final"
+  );
+
+  check(
+    "una ruta bajo el prefijo se recorta",
+    stripBasePath(`${PREFIJO}/health`, PREFIJO) === "/health" &&
+      stripBasePath(`${PREFIJO}/assets/embed.js`, PREFIJO) === "/assets/embed.js" &&
+      stripBasePath(`${PREFIJO}/api/ai/chat`, PREFIJO) === "/api/ai/chat",
+    "APPEND_PATH_TO_ADDRESS reenvía la ruta completa"
+  );
+
+  check(
+    "los montajes de los RPA también se recortan",
+    stripBasePath(`${PREFIJO}/rpa/factura/v1/clientes`, PREFIJO) === "/rpa/factura/v1/clientes" &&
+      stripBasePath(`${PREFIJO}/rpa/pqrsd/v1/pqrsd/catalogos`, PREFIJO) ===
+        "/rpa/pqrsd/v1/pqrsd/catalogos",
+    "si no, matchMount no engancharía y el trámite entero fallaría"
+  );
+
+  check(
+    "la query sobrevive al recorte",
+    stripBasePath(`${PREFIJO}/rpa/factura/v1/prewarm?cliente=floridablanca`, PREFIJO) ===
+      "/rpa/factura/v1/prewarm?cliente=floridablanca",
+    "el proxy lee su query de req.url"
+  );
+
+  // Sondas de salud: Cloud Run y el balanceador llegan a /health SIN prefijo. Si se
+  // rechazaran, el servicio quedaría marcado como caído estando sano.
+  check(
+    "una ruta que no está bajo el prefijo se deja intacta",
+    stripBasePath("/health", PREFIJO) === "/health" &&
+      stripBasePath("/version", PREFIJO) === "/version",
+    "las sondas de Cloud Run no llevan prefijo"
+  );
+
+  // Que el prefijo coincida como TEXTO no basta: tiene que terminar en frontera de
+  // segmento, o `/…/floridablanca-otro/x` se recortaría y este servicio respondería
+  // como si fuera otro.
+  check(
+    "un prefijo parecido pero distinto NO se recorta",
+    stripBasePath(`${PREFIJO}-otro/health`, PREFIJO) === `${PREFIJO}-otro/health`,
+    "la comparación exige frontera de segmento"
+  );
+
+  check(
+    "una ruta vacía no rompe",
+    stripBasePath("", PREFIJO) === "/" && stripBasePath(undefined, PREFIJO) === "/"
+  );
+}
+
 // ── Cierre ─────────────────────────────────────────────────────────────────────
 // `closeAllConnections` corta las conexiones keep-alive que deja `fetch`. Sin esto,
 // `close()` espera a que expiren y el proceso termina de forma sucia.
