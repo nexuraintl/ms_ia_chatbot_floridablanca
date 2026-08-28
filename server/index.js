@@ -42,6 +42,52 @@ const LOG_LEVEL = process.env.LOG_LEVEL || "INFO";
 const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "";
 const STATIC_ROOT = path.resolve(__dirname, "..", "dist");
 
+/**
+ * Prefijo bajo el que un proxy de delante publica este servicio, normalizado con barra
+ * inicial y sin barra final. Cadena vacía = sin prefijo, que es el comportamiento de
+ * siempre y el de QAM mientras el ingress sea `all`.
+ *
+ * Hace falta cuando el widget se sirve detrás del API Gateway o del balanceador con una
+ * ruta por delante (`/apig/qa/chatbot/floridablanca`). Con `APPEND_PATH_TO_ADDRESS` el
+ * gateway reenvía la ruta COMPLETA, así que el servidor recibe
+ * `/apig/qa/chatbot/floridablanca/health` y no `/health`: sin recortarlo, `/health` y
+ * `/version` caen al servidor de archivos, el proxy de IA devuelve 405, los montajes de
+ * los RPA no coinciden y los assets acaban en el fallback de SPA.
+ *
+ * Debe valer lo mismo que el `base` con el que se compiló el bundle (`VITE_BASE_PATH`).
+ */
+const BASE_PATH = (() => {
+  const raw = String(process.env.BASE_PATH || "").trim();
+  if (raw === "" || raw === "/") return "";
+  return `/${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+})();
+
+/**
+ * Quita el prefijo del comienzo de una URL, dejando la ruta que las tablas de rutas de
+ * este servidor esperan.
+ *
+ * Una ruta que NO empieza por el prefijo se devuelve intacta, a propósito: las sondas de
+ * salud de Cloud Run y del balanceador llegan a `/health` sin prefijo, y rechazarlas
+ * dejaría el servicio marcado como caído estando sano.
+ *
+ * La comparación exige frontera de segmento. Sin eso, un prefijo que solo coincide como
+ * texto —`/chatbot/floridablanca-otro`— se recortaría y serviría contenido de este
+ * servicio como si fuera de otro.
+ *
+ * @param {string} rawUrl  URL completa, con query.
+ * @param {string} [basePath]
+ * @returns {string}
+ */
+export const stripBasePath = (rawUrl, basePath = BASE_PATH) => {
+  const url = rawUrl || "/";
+  if (basePath === "") return url;
+  if (url === basePath) return "/";
+  if (url.startsWith(`${basePath}/`) || url.startsWith(`${basePath}?`)) {
+    return url.slice(basePath.length) || "/";
+  }
+  return url;
+};
+
 // El logging se configura antes de atender cualquier petición.
 setupLogging({
   logLevel: LOG_LEVEL,
@@ -196,6 +242,12 @@ const sendFile = (res, filePath, done) => {
  */
 const handleRequest = (req, res) => {
   const startedAt = process.hrtime.bigint();
+
+  // Se reescribe `req.url` en vez de pasar la ruta recortada por parámetro: así todo lo
+  // que va detrás —los dos proxies incluidos, que leen `req.url` para su propio enrutado
+  // y su query— funciona sin saber que existe un prefijo.
+  const receivedPath = (req.url || "/").split("?")[0];
+  req.url = stripBasePath(req.url);
   const urlPath = (req.url || "/").split("?")[0];
 
   /** Registra el cierre de la petición, como exige el estándar. */
@@ -203,7 +255,10 @@ const handleRequest = (req, res) => {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     info("request_completed", {
       method: req.method,
-      path: urlPath,
+      // La ruta tal como llegó, que es la que se puede cruzar con los logs del gateway y
+      // del balanceador. `route` es la que resolvió este servidor.
+      path: receivedPath,
+      ...(receivedPath === urlPath ? {} : { route: urlPath }),
       status,
       duration_ms: Math.round(durationMs * 100) / 100
     });

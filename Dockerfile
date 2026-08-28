@@ -42,6 +42,10 @@ ARG VITE_PERSISTENCE_MODE=off
 # puede ir en el bundle; vacío significa "mismo origen", que es el caso cuando este servicio
 # sirve también el widget.
 ARG VITE_BACKEND_ORIGIN=""
+# Prefijo bajo el que se sirve el widget. Vacío = raíz, el caso de siempre. Detrás del
+# gateway o del balanceador hay que ponerle su ruta, o `index.html` pedirá los assets
+# fuera del prefijo. El servidor necesita `BASE_PATH` con el MISMO valor en runtime.
+ARG VITE_BASE_PATH=""
 ARG VITE_AI_PROXY_URL=""
 
 ENV VITE_SERVICE_NAME=$VITE_SERVICE_NAME \
@@ -51,6 +55,7 @@ ENV VITE_SERVICE_NAME=$VITE_SERVICE_NAME \
     VITE_CONVERSATION_API_URL=$VITE_CONVERSATION_API_URL \
     VITE_PERSISTENCE_MODE=$VITE_PERSISTENCE_MODE \
     VITE_BACKEND_ORIGIN=$VITE_BACKEND_ORIGIN \
+    VITE_BASE_PATH=$VITE_BASE_PATH \
     VITE_AI_PROXY_URL=$VITE_AI_PROXY_URL
 
 # Copiar solo los manifiestos primero: así la capa de dependencias se reutiliza

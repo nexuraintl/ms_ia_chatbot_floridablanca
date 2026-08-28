@@ -146,6 +146,7 @@ admitidas, diagnóstico y reglas de reintento está en `docs/INTEGRACION_RPA.md`
 | `GEMINI_API_KEY` | Clave de Gemini | **Secreto** | Secret Manager |
 | `ALLOWED_ORIGINS` | Portales autorizados a invocar los proxies | Configuración | Env var |
 | `TRUSTED_PROXY_HOPS` | Saltos de confianza en `X-Forwarded-For` | Configuración | Env var |
+| `BASE_PATH` | Prefijo que el gateway añade y el servidor recorta. Debe igualar a `VITE_BASE_PATH` | Configuración | Env var |
 
 ### Variables de compilación (`VITE_*`)
 
@@ -158,6 +159,7 @@ Se incrustan **literalmente** en el bundle durante el build.
 | `VITE_ENVIRONMENT` | Ambiente | Configuración |
 | `VITE_GOOGLE_CLOUD_PROJECT` | Proyecto GCP | Configuración |
 | `VITE_BACKEND_ORIGIN` | Origen del backend propio. Vacío = mismo origen que sirve el widget | Configuración |
+| `VITE_BASE_PATH` | Prefijo de ruta al compilar. Debe igualar a `BASE_PATH` | Configuración |
 | `VITE_AI_PROXY_URL` | Origen del proxy de IA si vive separado. Vacío = `VITE_BACKEND_ORIGIN` | Configuración |
 | `VITE_AI_PROXY_ENABLED` | Usar el proxy del backend para la IA. Activo por omisión en un build de producción | Configuración |
 | `VITE_CONVERSATION_API_URL` | Backend de conversaciones | Configuración |
