@@ -24,7 +24,12 @@ import { fileURLToPath } from "node:url";
 
 import { withCorrelation } from "./correlation.js";
 import { setupLogging, info, warning, error, critical } from "./logging.js";
-import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
+import {
+  createAiProxyHandler,
+  createProxyConfig,
+  AI_CHAT_PATH,
+  isOriginAllowed
+} from "./aiProxy.js";
 import { describeIpResolution } from "./clientIdentity.js";
 import { createIdentityTokenProvider, warnIfModeLooksWrong } from "./googleIdentity.js";
 import { createRpaProxyConfig, createRpaProxyHandler, matchMount } from "./rpaProxy.js";
@@ -54,7 +59,14 @@ const STATIC_ROOT = path.resolve(__dirname, "..", "dist");
  * `/version` caen al servidor de archivos, el proxy de IA devuelve 405, los montajes de
  * los RPA no coinciden y los assets acaban en el fallback de SPA.
  *
- * Debe valer lo mismo que el `base` con el que se compiló el bundle (`VITE_BASE_PATH`).
+ * NO tiene que coincidir con el `base` del bundle (`VITE_BASE_PATH`). Son dos prefijos
+ * distintos y en QAM difieren: el navegador pide
+ * `/apig/qa/chatbot/floridablanca/...` y el balanceador recorta `/apig/qa` antes de llegar
+ * aquí, así que este servidor solo ve `/chatbot/floridablanca/...`.
+ *
+ * `VITE_BASE_PATH` es el prefijo PÚBLICO, el que se incrusta en el bundle porque es el que
+ * el navegador tiene que pedir. `BASE_PATH` es el que llega. Coinciden solo cuando nada
+ * recorta en medio.
  */
 const BASE_PATH = (() => {
   const raw = String(process.env.BASE_PATH || "").trim();
@@ -193,6 +205,33 @@ const SECURITY_HEADERS = {
   "Cross-Origin-Resource-Policy": "cross-origin"
 };
 
+/**
+ * Cabeceras CORS del contenido estático.
+ *
+ * Hacen falta porque el widget se carga como MÓDULO desde portales de otro dominio
+ * (`<script type="module" src="https://…">`), y un módulo ES se pide SIEMPRE en modo CORS:
+ * sin `Access-Control-Allow-Origin` el navegador descarta la respuesta aunque llegue con
+ * 200. Un `<script>` clásico no lo exige, y esa diferencia es lo que hace el caso fácil de
+ * pasar por alto. La firma en la consola es `net::ERR_FAILED 200 (OK)`.
+ *
+ * El CSS del widget viaja por la misma vía, así que le aplica igual.
+ *
+ * Se refleja el origen concreto contra `ALLOWED_ORIGINS`, nunca `*`. No es por proteger los
+ * archivos —son públicos y cualquiera los descarga con curl— sino porque un portal no
+ * autorizado que lograra cargar el widget consumiría la cuota de IA y la capacidad de los
+ * RPA a nombre de la Alcaldía, y encima con los proxies rechazándole cada llamada: un
+ * widget a medias en vez de un fallo claro al cargar.
+ *
+ * @param {string|undefined} origin
+ * @param {string|undefined} host
+ * @returns {Record<string, string>}
+ */
+export const staticCorsHeaders = (origin, host, config = aiProxyConfig) => {
+  if (!origin) return {};
+  if (!isOriginAllowed(origin, host, config)) return {};
+  return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+};
+
 const sendJson = (res, status, payload) => {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -210,7 +249,7 @@ const sendJson = (res, status, payload) => {
  * @param {string} filePath
  * @param {(status: number) => void} done
  */
-const sendFile = (res, filePath, done) => {
+const sendFile = (res, filePath, done, cors = {}) => {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       done(404);
@@ -228,7 +267,8 @@ const sendFile = (res, filePath, done) => {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
       "Content-Length": data.length,
       "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : "no-cache",
-      ...SECURITY_HEADERS
+      ...SECURITY_HEADERS,
+      ...cors
     });
     res.end(data);
     done(200);
@@ -333,15 +373,19 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  // El widget se carga como módulo desde portales de otro dominio, y un módulo ES exige
+  // CORS. Se resuelve una vez por petición, antes de leer el archivo.
+  const cors = staticCorsHeaders(req.headers.origin, req.headers.host);
+
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
       // El widget es una aplicación de una sola página: cualquier ruta desconocida
       // devuelve index.html para que el enrutado del cliente pueda resolverla.
       const fallback = path.join(STATIC_ROOT, "index.html");
-      sendFile(res, fallback, complete);
+      sendFile(res, fallback, complete, cors);
       return;
     }
-    sendFile(res, filePath, complete);
+    sendFile(res, filePath, complete, cors);
   });
 };
 

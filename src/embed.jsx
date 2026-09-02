@@ -34,13 +34,22 @@ const EmbeddedApp = ({ chatRoot }) => {
 /** Identificador del `<link>`, para no duplicarlo si el script se carga dos veces. */
 const STYLE_LINK_ID = "chatbot-floridablanca-styles";
 
-/** Engancha la hoja de estilos del widget si no está ya en la página. */
+/**
+ * Engancha la hoja de estilos del widget si no está ya en la página.
+ *
+ * La URL se resuelve contra `import.meta.url` —la de este propio módulo— y no se usa tal
+ * cual. Vite emite `cssUrl` como ruta absoluta desde la raíz (`/…/assets/main-x.css`), y
+ * una ruta así puesta en un `<link>` resuelve contra el origen DEL PORTAL, no del chatbot.
+ * En un portal de otro dominio eso pide el CSS a un host donde no existe.
+ *
+ * Resolviéndola contra el módulo funciona en los dos casos: mismo origen y portal ajeno.
+ */
 const ensureStyles = () => {
   if (document.getElementById(STYLE_LINK_ID)) return;
   const link = document.createElement("link");
   link.id = STYLE_LINK_ID;
   link.rel = "stylesheet";
-  link.href = cssUrl;
+  link.href = new URL(cssUrl, import.meta.url).href;
   document.head.appendChild(link);
 };
 

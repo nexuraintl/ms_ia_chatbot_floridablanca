@@ -146,7 +146,7 @@ admitidas, diagnóstico y reglas de reintento está en `docs/INTEGRACION_RPA.md`
 | `GEMINI_API_KEY` | Clave de Gemini | **Secreto** | Secret Manager |
 | `ALLOWED_ORIGINS` | Portales autorizados a invocar los proxies | Configuración | Env var |
 | `TRUSTED_PROXY_HOPS` | Saltos de confianza en `X-Forwarded-For` | Configuración | Env var |
-| `BASE_PATH` | Prefijo que el gateway añade y el servidor recorta. Debe igualar a `VITE_BASE_PATH` | Configuración | Env var |
+| `BASE_PATH` | Prefijo que RECIBE el servidor, ya recortado por el balanceador. Puede diferir de `VITE_BASE_PATH` | Configuración | Env var |
 
 ### Variables de compilación (`VITE_*`)
 
@@ -159,7 +159,7 @@ Se incrustan **literalmente** en el bundle durante el build.
 | `VITE_ENVIRONMENT` | Ambiente | Configuración |
 | `VITE_GOOGLE_CLOUD_PROJECT` | Proyecto GCP | Configuración |
 | `VITE_BACKEND_ORIGIN` | Origen del backend propio. Vacío = mismo origen que sirve el widget | Configuración |
-| `VITE_BASE_PATH` | Prefijo de ruta al compilar. Debe igualar a `BASE_PATH` | Configuración |
+| `VITE_BASE_PATH` | Prefijo PÚBLICO, el que pide el navegador. En QAM incluye `/apig/qa` | Configuración |
 | `VITE_AI_PROXY_URL` | Origen del proxy de IA si vive separado. Vacío = `VITE_BACKEND_ORIGIN` | Configuración |
 | `VITE_AI_PROXY_ENABLED` | Usar el proxy del backend para la IA. Activo por omisión en un build de producción | Configuración |
 | `VITE_CONVERSATION_API_URL` | Backend de conversaciones | Configuración |
@@ -322,6 +322,8 @@ jsonPayload.correlation_id="<el identificador>"
 |---|---|---|
 | `/health` y `/version` devuelven un 404 con HTML de Google | Ingress `internal-and-cloud-load-balancing` sin balanceador por delante: el tráfico no pasa del balanceador de Google | Es la causa más frecuente en el primer despliegue. Mientras no exista el LB externo, QAM se despliega con `_INGRESS: "all"`. PREM y PROD deben volver al valor del estándar. |
 | La consola del portal dice `violates the following Content Security Policy directive: script-src` | La CSP del portal anfitrión no admite el origen del chatbot | No se arregla desde aquí: quien opere el portal debe añadir el origen del servicio a `script-src` y a `connect-src`. |
+| El widget se monta pero SIN ESTILOS, y el CSS da 404 o `ERR_BLOCKED_BY_ORB` | `VITE_BASE_PATH` no es el prefijo público completo. El JS carga igual porque importa su chunk de forma relativa; el CSS va por ruta absoluta y se va al sitio equivocado | Poner en `VITE_BASE_PATH` el prefijo que pide el navegador, incluido `/apig/qa`, y recompilar: el valor queda dentro del bundle |
+| El módulo se bloquea con `net::ERR_FAILED 200 (OK)` desde un portal | Un `<script type="module">` de otro origen exige CORS, y el origen del portal no está en `ALLOWED_ORIGINS` | Añadir el dominio del portal a `ALLOWED_ORIGINS`. El 200 engaña: el archivo llegó y el navegador lo descartó |
 | El script del widget carga HTML en vez de JavaScript | La etiqueta apunta a `/src/embed.jsx`, que no existe en el contenedor: el servidor responde `index.html` a toda ruta desconocida | Usar `/assets/embed.js`, que es el punto de entrada compilado y **no lleva hash**, para que el portal no tenga que cambiar la etiqueta en cada despliegue. |
 | Embebido en otro dominio, los trámites dan 404 | `VITE_BACKEND_ORIGIN` sin definir al compilar: `/rpa/...` resuelve contra el portal anfitrión | Compilar con `_BACKEND_ORIGIN` apuntando a la URL pública del chatbot. |
 | Los trámites fallan con error de CORS | El RPA no admite `X-Correlation-ID` en `Access-Control-Allow-Headers` | Añadirlo en el RPA, o poner `observability.sendCorrelationId: false` en `chatbotConfig.json` como medida temporal |
