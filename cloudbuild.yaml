@@ -90,15 +90,29 @@ substitutions:
   _INGRESS: "all"
 
   # ── Prefijo de ruta ────────────────────────────────────────────────────────
-  # Prefijo bajo el que el gateway o el balanceador publican el widget, por ejemplo
-  # `/apig/qa/chatbot/floridablanca`. Incluye el ambiente, asi que no puede ser fijo.
+  # Son DOS valores y pueden DIFERIR. Asumir que coinciden fue un error: en QAM el
+  # balanceador recorta `/apig/qa` antes de llegar al gateway, asi que el navegador y el
+  # servidor ven prefijos distintos.
   #
-  # Se usa DOS veces y con el MISMO valor: como `base` al compilar, para que `index.html`
-  # referencie los assets dentro del prefijo, y como `BASE_PATH` en runtime, para que el
-  # servidor lo recorte al enrutar. Si solo se pone en una, el widget no carga.
+  #   _PUBLIC_BASE_PATH  lo que pide el NAVEGADOR. Se incrusta en el bundle como `base`,
+  #                      asi que `index.html` y el CSS del embed se referencian con el.
+  #                      Es el prefijo COMPLETO y publico.
   #
-  # VACIO = servido en la raiz. Es el caso de QAM mientras `_INGRESS` sea `all` y no haya
-  # balanceador por delante.
+  #   _BASE_PATH         lo que RECIBE el servidor, ya recortado por lo que haya delante.
+  #                      Se usa para quitarlo al enrutar.
+  #
+  # Ejemplo real de QAM:
+  #   navegador pide  https://pre-mscloud.nexura.com.co/apig/qa/chatbot/floridablanca/...
+  #   el servidor ve  /chatbot/floridablanca/...
+  #   entonces        _PUBLIC_BASE_PATH: "/apig/qa/chatbot/floridablanca"
+  #                   _BASE_PATH:        "/chatbot/floridablanca"
+  #
+  # Si nada recorta en medio, los dos llevan el mismo valor. VACIOS = servido en la raiz.
+  #
+  # COMO SE DIAGNOSTICA: si `_PUBLIC_BASE_PATH` esta mal, el JS del embed carga igual
+  # —importa su chunk de forma relativa— pero el CSS da 404 y el widget sale SIN ESTILOS.
+  # Si `_BASE_PATH` esta mal, no carga nada: todo cae al fallback de SPA.
+  _PUBLIC_BASE_PATH: ""
   _BASE_PATH: ""
 
   # Configuración del widget incrustada en el bundle. Solo valores públicos.
@@ -210,7 +224,7 @@ steps:
       - --build-arg=VITE_CONVERSATION_API_URL=${_CONVERSATION_API_URL}
       - --build-arg=VITE_PERSISTENCE_MODE=${_PERSISTENCE_MODE}
       - --build-arg=VITE_BACKEND_ORIGIN=${_BACKEND_ORIGIN}
-      - --build-arg=VITE_BASE_PATH=${_BASE_PATH}
+      - --build-arg=VITE_BASE_PATH=${_PUBLIC_BASE_PATH}
       - --build-arg=VITE_AI_PROXY_URL=${_AI_PROXY_URL}
       - .
 

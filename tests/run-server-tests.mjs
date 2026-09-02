@@ -790,6 +790,75 @@ section("9. Prefijo de ruta: el widget servido detrás del gateway");
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("10. CORS del contenido estático: el widget en portales de otro dominio");
+// ══════════════════════════════════════════════════════════════════════════════
+{
+  const { staticCorsHeaders } = await import("../server/index.js");
+
+  /** Config con dos portales autorizados: uno exacto y un comodín de sufijo. */
+  const cfg = {
+    allowedOrigins: ["https://pruebas-se-floridablanca.nexura.com", ".floridablanca.gov.co"],
+    isLocal: false
+  };
+
+  // Un `<script type="module">` de otro origen se pide SIEMPRE en modo CORS. Sin esta
+  // cabecera el navegador descarta la respuesta aunque llegue con 200, y lo reporta como
+  // `net::ERR_FAILED 200 (OK)`. Un `<script>` clásico no lo exige: de ahí lo escurridizo.
+  {
+    const h = staticCorsHeaders("https://pruebas-se-floridablanca.nexura.com", "chatbot.run.app", cfg);
+    check(
+      "un portal autorizado recibe el origen reflejado",
+      h["Access-Control-Allow-Origin"] === "https://pruebas-se-floridablanca.nexura.com",
+      "sin esto el módulo se bloquea aunque el archivo llegue con 200"
+    );
+    check(
+      "y se declara Vary: Origin",
+      h.Vary === "Origin",
+      "la respuesta depende del origen: sin Vary, una caché compartida serviría la cabecera equivocada"
+    );
+  }
+
+  check(
+    "el comodín de sufijo también vale",
+    staticCorsHeaders("https://portal.floridablanca.gov.co", "chatbot.run.app", cfg)[
+      "Access-Control-Allow-Origin"
+    ] === "https://portal.floridablanca.gov.co"
+  );
+
+  // Nunca `*`: un portal no autorizado que lograra cargar el widget consumiría la cuota de
+  // IA y la capacidad de los RPA a nombre de la Alcaldía.
+  check(
+    "un origen NO autorizado no recibe ninguna cabecera",
+    Object.keys(staticCorsHeaders("https://sitio-cualquiera.example", "chatbot.run.app", cfg))
+      .length === 0,
+    "el navegador lo bloquea, que es el fallo claro que se quiere"
+  );
+
+  check(
+    "nunca se responde con comodín",
+    staticCorsHeaders("https://pruebas-se-floridablanca.nexura.com", "h", cfg)[
+      "Access-Control-Allow-Origin"
+    ] !== "*"
+  );
+
+  // Sin cabecera `Origin` no es una petición entre orígenes: no hay nada que conceder, y
+  // añadir la cabecera solo ensuciaría las cachés.
+  check(
+    "sin cabecera Origin no se añade nada",
+    Object.keys(staticCorsHeaders(undefined, "chatbot.run.app", cfg)).length === 0 &&
+      Object.keys(staticCorsHeaders("", "chatbot.run.app", cfg)).length === 0
+  );
+
+  check(
+    "un dominio que solo IMITA al autorizado se rechaza",
+    Object.keys(
+      staticCorsHeaders("https://pruebas-se-floridablanca.nexura.com.evil.example", "h", cfg)
+    ).length === 0,
+    "el comodín de sufijo compara el final exacto del hostname"
+  );
+}
+
 // ── Cierre ─────────────────────────────────────────────────────────────────────
 // `closeAllConnections` corta las conexiones keep-alive que deja `fetch`. Sin esto,
 // `close()` espera a que expiren y el proceso termina de forma sucia.
