@@ -4,21 +4,27 @@ import { ChatProvider, useChat } from "./context/ChatContext";
 import { ChatWindow } from "./components/organisms/ChatWindow";
 
 /**
- * La hoja de estilos se pide como URL y se engancha a mano, en vez de importarla con
- * `import "./index.css"`.
+ * El CSS se incrusta como TEXTO en el bundle y se inyecta en un `<style>`, no se enlaza
+ * con un `<link>` a un archivo aparte.
  *
- * Con el import normal, Vite emite el CSS en un archivo aparte y deja que el consumidor lo
- * enlace. Para `index.html` lo enlaza Vite; para ESTE punto de entrada, nadie: un portal
- * que incrustaba el widget lo renderizaba sin estilos.
+ * Tres razones, todas comprobadas en el portal de pruebas:
  *
- * No se podía notar desde la consola de desarrollo, porque ahí el `<link>` lo pone
- * `index.html`. Comprobado en el bundle: `assets/embed.js` no contenía ninguna referencia
- * al `.css` emitido, mientras `index.html` sí.
+ *   1. CSP DEL PORTAL. Un `<link>` a otro dominio lo bloquea la politica del portal:
+ *      `style-src` no lista el host del chatbot, y meterlo exigiria que CADA portal
+ *      municipal anadiera el dominio a su CSP. Un `<style>` en linea, en cambio, entra por
+ *      `'unsafe-inline'`, que es lo que ya permiten y lo habitual.
  *
- * Con `?url` el archivo conserva su hash —o sea que se sigue cacheando un año— y la ruta
- * respeta el `base` con el que se compiló.
+ *   2. NADIE ENLAZABA EL CSS. Con `import "./index.css"` Vite lo emite aparte y deja que el
+ *      consumidor lo enlace: para `index.html` lo hace Vite, para este punto de entrada
+ *      nadie. El widget incrustado salia sin una sola regla.
+ *
+ *   3. RUTAS RELATIVAS AL PORTAL. La URL que emite Vite es absoluta desde la raiz, y en un
+ *      `<link>` dentro de un portal ajeno resuelve contra el origen DEL PORTAL.
+ *
+ * El coste es que el CSS viaja dentro de `embed.js`: 13,8 KB, unos 3,2 KB comprimidos. A
+ * cambio desaparecen una peticion de red y las tres dependencias de arriba.
  */
-import cssUrl from "./index.css?url";
+import cssText from "./index.css?inline";
 
 const EmbeddedApp = ({ chatRoot }) => {
   const { theme } = useChat();
@@ -31,31 +37,21 @@ const EmbeddedApp = ({ chatRoot }) => {
   return <ChatWindow />;
 };
 
-/** Identificador del `<link>`, para no duplicarlo si el script se carga dos veces. */
-const STYLE_LINK_ID = "chatbot-floridablanca-styles";
+/** Identificador del `<style>`, para no duplicarlo si el script se carga dos veces. */
+const STYLE_ELEMENT_ID = "chatbot-floridablanca-styles";
 
-/**
- * Engancha la hoja de estilos del widget si no está ya en la página.
- *
- * La URL se resuelve contra `import.meta.url` —la de este propio módulo— y no se usa tal
- * cual. Vite emite `cssUrl` como ruta absoluta desde la raíz (`/…/assets/main-x.css`), y
- * una ruta así puesta en un `<link>` resuelve contra el origen DEL PORTAL, no del chatbot.
- * En un portal de otro dominio eso pide el CSS a un host donde no existe.
- *
- * Resolviéndola contra el módulo funciona en los dos casos: mismo origen y portal ajeno.
- */
+/** Inyecta los estilos del widget si no estan ya en la pagina. */
 const ensureStyles = () => {
-  if (document.getElementById(STYLE_LINK_ID)) return;
-  const link = document.createElement("link");
-  link.id = STYLE_LINK_ID;
-  link.rel = "stylesheet";
-  link.href = new URL(cssUrl, import.meta.url).href;
-  document.head.appendChild(link);
+  if (document.getElementById(STYLE_ELEMENT_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ELEMENT_ID;
+  style.textContent = cssText;
+  document.head.appendChild(style);
 };
 
 const initEmbeddableChatbot = () => {
-  // Antes de montar: así el navegador ya está descargando los estilos mientras React
-  // construye el árbol, en vez de después.
+  // Antes de montar: los estilos ya vienen dentro del bundle, así que quedan aplicados
+  // antes del primer pintado y no hay parpadeo sin estilos.
   ensureStyles();
 
   let chatRoot = document.getElementById("chatbot-service-root");
