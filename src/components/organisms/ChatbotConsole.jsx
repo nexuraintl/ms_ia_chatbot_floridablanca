@@ -263,9 +263,22 @@ export const ChatbotConsole = () => {
     [messages]
   );
 
+  /**
+   * Script de integración, calculado del origen real.
+   *
+   * Antes era una cadena fija con `localhost:5173/src/embed.jsx`. Copiado a un portal y
+   * cambiándole el host, apuntaba a una ruta que no existe en el contenedor —el servidor
+   * responde `index.html` a cualquier ruta desconocida— y el navegador intentaba ejecutar
+   * HTML como módulo. `assets/embed.js` sí existe y no lleva hash, para que el portal no
+   * tenga que actualizar la etiqueta en cada despliegue.
+   */
+  const embedSnippet = useMemo(() => {
+    const origin = environment.backendOrigin || globalThis.window?.location?.origin || "";
+    return `<script type="module" src="${origin}/assets/embed.js"></script>`;
+  }, []);
+
   const handleCopyCode = () => {
-    const code = `<script type="module" src="http://localhost:5173/src/embed.jsx"></script>`;
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(embedSnippet);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -591,7 +604,7 @@ export const ChatbotConsole = () => {
               userSelect: "all"
             }}
           >
-            {`<script type="module" src="http://localhost:5173/src/embed.jsx"></script>`}
+            {embedSnippet}
             <button
               onClick={handleCopyCode}
               type="button"

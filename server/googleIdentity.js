@@ -1,49 +1,79 @@
 /**
- * Token de identidad del service account (OIDC) para llamar servicios protegidos.
+ * Identity tokens de Google (OIDC) para llamar a los Cloud Run protegidos por IAM.
  *
- * El navegador no puede firmar un `google_sa_jwt`: exigiría la llave privada del service
- * account dentro del bundle, que es exactamente la vulnerabilidad H-01 que este repo ya
- * cerró con la clave de Gemini. El token se pide aquí, al metadata server de Cloud Run,
- * que solo responde a procesos que corren dentro de la instancia.
+ * El `audience` de un identity token es la URL del servicio destino, asi que hay un token
+ * POR SERVICIO y la cache va indexada por audience. Compartir un token entre los dos
+ * servicios da 401 en el segundo, y el 401 no menciona el audience.
  *
- * Fuera de GCP el metadata server no existe. `getToken` devuelve null y el llamador
- * decide qué hacer; en local eso significa llamar al RPA sin credencial, que es lo que
- * se quiere para desarrollo.
+ * Nunca hay un token literal en el codigo ni en el entorno, ni una llave JSON de service
+ * account: el servidor de metadatos de Cloud Run acuña el token sin llaves.
+ *
+ * El mecanismo es una decision por ambiente (`RPA_AUTH_MODE`), no un `if` sembrado por el
+ * codigo. Ver docs/INTEGRACION_RPA.md.
  */
 
-import { warning, error } from "./logging.js";
+import { spawnSync } from "node:child_process";
 
-const METADATA_BASE = "http://metadata.google.internal";
-const IDENTITY_PATH = "/computeMetadata/v1/instance/service-accounts/default/identity";
+import { info, warning, error } from "./logging.js";
 
-/** El metadata server es local. Si tarda más que esto, no está. */
-const METADATA_TIMEOUT_MS = 3_000;
+/** Servidor de metadatos de Cloud Run. Acuña el token sin llaves. */
+const METADATA_IDENTITY_URL =
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity";
 
-/** Margen de renovación: un token de una hora se renueva a los 55 minutos. */
-const REFRESH_MARGIN_MS = 5 * 60_000;
+/** Margen de renovacion: se pide uno nuevo antes de que el vigente expire. */
+const RENEW_MARGIN_MS = 300_000;
+
+/** Vida asumida cuando el token no trae `exp` legible. */
+const FALLBACK_TTL_MS = 3_600_000;
+
+/** Timeout de la acuñacion. El metadata server responde en milisegundos; esto es red caida. */
+const MINT_TIMEOUT_MS = 10_000;
 
 /**
- * Cuánto esperar antes de reintentar tras un fallo. Sin esto, cada petición del widget
- * dispararía un intento contra un metadata server que no está, y en local eso son tres
- * segundos de espera por llamada.
- */
-const FAILURE_BACKOFF_MS = 60_000;
-
-/**
- * Lee el `exp` de un JWT sin verificar la firma.
+ * Mecanismos de obtencion del token.
  *
- * No hay nada que verificar: el token lo acaba de emitir el metadata server por un canal
- * local, no llega de fuera. El `exp` se lee solo para saber cuándo renovarlo.
+ *   metadata    Cloud Run directo, o gateway con `x-google-issuer: accounts.google.com`.
+ *               Equivale a `fetch_id_token(request, audience)`.
+ *   gcloud      Solo desarrollo. Acuña con la credencial del desarrollador, sin llaves.
+ *   none        Servicios locales sin IAM. No se envia cabecera.
+ *   signed_jwt  Gateway con `x-google-issuer` = email de la SA del cliente. NO implementado
+ *               a proposito: es otro mecanismo (IAM Credentials `signJwt`) y otro permiso.
+ *               Ver docs/INTEGRACION_RPA.md.
+ */
+export const AUTH_MODES = Object.freeze({
+  METADATA: "metadata",
+  GCLOUD: "gcloud",
+  NONE: "none",
+  SIGNED_JWT: "signed_jwt"
+});
+
+/** Error de acuñacion. `reason` es estable y forma parte del contrato de diagnostico. */
+export class IdentityTokenError extends Error {
+  /**
+   * @param {string} message
+   * @param {{reason: string, audience?: string, status?: number}} opts
+   */
+  constructor(message, { reason, audience = "", status = 0 }) {
+    super(message);
+    this.name = "IdentityTokenError";
+    this.reason = reason;
+    this.audience = audience;
+    this.status = status;
+  }
+}
+
+/**
+ * Lee el `exp` de un JWT sin verificar la firma. El token es nuestro y lo acaba de emitir
+ * Google; aqui solo interesa cuando caduca para programar la renovacion.
  *
  * @param {string} token
- * @returns {number} Epoch en milisegundos, o 0 si no se puede leer.
+ * @returns {number} Instante de expiracion en ms, o 0 si no se pudo leer.
  */
 export const readTokenExpiry = (token) => {
-  const segments = String(token || "").split(".");
-  if (segments.length < 2) return 0;
-
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return 0;
   try {
-    const payload = JSON.parse(Buffer.from(segments[1], "base64url").toString("utf8"));
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
     const exp = Number(payload?.exp);
     return Number.isFinite(exp) && exp > 0 ? exp * 1000 : 0;
   } catch {
@@ -52,134 +82,281 @@ export const readTokenExpiry = (token) => {
 };
 
 /**
- * Proveedor de tokens de identidad, con caché por audiencia.
+ * Valida un audience antes de usarlo. Una barra final sobrante devuelve 401 y el 401 no dice
+ * por que, asi que se rechaza aqui donde si se puede explicar.
+ *
+ * @param {string} audience
+ * @returns {string} El audience validado.
+ */
+export const assertValidAudience = (audience) => {
+  const value = String(audience || "").trim();
+
+  if (value === "") {
+    throw new IdentityTokenError("El audience esta vacio", { reason: "audience_missing" });
+  }
+  if (value.endsWith("/")) {
+    throw new IdentityTokenError(
+      `El audience "${value}" termina en barra. Debe ser la URL exacta sin barra final: ` +
+        "una barra sobrante devuelve 401.",
+      { reason: "audience_trailing_slash", audience: value }
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new IdentityTokenError(`El audience "${value}" no es una URL valida`, {
+      reason: "audience_malformed",
+      audience: value
+    });
+  }
+
+  const isLoopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+  if (parsed.protocol !== "https:" && !isLoopback) {
+    throw new IdentityTokenError(
+      `El audience "${value}" no usa https. Un Cloud Run con IAM solo acepta https.`,
+      { reason: "audience_insecure", audience: value }
+    );
+  }
+  return value;
+};
+
+/**
+ * Acuña un token contra el servidor de metadatos.
+ *
+ * @param {string} audience
+ * @param {typeof fetch} fetchImpl
+ * @returns {Promise<string>}
+ */
+const mintFromMetadata = async (audience, fetchImpl) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), MINT_TIMEOUT_MS);
+
+  try {
+    const url = `${METADATA_IDENTITY_URL}?audience=${encodeURIComponent(audience)}`;
+    const response = await fetchImpl(url, {
+      headers: { "Metadata-Flavor": "Google" },
+      signal: controller.signal
+    });
+    const body = (await response.text()).trim();
+
+    if (!response.ok) {
+      throw new IdentityTokenError(
+        `El servidor de metadatos respondio ${response.status}: ${body.slice(0, 200)}`,
+        { reason: "metadata_rejected", audience, status: response.status }
+      );
+    }
+    if (body.split(".").length !== 3) {
+      // Fuera de GCP este host no existe; si algo responde, no es un JWT.
+      throw new IdentityTokenError(
+        "El servidor de metadatos no devolvio un JWT. Fuera de Cloud Run usa RPA_AUTH_MODE=gcloud o none.",
+        { reason: "metadata_not_a_jwt", audience }
+      );
+    }
+    return body;
+  } catch (err) {
+    if (err instanceof IdentityTokenError) throw err;
+    const aborted = err?.name === "AbortError";
+    throw new IdentityTokenError(
+      aborted
+        ? `El servidor de metadatos no respondio en ${MINT_TIMEOUT_MS}ms`
+        : `No se pudo contactar el servidor de metadatos: ${err?.message}`,
+      { reason: aborted ? "metadata_timeout" : "metadata_unreachable", audience }
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/**
+ * Acuña un token con la credencial del desarrollador. Solo para desarrollo: en la imagen de
+ * Cloud Run no existe el binario y el modo correcto alli es `metadata`.
+ *
+ * Se invoca con argumentos separados y sin shell, para que el audience no pueda inyectar
+ * comandos.
+ *
+ * @param {string} audience
+ * @returns {string}
+ */
+const mintFromGcloudCli = (audience) => {
+  const result = spawnSync(
+    process.platform === "win32" ? "gcloud.cmd" : "gcloud",
+    ["auth", "print-identity-token", `--audiences=${audience}`],
+    { encoding: "utf8", timeout: MINT_TIMEOUT_MS, shell: false }
+  );
+
+  if (result.error || result.status !== 0) {
+    const detail = result.error?.message || String(result.stderr || "").trim().slice(0, 200);
+    throw new IdentityTokenError(`gcloud no pudo acuñar el token: ${detail}`, {
+      reason: "gcloud_failed",
+      audience
+    });
+  }
+
+  const token = String(result.stdout || "").trim();
+  if (token.split(".").length !== 3) {
+    throw new IdentityTokenError("gcloud no devolvio un JWT", {
+      reason: "gcloud_not_a_jwt",
+      audience
+    });
+  }
+  return token;
+};
+
+/**
+ * Crea el proveedor de tokens.
+ *
+ * La cache es por audience, y una acuñacion en vuelo se comparte entre las llamadas
+ * concurrentes al mismo audience: es una peticion de red y no vale lanzar N en paralelo por
+ * una rafaga.
  *
  * @param {Object} [deps]
- * @param {typeof fetch} [deps.fetchImpl]   Inyectable para las pruebas.
+ * @param {string} [deps.mode]
+ * @param {typeof fetch} [deps.fetchImpl]
  * @param {() => number} [deps.now]
- * @param {string} [deps.metadataBase]      Inyectable para las pruebas.
+ * @param {(audience: string) => Promise<string>|string} [deps.mintImpl] Inyectable en pruebas.
  */
 export const createIdentityTokenProvider = ({
+  mode = process.env.RPA_AUTH_MODE || AUTH_MODES.METADATA,
   fetchImpl = globalThis.fetch,
   now = () => Date.now(),
-  metadataBase = METADATA_BASE
+  mintImpl
 } = {}) => {
-  /**
-   * Caché por audiencia. Un token sirve para una sola audiencia, así que la clave del
-   * mapa es la audiencia.
-   *
-   * @type {Map<string, {token: string, expiresAt: number}>}
-   */
+  /** @type {Map<string, {token: string, expiresAt: number}>} */
   const cache = new Map();
+  /** @type {Map<string, Promise<string>>} Acuñaciones en vuelo, para no duplicarlas. */
+  const inFlight = new Map();
 
-  /**
-   * Momento a partir del cual se puede volver a intentar tras un fallo.
-   * @type {Map<string, number>}
-   */
-  const backoffUntil = new Map();
+  const resolvedMode = String(mode || "").trim().toLowerCase() || AUTH_MODES.METADATA;
 
-  /** Para no repetir el mismo aviso en cada petición. */
-  const warned = new Set();
+  if (!Object.values(AUTH_MODES).includes(resolvedMode)) {
+    throw new IdentityTokenError(
+      `RPA_AUTH_MODE="${resolvedMode}" no es valido. Opciones: ${Object.values(AUTH_MODES).join(", ")}.`,
+      { reason: "mode_invalid" }
+    );
+  }
 
-  /**
-   * Pide un token nuevo al metadata server.
-   *
-   * @param {string} audience
-   * @returns {Promise<string|null>}
-   */
-  const fetchToken = async (audience) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
-
-    try {
-      const url =
-        `${metadataBase}${IDENTITY_PATH}?audience=${encodeURIComponent(audience)}&format=full`;
-
-      const response = await fetchImpl(url, {
-        headers: { "Metadata-Flavor": "Google" },
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        // El cuerpo puede describir el estado del service account: se queda en el log.
-        const detail = (await response.text().catch(() => "")).slice(0, 200);
-        error("identity_token_rejected", { status: response.status, detail });
-        return null;
-      }
-
-      const token = (await response.text()).trim();
-      // El metadata server devuelve el JWT en crudo, sin envolverlo en JSON.
-      return token === "" ? null : token;
-    } catch (err) {
-      const aborted = err?.name === "AbortError";
-      if (!warned.has(audience)) {
-        warned.add(audience);
-        warning("identity_metadata_unreachable", {
-          audience,
-          reason: aborted ? `timeout tras ${METADATA_TIMEOUT_MS}ms` : err?.message,
-          note:
-            "Sin metadata server no se puede firmar el JWT. Es lo esperado fuera de GCP: " +
-            "en local el RPA se llama sin credencial."
-        });
-      }
-      return null;
-    } finally {
-      clearTimeout(timer);
+  const mint = async (audience) => {
+    if (mintImpl) return await mintImpl(audience);
+    if (resolvedMode === AUTH_MODES.GCLOUD) return mintFromGcloudCli(audience);
+    if (resolvedMode === AUTH_MODES.SIGNED_JWT) {
+      throw new IdentityTokenError(
+        "RPA_AUTH_MODE=signed_jwt no esta implementado. Exige IAM Credentials signJwt y el rol " +
+          "roles/iam.serviceAccountTokenCreator sobre la propia SA. Confirmar antes con plataforma " +
+          "cual x-google-issuer tiene el gateway: si es accounts.google.com basta " +
+          "RPA_AUTH_MODE=metadata con el host del gateway como audience.",
+        { reason: "signed_jwt_not_implemented", audience }
+      );
     }
+    return await mintFromMetadata(audience, fetchImpl);
   };
 
   return {
-    /**
-     * Token vigente para una audiencia, renovándolo si hace falta.
-     *
-     * @param {string} audience
-     * @returns {Promise<string|null>} null si no se pudo obtener.
-     */
-    async getToken(audience) {
-      const key = String(audience || "").trim();
-      if (key === "") return null;
+    mode: resolvedMode,
 
-      const current = now();
+    /** ¿Este ambiente envia cabecera de autorizacion? */
+    get enabled() {
+      return resolvedMode !== AUTH_MODES.NONE;
+    },
+
+    /**
+     * Token vigente para un audience. Renueva `RENEW_MARGIN_MS` antes de expirar.
+     *
+     * @param {string} audience URL exacta del servicio destino, sin barra final.
+     * @returns {Promise<string>}
+     */
+    async token(audience) {
+      if (resolvedMode === AUTH_MODES.NONE) return "";
+
+      const key = assertValidAudience(audience);
 
       const cached = cache.get(key);
-      if (cached && cached.expiresAt - REFRESH_MARGIN_MS > current) {
+      if (cached && now() < cached.expiresAt - RENEW_MARGIN_MS) {
         return cached.token;
       }
 
-      const retryAt = backoffUntil.get(key);
-      if (retryAt !== undefined && retryAt > current) {
-        return null;
+      const pending = inFlight.get(key);
+      if (pending) return await pending;
+
+      const promise = (async () => {
+        const token = await mint(key);
+        const expiresAt = readTokenExpiry(token) || now() + FALLBACK_TTL_MS;
+        cache.set(key, { token, expiresAt });
+        info("rpa_token_minted", {
+          audience: key,
+          mode: resolvedMode,
+          expires_in_s: Math.round((expiresAt - now()) / 1000)
+        });
+        return token;
+      })();
+
+      inFlight.set(key, promise);
+      try {
+        return await promise;
+      } finally {
+        inFlight.delete(key);
       }
-
-      const token = await fetchToken(key);
-      if (token === null) {
-        backoffUntil.set(key, current + FAILURE_BACKOFF_MS);
-        return null;
-      }
-
-      const expiresAt = readTokenExpiry(token);
-      cache.set(key, {
-        token,
-        // Sin `exp` legible se asume la vida mínima habitual, para renovar pronto en vez
-        // de quedarse con un token que quizá ya venció.
-        expiresAt: expiresAt > 0 ? expiresAt : current + REFRESH_MARGIN_MS + 60_000
-      });
-      backoffUntil.delete(key);
-      warned.delete(key);
-
-      return token;
     },
 
-    /** Estado de la caché, para el log de arranque y las pruebas. */
-    snapshot() {
-      return { cached_audiences: cache.size, backed_off: backoffUntil.size };
+    /**
+     * Cabecera de autorizacion para un servicio. Objeto vacio en modo `none`, de forma que
+     * quien llama no tenga que ramificar.
+     *
+     * @param {string} audience
+     * @returns {Promise<Record<string, string>>}
+     */
+    async headers(audience) {
+      if (resolvedMode === AUTH_MODES.NONE) return {};
+      return { Authorization: `Bearer ${await this.token(audience)}` };
+    },
+
+    /** Descarta un token cacheado. Se usa tras un 401, para no repetirlo hasta su expiracion. */
+    invalidate(audience) {
+      const removed = cache.delete(String(audience || ""));
+      if (removed) warning("rpa_token_invalidated", { audience });
+      return removed;
+    },
+
+    /** Estado de la cache, para diagnostico y pruebas. */
+    stats() {
+      return {
+        mode: resolvedMode,
+        cached_audiences: cache.size,
+        audiences: Array.from(cache.keys())
+      };
     },
 
     /** Solo para pruebas. */
     reset() {
       cache.clear();
-      backoffUntil.clear();
-      warned.clear();
+      inFlight.clear();
     }
   };
+};
+
+/**
+ * Avisa en el arranque si el mecanismo elegido no encaja con el ambiente. No lanza: la
+ * validacion que si corta el arranque es la de `startupChecks.js`.
+ *
+ * @param {string} mode
+ * @param {string} environment
+ */
+export const warnIfModeLooksWrong = (mode, environment) => {
+  const isLocal = String(environment || "").toLowerCase() === "local";
+
+  if (mode === AUTH_MODES.NONE && !isLocal) {
+    error("rpa_auth_disabled_outside_local", {
+      mode,
+      environment,
+      note: "RPA_AUTH_MODE=none no envia token. Contra un Cloud Run con IAM todo dara 403."
+    });
+  }
+  if (mode === AUTH_MODES.GCLOUD && !isLocal) {
+    warning("rpa_auth_gcloud_outside_local", {
+      mode,
+      environment,
+      note: "El modo gcloud es de desarrollo: el binario no existe en la imagen de Cloud Run."
+    });
+  }
 };

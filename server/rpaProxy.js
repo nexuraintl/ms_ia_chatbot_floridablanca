@@ -1,129 +1,109 @@
 /**
- * Proxy de los RPA. Mismo patrón que `aiProxy.js`: la credencial vive aquí y no en el
- * navegador.
+ * Proxy de los microservicios RPA. Monta `/rpa/factura/*` y `/rpa/pqrsd/*`.
  *
- * Por qué existe: el API Gateway protege las rutas de los RPA con `google_sa_jwt`, y un
- * navegador no puede firmar ese token. Necesitaría la llave privada del service account
- * dentro del bundle, que es la vulnerabilidad H-01 que este repo ya cerró con la clave de
- * Gemini. Dos de las rutas no podrían llevar la cabecera ni queriendo: el stream usa
- * `EventSource` y la factura se abre como enlace de descarga, y ninguno de los dos admite
- * cabeceras personalizadas.
+ * Existe porque los dos servicios exigen un identity token de Google y el navegador no puede
+ * acuñar uno: hacerlo requeriria una llave de service account en el cliente. El token se pone
+ * aqui, por servicio, y al navegador solo se le expone este origen.
  *
- * Esta primera entrega cubre las cuatro rutas de JSON plano. El relay de SSE
- * (`jobs/{jobId}/stream`) y el paso del PDF (`facturas/{filename}`) quedan pendientes:
- * ver `docs/MANUAL.md`.
+ * Lo que aporta ademas de la cabecera:
+ *   · Lista blanca de rutas y metodos. El proxy es publico y detras hay endpoints que crean
+ *     tramites oficiales irreversibles y gastan captchas pagados.
+ *   · Lista blanca de parametros de query, para que ningun dato personal acabe en una URL.
+ *   · Limite de tasa por IP y control de admision del techo de dos tramites simultaneos.
+ *   · El PDF de la factura se descarga aqui y se reenvia: el ciudadano nunca recibe una URL
+ *     protegida por IAM que su navegador no podria abrir.
+ *   · Correlacion en los dos sentidos.
  *
- * Alcance deliberadamente cerrado: `ROUTES` es una lista blanca, no un passthrough
- * genérico. Un proxy que reenvía cualquier ruta que le llegue es un relé abierto hacia la
- * red interna.
- *
- * No sale de aquí el cuerpo de las peticiones: lleva documento, teléfono y correo del
- * ciudadano (Ley 1581). Los logs registran la ruta y el estado, nunca el payload.
+ * Diagnostico de los codigos de error en docs/INTEGRACION_RPA.md.
  */
 
-import { createRateLimiter } from "./rateLimit.js";
+import { Readable } from "node:stream";
+
+import { isOriginAllowed } from "./aiProxy.js";
 import { resolveClientIp, DEFAULT_TRUSTED_HOPS } from "./clientIdentity.js";
 import { CORRELATION_HEADER, CONVERSATION_HEADER, getTraceContext } from "./correlation.js";
-import { isOriginAllowed } from "./corsPolicy.js";
-import { createIdentityTokenProvider } from "./googleIdentity.js";
-import { info, warning, error } from "./logging.js";
+import { IdentityTokenError } from "./googleIdentity.js";
+import { info, warning, error, critical } from "./logging.js";
+import { createAdmissionControl, isTerminalJobPayload, DEFAULT_MAX_CONCURRENT } from "./rpaAdmission.js";
+import { createRateLimiter } from "./rateLimit.js";
+import {
+  BODY_KINDS,
+  MOUNT_PREFIXES,
+  SERVICE_IDS,
+  buildUpstreamUrl,
+  matchRoute,
+  normalizeUpstreamPath
+} from "./rpaTargets.js";
 
-/**
- * Rutas expuestas al navegador y su equivalente en el RPA.
- *
- * `path` sigue la nomenclatura del gateway (`/rpa/factura/v1/...`) y `upstream` es lo que
- * el RPA expone hoy (`/v1/...`). Esa traducción es el motivo por el que un cambio de rutas
- * en el RPA se absorbe en esta tabla y no en el resto del proxy.
- *
- * @type {ReadonlyArray<{path: string, methods: string[], upstream: string, query: string[]}>}
- */
-export const ROUTES = Object.freeze([
-  {
-    path: "/rpa/factura/v1/clientes",
-    methods: ["GET"],
-    upstream: "/v1/clientes",
-    query: []
-  },
-  {
-    // El frontend lo llama por POST sin cuerpo; el gateway lo declara para ambos métodos.
-    path: "/rpa/factura/v1/prewarm",
-    methods: ["GET", "POST"],
-    upstream: "/v1/prewarm",
-    query: ["cliente"]
-  },
-  {
-    path: "/rpa/factura/v1/generar_factura",
-    methods: ["POST"],
-    upstream: "/v1/generar_factura",
-    query: ["mode"]
-  },
-  {
-    path: "/rpa/factura/v1/seleccionar_predio",
-    methods: ["POST"],
-    upstream: "/v1/seleccionar_predio",
-    query: ["mode"]
-  }
-]);
-
-/** Prefijo común, para descartar rápido lo que no es del proxy. */
-export const RPA_PATH_PREFIX = "/rpa/factura/v1/";
-
-/**
- * Tope del cuerpo aceptado. Los payloads de estas rutas son un puñado de campos
- * (tipo de búsqueda, valor, teléfono, correo): 8 KB sobran.
- */
-const MAX_BODY_BYTES = 8 * 1024;
-
-/** Tope de la respuesta del RPA que se acepta retransmitir. */
-const MAX_RESPONSE_BYTES = 256 * 1024;
-
-/** Tope de longitud de un valor de query, para no reenviar cadenas absurdas. */
-const MAX_QUERY_VALUE_CHARS = 200;
-
-/** Motivos que el cliente puede interpretar. Forman parte del contrato del endpoint. */
+/** Motivos que el cliente puede interpretar. Forman parte del contrato del proxy. */
 export const RPA_REASONS = Object.freeze({
   NOT_CONFIGURED: "rpa_not_configured",
   FORBIDDEN_ORIGIN: "forbidden_origin",
+  ROUTE_UNKNOWN: "route_unknown",
+  METHOD_NOT_ALLOWED: "method_not_allowed",
   RATE_LIMITED: "rate_limited",
+  QUEUE_FULL: "rpa_queue_full",
   PAYLOAD_TOO_LARGE: "payload_too_large",
-  INVALID_PAYLOAD: "invalid_payload",
-  UPSTREAM_UNAVAILABLE: "rpa_unavailable"
+  AUTH_UNAVAILABLE: "rpa_auth_unavailable",
+  UNAUTHENTICATED: "rpa_unauthenticated",
+  FORBIDDEN: "rpa_forbidden",
+  INGRESS_BLOCKED: "rpa_ingress_blocked",
+  UPSTREAM_UNAVAILABLE: "rpa_upstream_unavailable",
+  UPSTREAM_TIMEOUT: "rpa_upstream_timeout"
 });
 
 /**
- * Lee una variable numérica del entorno.
+ * Parametros de query que se reenvian. Cualquier otro se descarta: los datos personales van
+ * en el cuerpo porque las URLs se registran en los logs de todos los saltos intermedios.
+ */
+const ALLOWED_QUERY_PARAMS = Object.freeze(["mode", "cliente", "client_id", "q"]);
+
+/**
+ * Parametros que consume el proxy y por tanto no se reenvian, pero tampoco son un descarte
+ * digno de aviso.
+ */
+const CONSUMED_QUERY_PARAMS = Object.freeze(["cid"]);
+
+/** Tope del cuerpo JSON. Ninguna peticion del chatbot se acerca. */
+const MAX_JSON_BODY_BYTES = 128 * 1024;
+
+/**
+ * Tope de una radicacion con anexos. El servicio admite 25 MB en total; se deja margen para
+ * los delimitadores del multipart.
+ */
+const DEFAULT_MAX_UPLOAD_BYTES = 27 * 1024 * 1024;
+
+/** Cabeceras del cliente que se reenvian. El resto se descarta. */
+const FORWARDED_REQUEST_HEADERS = Object.freeze(["content-type", "accept"]);
+
+/**
+ * Lee una variable numerica del entorno.
+ * @param {NodeJS.ProcessEnv} env
  * @param {string} name
  * @param {number} fallback
- * @param {NodeJS.ProcessEnv} env
  */
-const readNumber = (name, fallback, env = process.env) => {
+const readNumber = (env, name, fallback) => {
   const raw = env[name];
   if (raw === undefined || String(raw).trim() === "") return fallback;
   const value = Number(raw);
   return Number.isFinite(value) ? value : fallback;
 };
 
-const normalizeBase = (url) => String(url || "").trim().replace(/\/+$/, "");
-
 /**
- * Configuración del proxy.
- *
- * `RPA_PREDIAL_API_URL` es nueva y es de RUNTIME, no de compilación: a diferencia de
- * `VITE_RPA_PREDIAL_API_URL`, que Vite incrusta en el bundle público, esta la lee el
- * servidor y nunca llega al navegador.
- *
- * La audiencia por defecto es la propia URL del destino, que es la convención cuando se
- * llama a un Cloud Run. Si el destino es el gateway, hay que fijarla explícitamente a la
- * URL del gateway con `RPA_PREDIAL_AUDIENCE`.
+ * Configuracion del proxy.
+ * @param {NodeJS.ProcessEnv} [env]
  */
 export const createRpaProxyConfig = (env = process.env) => ({
-  predialBaseUrl: normalizeBase(env.RPA_PREDIAL_API_URL),
-  predialAudience: normalizeBase(env.RPA_PREDIAL_AUDIENCE || env.RPA_PREDIAL_API_URL),
-  ratePerMinute: readNumber("RPA_RATE_LIMIT_PER_MINUTE", 20, env),
-  // El RPA navega un portal externo y resuelve un captcha. Mismo techo que usa el
-  // frontend en `rpaPredialService.js`.
-  requestTimeoutMs: readNumber("RPA_REQUEST_TIMEOUT_MS", 60_000, env),
-  trustedProxyHops: readNumber("TRUSTED_PROXY_HOPS", DEFAULT_TRUSTED_HOPS, env),
+  /** Peticiones por minuto y por IP, cualquier ruta. */
+  ratePerMinute: readNumber(env, "RPA_RATE_LIMIT_PER_MINUTE", 30),
+  /**
+   * Tramites por hora y por IP. Cada uno abre un navegador y gasta un captcha pagado, asi que
+   * el limite es mucho mas estrecho que el de consulta.
+   */
+  effectfulPerHour: readNumber(env, "RPA_EFFECTFUL_LIMIT_PER_HOUR", 10),
+  maxConcurrentTramites: readNumber(env, "RPA_MAX_CONCURRENT_TRAMITES", DEFAULT_MAX_CONCURRENT),
+  maxUploadBytes: readNumber(env, "RPA_MAX_UPLOAD_BYTES", DEFAULT_MAX_UPLOAD_BYTES),
+  trustedProxyHops: readNumber(env, "TRUSTED_PROXY_HOPS", DEFAULT_TRUSTED_HOPS),
   allowedOrigins: String(env.ALLOWED_ORIGINS || "")
     .split(",")
     .map((o) => o.trim().toLowerCase())
@@ -132,82 +112,107 @@ export const createRpaProxyConfig = (env = process.env) => ({
 });
 
 /**
- * Busca la ruta que corresponde a un path, ignorando la barra final.
+ * ¿La ruta pertenece a algun servicio montado?
  *
  * @param {string} urlPath
- * @returns {(typeof ROUTES)[number]|undefined}
+ * @returns {{serviceId: string, prefix: string}|null}
  */
-export const matchRoute = (urlPath) => {
-  const clean = String(urlPath || "").replace(/\/+$/, "") || "/";
-  return ROUTES.find((route) => route.path === clean);
+export const matchMount = (urlPath) => {
+  const path = String(urlPath || "").split("?")[0];
+  for (const serviceId of SERVICE_IDS) {
+    const prefix = MOUNT_PREFIXES[serviceId];
+    if (path === prefix || path.startsWith(`${prefix}/`)) {
+      return { serviceId, prefix };
+    }
+  }
+  return null;
 };
 
 /**
- * Copia al destino solo los parámetros de query declarados en la ruta.
+ * Filtra la query a la lista blanca.
  *
- * Lista blanca y no passthrough: reenviar la query entera dejaría que el navegador
- * inyectara parámetros que el RPA interprete y que aquí no se están revisando.
- *
- * @param {string} rawUrl
- * @param {string[]} allowed
- * @returns {URLSearchParams}
+ * @param {string} rawQuery
+ * @returns {{query: string, dropped: string[]}}
  */
-export const buildQuery = (rawUrl, allowed) => {
-  const out = new URLSearchParams();
-  if (allowed.length === 0) return out;
+export const filterQuery = (rawQuery) => {
+  const params = new URLSearchParams(rawQuery || "");
+  const kept = new URLSearchParams();
+  /** @type {string[]} */
+  const dropped = [];
 
-  let incoming;
-  try {
-    // La base es irrelevante: solo se necesita parsear la parte de query.
-    incoming = new URL(rawUrl, "http://localhost").searchParams;
-  } catch {
-    return out;
+  for (const [key, value] of params) {
+    if (ALLOWED_QUERY_PARAMS.includes(key)) {
+      kept.append(key, value);
+    } else if (!CONSUMED_QUERY_PARAMS.includes(key)) {
+      // Solo el nombre: el valor puede ser el dato personal que justamente no debe registrarse.
+      dropped.push(key);
+    }
   }
+  return { query: kept.toString(), dropped };
+};
 
-  for (const key of allowed) {
-    const value = incoming.get(key);
-    if (value === null || value === "") continue;
-    out.set(key, value.slice(0, MAX_QUERY_VALUE_CHARS));
+/**
+ * Clasifica una respuesta del destino en un motivo estable.
+ *
+ * La distincion que mas tiempo ahorra: un 404 con cuerpo JSON viene de la aplicacion y solo
+ * significa que la ruta esta mal; un 404 con HTML viene del balanceador de Google y significa
+ * que el trafico no pasa el ingress.
+ *
+ * @param {number} status
+ * @param {string} contentType
+ * @returns {{reason: string, safeToForwardBody: boolean}}
+ */
+export const classifyUpstreamStatus = (status, contentType) => {
+  const isJson = String(contentType || "").toLowerCase().includes("json");
+
+  if (status === 401) return { reason: RPA_REASONS.UNAUTHENTICATED, safeToForwardBody: false };
+  if (status === 403) return { reason: RPA_REASONS.FORBIDDEN, safeToForwardBody: false };
+  if (status === 404 && !isJson) {
+    return { reason: RPA_REASONS.INGRESS_BLOCKED, safeToForwardBody: false };
   }
-  return out;
+  if (status === 404) return { reason: RPA_REASONS.ROUTE_UNKNOWN, safeToForwardBody: true };
+  if (status === 504) return { reason: RPA_REASONS.UPSTREAM_TIMEOUT, safeToForwardBody: isJson };
+  if (status >= 500) return { reason: RPA_REASONS.UPSTREAM_UNAVAILABLE, safeToForwardBody: isJson };
+  return { reason: "", safeToForwardBody: isJson };
 };
 
 /**
  * Crea el manejador del proxy.
  *
- * @param {Object} [deps]
- * @param {ReturnType<createRpaProxyConfig>} [deps.config]
- * @param {typeof fetch} [deps.fetchImpl]  Inyectable para las pruebas.
+ * @param {Object} deps
+ * @param {ReturnType<createRpaProxyConfig>} deps.config
+ * @param {Record<string, Object>} deps.services Salida de `resolveTargets().services`.
+ * @param {Object} deps.identity Proveedor de tokens.
+ * @param {typeof fetch} [deps.fetchImpl]
  * @param {() => number} [deps.now]
- * @param {ReturnType<createIdentityTokenProvider>} [deps.identity]
  */
 export const createRpaProxyHandler = ({
-  config = createRpaProxyConfig(),
+  config,
+  services,
+  identity,
   fetchImpl = globalThis.fetch,
-  now = () => Date.now(),
-  identity = createIdentityTokenProvider({ fetchImpl, now })
-} = {}) => {
-  /**
-   * Limitador por IP.
-   *
-   * Con el proxy en medio, el gateway ya no ve al ciudadano: ve a este servicio. O sea
-   * que este limitador es lo único que separa al público del RPA, y una llamada al RPA
-   * cuesta una sesión de navegador contra el portal municipal.
-   */
-  const burstLimiter = createRateLimiter({
-    windowMs: 60_000,
-    max: config.ratePerMinute,
+  now = () => Date.now()
+}) => {
+  const burstLimiter = createRateLimiter({ windowMs: 60_000, max: config.ratePerMinute, now });
+  const effectfulLimiter = createRateLimiter({
+    windowMs: 3_600_000,
+    max: config.effectfulPerHour,
+    now
+  });
+  const admission = createAdmissionControl({
+    maxConcurrent: config.maxConcurrentTramites,
     now
   });
 
   /**
+   * Cabeceras CORS. Nunca `*`: por aqui pasan tramites oficiales.
    * @param {string|undefined} origin
-   * @param {string[]} methods
    */
-  const corsHeaders = (origin, methods) => ({
+  const corsHeaders = (origin) => ({
     ...(origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {}),
-    "Access-Control-Allow-Methods": `${methods.join(", ")}, OPTIONS`,
-    "Access-Control-Allow-Headers": `Content-Type, ${CORRELATION_HEADER}, ${CONVERSATION_HEADER}`,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": `Content-Type, Accept, ${CORRELATION_HEADER}, ${CONVERSATION_HEADER}`,
+    "Access-Control-Expose-Headers": CORRELATION_HEADER,
     "Access-Control-Max-Age": "3600"
   });
 
@@ -216,17 +221,16 @@ export const createRpaProxyHandler = ({
    * @param {number} status
    * @param {Object} payload
    * @param {string|undefined} origin
-   * @param {string[]} methods
    * @param {Object} [extraHeaders]
    */
-  const send = (res, status, payload, origin, methods, extraHeaders = {}) => {
+  const send = (res, status, payload, origin, extraHeaders = {}) => {
     const body = JSON.stringify(payload);
     res.writeHead(status, {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Length": Buffer.byteLength(body),
       "Cache-Control": "no-store",
       "X-Content-Type-Options": "nosniff",
-      ...corsHeaders(origin, methods),
+      ...corsHeaders(origin),
       ...extraHeaders
     });
     res.end(body);
@@ -234,194 +238,208 @@ export const createRpaProxyHandler = ({
   };
 
   /**
-   * Lee el cuerpo con tope de bytes.
-   *
-   * Igual que en `aiProxy`: pasado el tope NO se destruye el socket, porque cerrarlo
-   * impediría que el 413 llegara al cliente. Se resuelve de inmediato y el resto se drena.
-   *
+   * Lee el cuerpo JSON con tope de bytes.
    * @param {import("node:http").IncomingMessage} req
-   * @returns {Promise<{ok: true, text: string}|{ok: false, tooLarge: true}>}
+   * @returns {Promise<{ok: true, raw: string}|{ok: false}>}
    */
-  const readBody = (req) =>
+  const readJsonBody = (req) =>
     new Promise((resolve) => {
-      let size = 0;
       /** @type {Buffer[]} */
       const chunks = [];
+      let size = 0;
       let aborted = false;
 
       req.on("data", (chunk) => {
         if (aborted) return;
         size += chunk.length;
-        if (size > MAX_BODY_BYTES) {
+        if (size > MAX_JSON_BODY_BYTES) {
           aborted = true;
-          resolve({ ok: false, tooLarge: true });
+          // No se destruye el socket: hacerlo impide que el 413 llegue al cliente, que veria
+          // un fallo de red indistinguible de un problema real. El resto se lee y se tira.
+          resolve({ ok: false });
           return;
         }
         chunks.push(chunk);
       });
-
       req.on("end", () => {
-        if (!aborted) resolve({ ok: true, text: Buffer.concat(chunks).toString("utf8") });
+        if (!aborted) resolve({ ok: true, raw: Buffer.concat(chunks).toString("utf8") });
       });
-
       req.on("error", () => {
         if (!aborted) {
           aborted = true;
-          resolve({ ok: true, text: "" });
+          resolve({ ok: true, raw: "" });
         }
       });
     });
 
   /**
-   * Llama al RPA.
+   * Envuelve el cuerpo entrante como iterable con tope, para reenviar una radicacion con
+   * anexos sin acumular 25 MB en memoria.
    *
-   * @param {Object} params
-   * @param {(typeof ROUTES)[number]} params.route
-   * @param {string} params.method
-   * @param {URLSearchParams} params.query
-   * @param {string|undefined} params.body
-   * @returns {Promise<{ok: true, status: number, payload: unknown}|{ok: false, detail: string, status: number}>}
+   * @param {import("node:http").IncomingMessage} req
+   * @param {number} maxBytes
    */
-  const callUpstream = async ({ route, method, query, body }) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-    const suffix = query.toString();
-    const url = `${config.predialBaseUrl}${route.upstream}${suffix ? `?${suffix}` : ""}`;
-
-    try {
-      const token = await identity.getToken(config.predialAudience);
-
-      /** @type {Record<string, string>} */
-      const headers = { Accept: "application/json" };
-      if (body !== undefined) headers["Content-Type"] = "application/json";
-      if (token) headers.Authorization = `Bearer ${token}`;
-
-      // Propagar la correlación. Hoy la cadena se rompe aquí, porque el navegador no
-      // puede añadir cabeceras a un tercero: con el proxy en medio vuelve a ser continua.
-      const trace = getTraceContext();
-      if (trace?.correlationId) headers[CORRELATION_HEADER] = trace.correlationId;
-
-      const response = await fetchImpl(url, {
-        method,
-        headers,
-        ...(body === undefined ? {} : { body }),
-        signal: controller.signal
-      });
-
-      const raw = (await response.text()).slice(0, MAX_RESPONSE_BYTES);
-
-      let payload;
-      try {
-        payload = raw === "" ? {} : JSON.parse(raw);
-      } catch {
-        // El RPA devolvió algo que no es JSON: casi siempre una página de error de la
-        // infraestructura. No se retransmite tal cual.
-        return {
-          ok: false,
-          status: response.status,
-          detail: `respuesta no-JSON: ${raw.slice(0, 200)}`
-        };
+  const cappedStream = async function* (req, maxBytes) {
+    let size = 0;
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > maxBytes) {
+        throw new Error(`upload_exceeds_${maxBytes}`);
       }
-
-      // Se retransmite el estado y el cuerpo del RPA incluso en error: el traductor de
-      // dominio (`rpaErrorTranslator`) reconoce esos mensajes ("paz y salvo", "pasarela
-      // ocupada") y sin ellos el ciudadano recibiría un texto genérico.
-      return { ok: true, status: response.status, payload };
-    } catch (err) {
-      const aborted = err?.name === "AbortError";
-      return {
-        ok: false,
-        status: 0,
-        detail: aborted
-          ? `timeout tras ${config.requestTimeoutMs}ms`
-          : `fallo de red: ${err?.message}`
-      };
-    } finally {
-      clearTimeout(timer);
+      yield chunk;
     }
   };
 
-  return {
-    /** ¿Este path lo atiende el proxy? */
-    matches(urlPath) {
-      return matchRoute(urlPath) !== undefined;
-    },
+  /**
+   * Cabeceras hacia el destino: token, correlacion y lo imprescindible del cliente.
+   *
+   * @param {Object} service
+   * @param {import("node:http").IncomingMessage} req
+   * @param {string} [correlationOverride]
+   * @returns {Promise<Record<string, string>>}
+   */
+  const upstreamHeaders = async (service, req, correlationOverride) => {
+    const trace = getTraceContext();
+    /** @type {Record<string, string>} */
+    const headers = {
+      ...(await identity.headers(service.audience)),
+      [CORRELATION_HEADER]: correlationOverride || trace?.correlationId || ""
+    };
 
-    /** Estado para el log de arranque. */
-    snapshot() {
+    const conversation = req.headers[CONVERSATION_HEADER];
+    if (conversation) {
+      headers[CONVERSATION_HEADER] = Array.isArray(conversation) ? conversation[0] : conversation;
+    }
+    for (const name of FORWARDED_REQUEST_HEADERS) {
+      const value = req.headers[name];
+      if (value) headers[name] = Array.isArray(value) ? value[0] : value;
+    }
+    return headers;
+  };
+
+  /**
+   * Registra un fallo del destino con el diagnostico concreto, que es lo que ahorra el tiempo.
+   *
+   * @param {string} reason
+   * @param {Object} ctx
+   */
+  const logUpstreamFailure = (reason, ctx) => {
+    if (reason === RPA_REASONS.UNAUTHENTICATED) {
+      error("rpa_unauthenticated", {
+        ...ctx,
+        note:
+          "401: el audience debe ser la URL EXACTA del servicio destino, sin barra final, y no " +
+          "puede compartirse entre los dos servicios."
+      });
+      return;
+    }
+    if (reason === RPA_REASONS.FORBIDDEN) {
+      error("rpa_forbidden", {
+        ...ctx,
+        note: "403: el token es valido pero falta roles/run.invoker de esta SA sobre ese servicio."
+      });
+      return;
+    }
+    if (reason === RPA_REASONS.INGRESS_BLOCKED) {
+      critical("rpa_ingress_blocked", {
+        ...ctx,
+        note:
+          "404 con cuerpo HTML: la respuesta es del balanceador de Google, no de la aplicacion. " +
+          "El ingress no admite este trafico; en PREM y PROD hay que entrar por el API Gateway."
+      });
+      return;
+    }
+    if (reason === RPA_REASONS.ROUTE_UNKNOWN) {
+      error("rpa_route_not_found", {
+        ...ctx,
+        note: "404 con cuerpo JSON: respondio la aplicacion. La ruta no existe; comparar con /openapi.json."
+      });
+      return;
+    }
+    warning("rpa_upstream_failed", ctx);
+  };
+
+  return {
+    prefixes: Object.values(MOUNT_PREFIXES),
+
+    /** Estado del proxy, para diagnostico y pruebas. */
+    stats() {
       return {
-        routes: ROUTES.length,
-        configured: config.predialBaseUrl !== "",
+        ...admission.snapshot(),
         tracked_ips: burstLimiter.size,
-        ...identity.snapshot()
+        identity: identity.stats()
       };
     },
 
-    /** Reinicia los contadores. Solo para pruebas. */
+    /** Reinicia contadores y cache. Solo para pruebas. */
     reset() {
       burstLimiter.reset();
+      effectfulLimiter.reset();
+      admission.reset();
       identity.reset();
     },
 
     /**
-     * Atiende una petición al proxy.
-     *
      * @param {import("node:http").IncomingMessage} req
      * @param {import("node:http").ServerResponse} res
-     * @returns {Promise<number>} Código de estado, para el log de la petición.
+     * @returns {Promise<number>} Codigo de estado, para el log de la peticion.
      */
     async handle(req, res) {
       const origin = req.headers.origin;
-      const urlPath = (req.url || "/").split("?")[0];
-      const route = matchRoute(urlPath);
+      const [urlPath, rawQuery = ""] = String(req.url || "/").split("?");
 
-      // `handle` solo se invoca tras `matches`, pero no se asume: sin ruta no hay ni
-      // métodos con los que construir las cabeceras de CORS.
-      if (!route) {
-        return send(res, 404, { error: "Not Found" }, origin, ["GET"]);
-      }
+      const mount = matchMount(urlPath);
+      if (!mount) return send(res, 404, { error: "Not Found", reason: RPA_REASONS.ROUTE_UNKNOWN }, origin);
 
       if (!isOriginAllowed(origin, req.headers.host, config)) {
-        warning("rpa_origin_rejected", {
-          path: route.path,
-          origin: String(origin).slice(0, 120)
-        });
-        // Sin cabeceras CORS a propósito: al navegador no se le concede el permiso.
-        return send(
-          res,
-          403,
-          { error: "Forbidden", reason: RPA_REASONS.FORBIDDEN_ORIGIN },
-          undefined,
-          route.methods
-        );
+        warning("rpa_origin_rejected", { origin: String(origin).slice(0, 120) });
+        // Sin cabeceras CORS a proposito: al navegador no se le concede el permiso.
+        return send(res, 403, { error: "Forbidden", reason: RPA_REASONS.FORBIDDEN_ORIGIN }, undefined);
       }
 
-      // Preflight antes de cualquier límite: bloquearlo dejaría al navegador sin saber
-      // por qué falla la petición real.
+      // El preflight se responde antes de cualquier limite: bloquearlo deja al navegador sin
+      // saber por que falla la peticion real.
       if (req.method === "OPTIONS") {
-        res.writeHead(204, corsHeaders(origin, route.methods));
+        res.writeHead(204, corsHeaders(origin));
         res.end();
         return 204;
       }
 
-      if (!route.methods.includes(req.method || "")) {
-        return send(res, 405, { error: "Method Not Allowed" }, origin, route.methods, {
-          Allow: `${route.methods.join(", ")}, OPTIONS`
-        });
+      const service = services[mount.serviceId];
+      if (!service) {
+        error("rpa_service_not_configured", { service: mount.serviceId });
+        return send(
+          res,
+          503,
+          { error: "Service not configured", reason: RPA_REASONS.NOT_CONFIGURED },
+          origin
+        );
       }
 
-      // Antes de leer el cuerpo: a un bot no se le dedica ni el ancho de banda de su
-      // propio payload.
+      const canonicalPath = normalizeUpstreamPath(mount.serviceId, urlPath);
+      const { route, pathKnown } = matchRoute(mount.serviceId, req.method, canonicalPath);
+
+      if (!route) {
+        const reason = pathKnown ? RPA_REASONS.METHOD_NOT_ALLOWED : RPA_REASONS.ROUTE_UNKNOWN;
+        warning("rpa_route_rejected", {
+          service: mount.serviceId,
+          method: req.method,
+          path: canonicalPath,
+          reason
+        });
+        return send(
+          res,
+          pathKnown ? 405 : 404,
+          { error: pathKnown ? "Method Not Allowed" : "Not Found", reason },
+          origin
+        );
+      }
+
+      // ── Limite de tasa ────────────────────────────────────────────────────
       const ip = resolveClientIp(req, { trustedHops: config.trustedProxyHops });
       const burst = burstLimiter.hit(ip);
       if (!burst.allowed) {
-        warning("rpa_rate_limited", {
-          path: route.path,
-          client_ip: ip,
-          used: burst.used,
-          limit: burst.limit
-        });
+        warning("rpa_rate_limited", { client_ip: ip, used: burst.used, limit: burst.limit });
         return send(
           res,
           429,
@@ -431,93 +449,454 @@ export const createRpaProxyHandler = ({
             retryAfterSeconds: burst.retryAfterSeconds
           },
           origin,
-          route.methods,
           { "Retry-After": String(burst.retryAfterSeconds) }
         );
       }
 
-      if (config.predialBaseUrl === "") {
-        warning("rpa_not_configured", {
-          path: route.path,
-          note: "RPA_PREDIAL_API_URL no está definida: el proxy no sabe a dónde llamar."
+      if (route.effectful) {
+        const quota = effectfulLimiter.hit(ip);
+        if (!quota.allowed) {
+          warning("rpa_effectful_rate_limited", {
+            client_ip: ip,
+            path: canonicalPath,
+            used: quota.used,
+            limit: quota.limit
+          });
+          return send(
+            res,
+            429,
+            {
+              error: "Too Many Requests",
+              reason: RPA_REASONS.RATE_LIMITED,
+              retryAfterSeconds: quota.retryAfterSeconds
+            },
+            origin,
+            { "Retry-After": String(quota.retryAfterSeconds) }
+          );
+        }
+      }
+
+      const { query, dropped } = filterQuery(rawQuery);
+      if (dropped.length > 0) {
+        warning("rpa_query_params_dropped", { path: canonicalPath, dropped });
+      }
+
+      // ── Control de admision del techo de dos tramites ─────────────────────
+      const needsSlot = route.effectful && mount.serviceId === "factura";
+      let slotId = "";
+      if (needsSlot) {
+        const seat = admission.acquire();
+        if (!seat.admitted) {
+          info("rpa_queue_full", { in_flight: seat.inFlight, path: canonicalPath });
+          return send(
+            res,
+            429,
+            {
+              error: "Busy",
+              reason: RPA_REASONS.QUEUE_FULL,
+              queuePosition: seat.queuePosition,
+              retryAfterSeconds: seat.retryAfterSeconds
+            },
+            origin,
+            { "Retry-After": String(seat.retryAfterSeconds) }
+          );
+        }
+        slotId = seat.slotId;
+      }
+
+      /** Libera el cupo si el tramite no llego a arrancar. */
+      const releaseSlot = () => {
+        if (slotId) {
+          admission.release(slotId);
+          slotId = "";
+        }
+      };
+
+      // ── Token ─────────────────────────────────────────────────────────────
+      let headers;
+      try {
+        headers = await upstreamHeaders(service, req, readCorrelationOverride(rawQuery));
+      } catch (err) {
+        releaseSlot();
+        const reason = err instanceof IdentityTokenError ? err.reason : "unknown";
+        critical("rpa_token_unavailable", {
+          service: mount.serviceId,
+          audience: service.audience,
+          mode: identity.mode,
+          reason,
+          detail: String(err?.message || "").slice(0, 300)
         });
         return send(
           res,
           503,
-          { error: "RPA unavailable", reason: RPA_REASONS.NOT_CONFIGURED },
-          origin,
-          route.methods
+          { error: "Service Unavailable", reason: RPA_REASONS.AUTH_UNAVAILABLE },
+          origin
         );
       }
 
-      // ── Cuerpo ────────────────────────────────────────────────────────────
-      /** @type {string|undefined} */
-      let body;
-      if (req.method === "POST") {
-        const read = await readBody(req);
-        if (!read.ok) {
+      const upstreamUrl = buildUpstreamUrl(service, canonicalPath, query);
+
+      try {
+        if (route.kind === BODY_KINDS.SSE) {
+          return await this.pipeStream({ res, service, headers, upstreamUrl, origin, canonicalPath });
+        }
+        if (route.kind === BODY_KINDS.BINARY) {
+          return await this.pipeBinary({
+            res,
+            route,
+            service,
+            headers,
+            upstreamUrl,
+            origin,
+            canonicalPath
+          });
+        }
+        return await this.pipeJson({
+          req,
+          res,
+          route,
+          service,
+          headers,
+          upstreamUrl,
+          origin,
+          canonicalPath,
+          slotId,
+          onSlotConsumed: () => {
+            slotId = "";
+          }
+        });
+      } catch (err) {
+        releaseSlot();
+        error("rpa_proxy_unhandled", {
+          service: mount.serviceId,
+          path: canonicalPath,
+          detail: String(err?.message || "").slice(0, 300)
+        });
+        if (res.headersSent) {
+          res.end();
+          return 502;
+        }
+        return send(
+          res,
+          502,
+          { error: "Bad Gateway", reason: RPA_REASONS.UPSTREAM_UNAVAILABLE },
+          origin
+        );
+      } finally {
+        releaseSlot();
+      }
+    },
+
+    /**
+     * Reenvia una peticion con cuerpo y respuesta JSON (o multipart de subida).
+     * @param {Object} ctx
+     */
+    async pipeJson({
+      req,
+      res,
+      route,
+      service,
+      headers,
+      upstreamUrl,
+      origin,
+      canonicalPath,
+      slotId,
+      onSlotConsumed
+    }) {
+      /** @type {RequestInit} */
+      const init = { method: req.method, headers };
+
+      if (route.kind === BODY_KINDS.MULTIPART) {
+        const declared = Number(req.headers["content-length"] || 0);
+        if (declared > config.maxUploadBytes) {
+          warning("rpa_upload_too_large", { declared, limit: config.maxUploadBytes });
           return send(
             res,
             413,
             { error: "Payload Too Large", reason: RPA_REASONS.PAYLOAD_TOO_LARGE },
-            origin,
-            route.methods
+            origin
           );
         }
-
-        if (read.text.trim() !== "") {
-          // Se reserializa en vez de reenviar el texto crudo: valida que sea JSON y
-          // normaliza lo que llega al RPA. `prewarm` se llama sin cuerpo, y ese caso pasa
-          // sin body en lugar de con un `{}` que el RPA no espera.
-          try {
-            body = JSON.stringify(JSON.parse(read.text));
-          } catch {
-            return send(
-              res,
-              400,
-              { error: "Invalid JSON", reason: RPA_REASONS.INVALID_PAYLOAD },
-              origin,
-              route.methods
-            );
-          }
+        // En streaming: una radicacion con 25 MB de anexos no debe pasar por memoria.
+        init.body = Readable.from(cappedStream(req, config.maxUploadBytes));
+        init.duplex = "half";
+      } else if (req.method !== "GET" && req.method !== "HEAD") {
+        const body = await readJsonBody(req);
+        if (!body.ok) {
+          return send(
+            res,
+            413,
+            { error: "Payload Too Large", reason: RPA_REASONS.PAYLOAD_TOO_LARGE },
+            origin
+          );
         }
+        if (body.raw !== "") init.body = body.raw;
       }
 
-      const startedAt = now();
-      const result = await callUpstream({
-        route,
-        method: req.method || "GET",
-        query: buildQuery(req.url || "", route.query),
-        body
-      });
-      const durationMs = now() - startedAt;
+      const controller = new AbortController();
+      const timer =
+        route.timeoutMs > 0 ? setTimeout(() => controller.abort(), route.timeoutMs) : null;
+      init.signal = controller.signal;
 
-      if (!result.ok) {
-        // El detalle técnico describe el estado del RPA: se queda en el log del servidor.
-        error("rpa_upstream_failed", {
-          path: route.path,
-          upstream_status: result.status,
-          detail: result.detail,
-          duration_ms: durationMs
+      let response;
+      let raw;
+      try {
+        response = await fetchImpl(upstreamUrl, init);
+        raw = await response.text();
+      } catch (err) {
+        const aborted = err?.name === "AbortError";
+        const tooLarge = String(err?.message || "").startsWith("upload_exceeds_");
+        if (tooLarge) {
+          warning("rpa_upload_too_large", { limit: config.maxUploadBytes });
+          return send(
+            res,
+            413,
+            { error: "Payload Too Large", reason: RPA_REASONS.PAYLOAD_TOO_LARGE },
+            origin
+          );
+        }
+        error("rpa_upstream_unreachable", {
+          service: service.id,
+          path: canonicalPath,
+          aborted,
+          detail: String(err?.message || "").slice(0, 200)
         });
         return send(
           res,
-          503,
-          { error: "RPA unavailable", reason: RPA_REASONS.UPSTREAM_UNAVAILABLE },
+          aborted ? 504 : 502,
+          {
+            error: aborted ? "Gateway Timeout" : "Bad Gateway",
+            reason: aborted ? RPA_REASONS.UPSTREAM_TIMEOUT : RPA_REASONS.UPSTREAM_UNAVAILABLE
+          },
+          origin
+        );
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      // Parseo tolerante: un 502 con cuerpo HTML no debe reventar aquí.
+      let payload;
+      try {
+        payload = raw ? JSON.parse(raw) : null;
+      } catch {
+        payload = null;
+      }
+
+      const upstreamCorrelation = response.headers.get(CORRELATION_HEADER);
+      const passthroughHeaders = upstreamCorrelation
+        ? { [CORRELATION_HEADER]: upstreamCorrelation }
+        : {};
+
+      if (!response.ok) {
+        const { reason, safeToForwardBody } = classifyUpstreamStatus(response.status, contentType);
+        logUpstreamFailure(reason, {
+          service: service.id,
+          audience: service.audience,
+          path: canonicalPath,
+          upstream_status: response.status,
+          content_type: contentType.slice(0, 60),
+          // El cuerpo del portal no lleva datos del ciudadano, pero se recorta igualmente.
+          detail: safeToForwardBody ? String(raw).slice(0, 200) : ""
+        });
+
+        // El cuerpo de la aplicacion se reenvia porque el frontend lo necesita para traducir
+        // el motivo al ciudadano (paz y salvo, pasarela ocupada, opciones validas de un 422).
+        // Lo que no sale de aqui es el cuerpo de la infraestructura: describe el estado de la
+        // credencial y del ingress.
+        return send(
+          res,
+          response.status,
+          safeToForwardBody && payload ? { ...payload, reason } : { error: "Upstream error", reason },
           origin,
-          route.methods
+          passthroughHeaders
         );
       }
 
-      // Nunca el cuerpo en el log: lleva documento, teléfono y correo.
-      info("rpa_proxied", {
-        path: route.path,
-        method: req.method,
-        upstream_status: result.status,
-        duration_ms: durationMs
+      // Un tramite aceptado ata el cupo a su `job_id`, para poder liberarlo al verlo terminar.
+      if (slotId && payload?.job_id) {
+        admission.bind(slotId, String(payload.job_id));
+        onSlotConsumed?.();
+      }
+      // Un poll que ya muestra estado terminal libera el cupo sin esperar a que venza.
+      if (route.kind === BODY_KINDS.JSON && payload?.id && isTerminalJobPayload(payload)) {
+        admission.release(String(payload.id));
+      }
+
+      info("rpa_request_served", {
+        service: service.id,
+        path: canonicalPath,
+        upstream_status: response.status,
+        ...admission.snapshot()
       });
 
-      return send(res, result.status, result.payload, origin, route.methods);
+      return send(res, response.status, payload ?? {}, origin, passthroughHeaders);
+    },
+
+    /**
+     * Reenvia un stream SSE sin bufferizarlo. Es lo que permite dar mensajes de progreso
+     * verdaderos en lugar de un temporizador inventado.
+     * @param {Object} ctx
+     */
+    async pipeStream({ res, service, headers, upstreamUrl, origin, canonicalPath }) {
+      const controller = new AbortController();
+      // Si el ciudadano cierra el chat, se corta tambien la conexion hacia arriba.
+      res.on("close", () => controller.abort());
+
+      let response;
+      try {
+        response = await fetchImpl(upstreamUrl, {
+          method: "GET",
+          headers: { ...headers, Accept: "text/event-stream" },
+          signal: controller.signal
+        });
+      } catch (err) {
+        if (controller.signal.aborted) return 499;
+        error("rpa_stream_unreachable", {
+          service: service.id,
+          detail: String(err?.message || "").slice(0, 200)
+        });
+        return send(res, 502, { error: "Bad Gateway", reason: RPA_REASONS.UPSTREAM_UNAVAILABLE }, origin);
+      }
+
+      if (!response.ok) {
+        const { reason } = classifyUpstreamStatus(
+          response.status,
+          response.headers.get("content-type") || ""
+        );
+        logUpstreamFailure(reason, {
+          service: service.id,
+          audience: service.audience,
+          path: "stream",
+          upstream_status: response.status
+        });
+        return send(res, response.status, { error: "Upstream error", reason }, origin);
+      }
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        // Sin esto un proxy intermedio acumula el stream y los eventos llegan todos al final.
+        "X-Accel-Buffering": "no",
+        "X-Content-Type-Options": "nosniff",
+        ...corsHeaders(origin)
+      });
+
+      try {
+        for await (const chunk of response.body) {
+          if (!res.write(chunk)) {
+            // Respetar la contrapresion: sin esto un cliente lento acumula memoria aqui.
+            await new Promise((resolve) => res.once("drain", resolve));
+          }
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          warning("rpa_stream_interrupted", { detail: String(err?.message || "").slice(0, 200) });
+        }
+      } finally {
+        res.end();
+        // El servicio cierra el stream al terminar el tramite, asi que el fin del stream es
+        // la señal mas temprana de que el cupo quedo libre. Sin esto habria que esperar a que
+        // venciera su contrato, y el siguiente ciudadano esperaria de mas.
+        //
+        // Si el ciudadano cerro el chat antes, se libera un cupo cuyo tramite sigue vivo. Es
+        // deliberado: ser permisivo aqui solo adelanta lo que el contrato iba a hacer igual, y
+        // bloquear a un ciudadano por un tramite que nadie esta mirando es peor.
+        const jobId = canonicalPath?.match(/^\/v1\/jobs\/([A-Za-z0-9_-]+)\/stream$/)?.[1];
+        if (jobId) admission.release(jobId);
+      }
+      return 200;
+    },
+
+    /**
+     * Descarga el PDF con token y lo reenvia. El ciudadano nunca recibe la URL protegida por
+     * IAM: su navegador no lleva token y solo veria un 403.
+     * @param {Object} ctx
+     */
+    async pipeBinary({ res, route, service, headers, upstreamUrl, origin, canonicalPath }) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), route.timeoutMs || 60_000);
+
+      try {
+        const response = await fetchImpl(upstreamUrl, {
+          method: "GET",
+          headers,
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          const { reason } = classifyUpstreamStatus(
+            response.status,
+            response.headers.get("content-type") || ""
+          );
+          logUpstreamFailure(reason, {
+            service: service.id,
+            audience: service.audience,
+            path: canonicalPath,
+            upstream_status: response.status
+          });
+          return send(res, response.status, { error: "Upstream error", reason }, origin);
+        }
+
+        // El nombre se toma de la ruta ya validada por la lista blanca, nunca de una cabecera
+        // del destino: `Content-Disposition` es texto ajeno y acabaria en un nombre de archivo.
+        const filename = canonicalPath.split("/").pop() || "factura.pdf";
+
+        res.writeHead(200, {
+          "Content-Type": response.headers.get("content-type") || "application/pdf",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          // La factura lleva el detalle tributario del ciudadano: no se cachea en ningun salto.
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          ...corsHeaders(origin)
+        });
+
+        for await (const chunk of response.body) {
+          if (!res.write(chunk)) {
+            await new Promise((resolve) => res.once("drain", resolve));
+          }
+        }
+        res.end();
+        return 200;
+      } catch (err) {
+        const aborted = err?.name === "AbortError";
+        error("rpa_pdf_failed", {
+          service: service.id,
+          path: canonicalPath,
+          aborted,
+          detail: String(err?.message || "").slice(0, 200)
+        });
+        if (res.headersSent) {
+          res.end();
+          return 502;
+        }
+        return send(
+          res,
+          aborted ? 504 : 502,
+          {
+            error: aborted ? "Gateway Timeout" : "Bad Gateway",
+            reason: aborted ? RPA_REASONS.UPSTREAM_TIMEOUT : RPA_REASONS.UPSTREAM_UNAVAILABLE
+          },
+          origin
+        );
+      } finally {
+        clearTimeout(timer);
+      }
     }
   };
+};
+
+/**
+ * Correlacion que llega por query. `EventSource` no admite cabeceras propias, asi que es la
+ * unica forma de que un stream comparta identificador con el resto de la conversacion. Se
+ * acepta solo con forma de UUID: es un identificador, no un dato personal, y validarlo evita
+ * que se cuele texto arbitrario en los logs.
+ *
+ * @param {string} rawQuery
+ * @returns {string}
+ */
+export const readCorrelationOverride = (rawQuery) => {
+  const value = new URLSearchParams(rawQuery || "").get("cid") || "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : "";
 };

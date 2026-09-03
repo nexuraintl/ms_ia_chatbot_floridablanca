@@ -150,8 +150,34 @@ const tokenLogPlugin = () => {
   }
 }
 
+/**
+ * Backend del chatbot durante el desarrollo (`npm start` en otra terminal).
+ *
+ * El servidor de desarrollo de Vite no tiene los proxies: los RPA exigen un identity token
+ * y la clave de Gemini vive en el servidor. Así que `/rpa/*` y `/api/ai/*` se reenvían al
+ * backend real. Sin esto, en `npm run dev` los trámites responden con el index.html.
+ */
+const DEV_BACKEND = process.env.DEV_BACKEND_ORIGIN || 'http://localhost:8080'
+
+/**
+ * Prefijo bajo el que se sirve el widget, normalizado a la forma que espera Vite: con
+ * barra inicial y con barra final. `/` cuando no hay prefijo, que es el caso de siempre.
+ *
+ * Detras del API Gateway o del balanceador hace falta ponerle su ruta, porque
+ * `index.html` referencia los assets desde la raiz y sin esto los pediria fuera del
+ * prefijo. Incluye el ambiente, asi que es un build-arg y no un valor fijo.
+ *
+ * El servidor necesita `BASE_PATH` con el MISMO valor para recortarlo al enrutar.
+ */
+const BASE_PATH = (() => {
+  const raw = String(process.env.VITE_BASE_PATH || '').trim()
+  if (raw === '' || raw === '/') return '/'
+  return `/${raw.replace(/^\/+/, '').replace(/\/+$/, '')}/`
+})()
+
 // https://vite.dev/config/
 export default defineConfig({
+  base: BASE_PATH,
   server: {
     // Antes era `cors: true`, que responde con `Access-Control-Allow-Origin: *` y
     // permite a cualquier sitio web leer las respuestas del servidor de desarrollo.
@@ -160,6 +186,11 @@ export default defineConfig({
     cors: {
       origin: [/^https?:\/\/localhost(:\d+)?$/, /^https?:\/\/127\.0\.0\.1(:\d+)?$/],
       credentials: false
+    },
+    proxy: {
+      // Solo `/api/ai`, no todo `/api`: `/api/log-tokens` lo atiende el plugin de abajo.
+      '/api/ai': { target: DEV_BACKEND, changeOrigin: false },
+      '/rpa': { target: DEV_BACKEND, changeOrigin: false }
     }
   },
   build: {
@@ -167,6 +198,18 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         embed: path.resolve(__dirname, 'src/embed.jsx')
+      },
+      output: {
+        /**
+         * El punto de entrada del widget embebido necesita una URL ESTABLE: el portal que
+         * lo incrusta lleva ese `<script src>` escrito en su plantilla, y con un nombre con
+         * hash cada despliegue lo dejaría apuntando a un archivo que ya no existe.
+         *
+         * El resto de los assets conserva el hash, que es lo que permite cachearlos para
+         * siempre. `assets/embed.js` se sirve con `no-cache` justamente por no llevarlo.
+         */
+        entryFileNames: (chunk) =>
+          chunk.name === 'embed' ? 'assets/embed.js' : 'assets/[name]-[hash].js'
       }
     }
   },

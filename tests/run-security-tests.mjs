@@ -125,6 +125,28 @@ for (const url of [
 {
   const pse = urlPolicy.forBackendResource("https://pasarela-pse.example/pagar?ref=123");
   check("permite recurso de backend con esquema seguro", pse.safe, `-> ${pse.href}`);
+
+  // El PDF de la factura llega por el proxy del backend, no por el host del RPA: está
+  // detrás de IAM y el navegador del ciudadano no lleva token.
+  const factura = urlPolicy.forBackendResource("/rpa/factura/v1/facturas/Factura3205346.pdf");
+  check(
+    "permite una ruta del propio origen (el PDF por el proxy)",
+    factura.safe && factura.href.endsWith("/rpa/factura/v1/facturas/Factura3205346.pdf"),
+    `-> ${factura.href}`
+  );
+
+  // `//host` no es una ruta relativa: cambia de origen, así que pasa por la vía absoluta.
+  const protocoloRelativo = urlPolicy.forBackendResource("//sitio-del-atacante.example.com/f.pdf");
+  check(
+    "una URL protocolo-relativa no se da por propia",
+    protocoloRelativo.trusted === false,
+    `-> ${protocoloRelativo.href} trusted=${protocoloRelativo.trusted}`
+  );
+
+  check(
+    "un esquema peligroso sigue bloqueado",
+    urlPolicy.forBackendResource("javascript:alert(1)").href === "#"
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -469,6 +491,17 @@ section("8. Coste de CPU (DoS algorítmico)");
 section("9. Selección de proveedor de IA (inversión de dependencias)");
 // ══════════════════════════════════════════════════════════════════════════════
 check("sin clave se elige el mock local", selectProviderId({ apiKey: "" }) === "local-mock");
+// El caso del despliegue: el widget lo sirve su propio backend, así que el proxy está en el
+// mismo origen y NO tiene URL que mirar. Sin la bandera, producción caía en el modo de
+// desarrollo y volvía a pedir la clave en el navegador.
+check(
+  "con backend en el mismo origen gana el proxy aunque no haya URL",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy"
+);
+check(
+  "y una clave olvidada en el navegador no se salta el control de gasto",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) !== "gemini-api"
+);
 check("con clave se elige la API", selectProviderId({ apiKey: "AIzaSy" + "a".repeat(33) }) === "gemini-api");
 check("clave en blanco cuenta como ausente", selectProviderId({ apiKey: "   " }) === "local-mock");
 
@@ -555,18 +588,23 @@ section("12. Validación de archivos adjuntos de PQRSD");
   );
   check(
     "rechaza cuando el total excede el tope",
+    // Derivado de las constantes: cada archivo cabe por separado y el conjunto no. Así el
+    // caso sigue siendo el que interesa aunque cambien los límites del servicio.
     !validateAttachments(
-      Array.from({ length: 4 }, (_, i) => fakeFile(`a${i}.pdf`, 4.5 * 1024 * 1024, "application/pdf"))
+      Array.from(
+        { length: Math.floor(FILE_CONSTRAINTS.maxTotalBytes / FILE_CONSTRAINTS.maxBytesPerFile) + 1 },
+        (_, i) => fakeFile(`a${i}.pdf`, FILE_CONSTRAINTS.maxBytesPerFile, "application/pdf")
+      )
     ).valid
   );
   check("sin adjuntos es válido", validateAttachments([]).valid);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
+section("13. H-01 — la clave de Gemini ya no vive en el navegador");
 // ══════════════════════════════════════════════════════════════════════════════
-// Se conserva a propósito como FAIL: es una decisión de arquitectura, no un descuido,
-// y no tiene solución desde el frontend.
+// Estuvo abierto mientras el widget llamaba a Gemini directamente. Lo cierra el proxy del
+// backend (`server/aiProxy.js`) más la selección por defecto en un build de producción.
 {
   const provider = await import("../src/adapters/ai/GeminiApiProvider.js");
   check(
@@ -595,19 +633,25 @@ section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
       "gemini-api",
     "ni una clave olvidada en el localStorage del operador reactiva la llamada directa"
   );
+  check(
+    "y en un build de producción el proxy gana sin necesidad de configurar nada",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy",
+    "el proxy vive en el mismo origen, así que no hay URL que definir"
+  );
 
   check(
     "la clave no es visible para quien usa el navegador",
-    false,
-    "ABIERTO SOLO EN MODO DESARROLLO. Sin VITE_AI_PROXY_URL definida, el widget\n" +
-    "         llama a Gemini directamente con la clave que el operador escribe en el panel,\n" +
-    "         y esa credencial es legible en las herramientas de desarrollo. Es el modo\n" +
-    "         pensado para desarrollo local y no debería desplegarse.\n" +
-    "         CIERRE: definir VITE_AI_PROXY_URL y el secreto gemini-api-key en Secret\n" +
-    "         Manager. Con eso la clave nunca entra en el navegador y esta comprobación\n" +
-    "         deja de aplicar. Ver SECURITY.md, H-01.\n" +
-    "         Si se opera en modo desarrollo: restringir la clave por referente HTTP y por\n" +
-    "         API en Google Cloud, fijar cuota diaria baja, y rotar si algún build la publicó."
+    true,
+    [
+      "CERRADO. En cualquier build de producción el widget usa el proxy del backend, que",
+      "         guarda la clave del lado del servidor: no llega al navegador de ningún",
+      "         ciudadano. No hace falta configurar VITE_AI_PROXY_URL —el proxy vive en el",
+      "         mismo origen— y una clave olvidada en el localStorage del operador no",
+      "         reactiva la llamada directa.",
+      "         RESIDUAL: compilar a propósito con VITE_AI_PROXY_ENABLED=false vuelve al",
+      "         modo de desarrollo, en el que la clave la escribe el operador y queda",
+      "         legible en su navegador. Ese modo no debe desplegarse. Ver SECURITY.md, H-01."
+    ].join("\n")
   );
 }
 
@@ -1302,13 +1346,24 @@ section("22. Alcance de las cabeceras internas");
   );
   check(
     "correlaciona el propio origen del portal",
-    isOwnBackendUrl(`${ORIGIN}/api/v1/pqrsd/crear`) === true
+    isOwnBackendUrl(`${ORIGIN}/rpa/pqrsd/v1/pqrsd/crear`) === true
   );
 
-  const rpaHost = new URL(environmentConfig.pqrsdApiUrl).hostname;
+  // Los RPA ya no se llaman por su host: exigen IAM y el navegador no puede acuñar el token,
+  // así que la base es una ruta del backend propio.
   check(
-    `correlaciona el RPA configurado: ${rpaHost}`,
-    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/api/v1/pqrsd/consultar`) === true
+    "la base del RPA de PQRSD es una ruta del backend propio, no un host externo",
+    environmentConfig.pqrsdApiUrl.startsWith("/rpa/pqrsd"),
+    environmentConfig.pqrsdApiUrl
+  );
+  check(
+    "la base del RPA de Predial es una ruta del backend propio",
+    environmentConfig.predialApiUrl.startsWith("/rpa/factura"),
+    environmentConfig.predialApiUrl
+  );
+  check(
+    "correlaciona el RPA a través del proxy propio",
+    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/v1/pqrsd/consultar`) === true
   );
 
   check(

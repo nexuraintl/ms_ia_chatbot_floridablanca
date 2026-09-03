@@ -9,9 +9,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "test": "npm run test:security && npm run test:server && npm run test:knowledge",
+    "start:local": "node --env-file-if-exists=.env server/index.js",
+    "test": "npm run test:security && npm run test:server && npm run test:rpa && npm run test:knowledge",
     "test:security": "node tests/run-security-tests.mjs",
     "test:server": "node tests/run-server-tests.mjs",
+    "test:rpa": "node tests/run-rpa-tests.mjs",
     "test:knowledge": "node tests/run-knowledge-tests.mjs"
   },
   "dependencies": {
