@@ -1,0 +1,319 @@
+{
+  "_nota": "Tablas matriciales transcritas por lectura visual de la pagina escaneada y verificadas celda por celda. El OCR por lineas pierde y parte celdas en tablas de varias columnas (por ejemplo lee '25' como '2' y '5'), asi que estas tablas NO provienen del OCR. Fuente: paginas indicadas del PDF del Acuerdo 020 de 2026.",
+  "tablas": [
+    {
+      "id": "tarifas-predial-habitacional",
+      "articulo": 33,
+      "pagina_pdf": 17,
+      "titulo": "Tarifas del impuesto predial unificado - sector habitacional e institucional",
+      "unidad": "por mil",
+      "columnas": [
+        "Rango inicial",
+        "Rango final",
+        "Estrato 1",
+        "Estrato 2",
+        "Estrato 3",
+        "Estrato 4",
+        "Estrato 5",
+        "Estrato 6"
+      ],
+      "filas": [
+        [
+          "0",
+          "730 UVT",
+          "5",
+          "5",
+          "5",
+          "7,5",
+          "9,5",
+          "10"
+        ],
+        [
+          "730 UVT + 1 peso",
+          "1460 UVT",
+          "6,75",
+          "6,75",
+          "6,75",
+          "8",
+          "10",
+          "10,5"
+        ],
+        [
+          "1460 UVT + 1 peso",
+          "2922 UVT",
+          "7",
+          "7",
+          "7,5",
+          "8,25",
+          "10,25",
+          "11"
+        ],
+        [
+          "2922 UVT + 1 peso",
+          "4748 UVT",
+          "7,5",
+          "7,5",
+          "8",
+          "9",
+          "10,5",
+          "11,5"
+        ],
+        [
+          "Mayores a 4748 UVT + 1 peso",
+          "-",
+          "8",
+          "8",
+          "9",
+          "9,5",
+          "10,75",
+          "12"
+        ]
+      ]
+    },
+    {
+      "id": "tarifas-predial-no-habitacional",
+      "articulo": 33,
+      "pagina_pdf": 18,
+      "titulo": "Tarifas del impuesto predial unificado - predios no habitacionales (comerciales, cultural, educativo, forestal, industrial, infraestructura, mineria o hidrocarburos, recreacional, religioso, salubridad, servicios funerarios y demas destinos del articulo)",
+      "unidad": "por mil",
+      "columnas": [
+        "Rango inicial",
+        "Rango final",
+        "Estrato 1",
+        "Estrato 2",
+        "Estrato 3",
+        "Estrato 4",
+        "Estrato 5",
+        "Estrato 6"
+      ],
+      "filas": [
+        [
+          "0",
+          "730 UVT",
+          "6,75",
+          "6,75",
+          "7,5",
+          "8,5",
+          "10,5",
+          "11"
+        ],
+        [
+          "730 UVT + 1 peso",
+          "1460 UVT",
+          "7",
+          "7",
+          "8,25",
+          "9",
+          "11",
+          "11,25"
+        ],
+        [
+          "1460 UVT + 1 peso",
+          "2922 UVT",
+          "7,5",
+          "7,5",
+          "8,5",
+          "9,75",
+          "11,25",
+          "11,75"
+        ],
+        [
+          "2922 UVT + 1 peso",
+          "4748 UVT",
+          "8",
+          "8",
+          "8,75",
+          "10",
+          "11,5",
+          "12"
+        ],
+        [
+          "Mayores a 4748 UVT + 1 peso",
+          "-",
+          "8,25",
+          "8,25",
+          "9",
+          "10,25",
+          "11,75",
+          "12,25"
+        ]
+      ]
+    },
+    {
+      "id": "tarifas-predial-urbanizables",
+      "articulo": 33,
+      "pagina_pdf": 18,
+      "titulo": "Tarifas del impuesto predial unificado - predios urbanizables no urbanizados, urbanizados no construidos y lote no urbanizable",
+      "unidad": "por mil",
+      "columnas": [
+        "Rango inicial",
+        "Rango final",
+        "Estrato 1",
+        "Estrato 2",
+        "Estrato 3",
+        "Estrato 4",
+        "Estrato 5",
+        "Estrato 6"
+      ],
+      "filas": [
+        [
+          "0",
+          "730 UVT",
+          "18",
+          "20",
+          "22",
+          "25",
+          "28",
+          "30"
+        ],
+        [
+          "730 UVT + 1 peso",
+          "1460 UVT",
+          "18",
+          "20",
+          "22",
+          "25",
+          "28",
+          "30"
+        ],
+        [
+          "1460 UVT + 1 peso",
+          "2922 UVT",
+          "18",
+          "20",
+          "22",
+          "25",
+          "28",
+          "30"
+        ],
+        [
+          "2922 UVT + 1 peso",
+          "4748 UVT",
+          "18",
+          "20",
+          "22",
+          "25",
+          "28",
+          "30"
+        ],
+        [
+          "Mayores a 4748 UVT + 1 peso",
+          "-",
+          "18",
+          "20",
+          "22",
+          "25",
+          "28",
+          "30"
+        ]
+      ],
+      "nota": "Paragrafo 1 del articulo 33: los lotes no urbanizables y los declarados de reserva pagaran la tarifa del cinco (5) por mil, previa solicitud escrita con los requisitos alli listados."
+    },
+    {
+      "id": "tarifas-delineacion-urbana",
+      "articulo": 157,
+      "pagina_pdf": 141,
+      "titulo": "Tarifas del impuesto de delineacion urbana por metro cuadrado autorizado en la licencia",
+      "unidad": "en UVT por metro cuadrado",
+      "columnas": [
+        "Destinacion / Estrato",
+        "Tarifa por metro cuadrado"
+      ],
+      "filas": [
+        [
+          "Residencial Estrato 1",
+          "0.04 UVT"
+        ],
+        [
+          "Residencial Estrato 2",
+          "0.06 UVT"
+        ],
+        [
+          "Residencial Estrato 3",
+          "0.09 UVT"
+        ],
+        [
+          "Residencial Estrato 4",
+          "0.13 UVT"
+        ],
+        [
+          "Residencial Estrato 5",
+          "0.23 UVT"
+        ],
+        [
+          "Residencial Estrato 6",
+          "0.37 UVT"
+        ],
+        [
+          "Comercio y/o servicios",
+          "0.18 UVT"
+        ],
+        [
+          "Institucional o dotacional",
+          "0.18 UVT"
+        ],
+        [
+          "Industrial",
+          "0.18 UVT"
+        ],
+        [
+          "Suelo suburbano / rural comercial y de servicios",
+          "0.18 UVT"
+        ],
+        [
+          "Licencia de cerramiento (por metro lineal)",
+          "0.09 UVT"
+        ]
+      ],
+      "nota": "Se multiplica por los metros cuadrados autorizados en la licencia, con la UVT vigente al momento del pago. En proyectos de uso mixto se liquida proporcionalmente a los metros de cada uso; en areas de expansion urbana se aplica la tarifa del suelo urbano segun el plan parcial.",
+      "capitulo": "CAPITULO IV IMPUESTO DE DELINEACION URBANA"
+    },
+    {
+      "id": "tarifas-sobretasa-bomberil-predial",
+      "articulo": 325,
+      "pagina_pdf": 182,
+      "titulo": "Tarifas de la sobretasa bomberil en el impuesto predial unificado",
+      "unidad": "en UVT",
+      "columnas": [
+        "Estratificacion",
+        "Tarifa sobre avaluo"
+      ],
+      "filas": [
+        [
+          "Estrato cero (0)",
+          "0.25 UVT"
+        ],
+        [
+          "Estrato uno (1)",
+          "0.5 UVT"
+        ],
+        [
+          "Estrato dos (2)",
+          "1.5 UVT"
+        ],
+        [
+          "Estrato tres (3)",
+          "1.75 UVT"
+        ],
+        [
+          "Estrato cuatro (4)",
+          "2.5 UVT"
+        ],
+        [
+          "Estrato cinco (5)",
+          "2.75 UVT"
+        ],
+        [
+          "Estrato seis (6)",
+          "3.0 UVT"
+        ],
+        [
+          "Otros o sin estrato",
+          "2.0 UVT"
+        ]
+      ],
+      "nota": "La sobretasa hace parte integral de la factura del impuesto predial unificado y no admite descuentos ni amnistias. En industria y comercio la tarifa es del 10% del impuesto liquidado de ICA y avisos y tableros (articulo 326).",
+      "capitulo": "CAPITULO XVII SOBRETASA PARA FINANCIAR LA ACTIVIDAD BOMBERIL"
+    }
+  ]
+}

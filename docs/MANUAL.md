@@ -53,7 +53,7 @@ está en la sección 9.
 | Servicio Cloud Run | `[ambiente]-ia-chatbot-floridablanca` |
 | Región | ⚠️ PENDIENTE (`cloudbuild.yaml` usa `us-central1` como valor de partida) |
 | Ingress | `internal-and-cloud-load-balancing` |
-| Base de datos | Ninguna propia |
+| Base de datos | Ninguna propia. La base de conocimiento es un archivo del repositorio (`server/knowledge/corpus.json`, 1,3 MB) que se carga en memoria al arrancar |
 | Artifact Registry | ⚠️ PENDIENTE |
 
 ### ⚠️ Requisito de balanceador de carga
@@ -73,6 +73,7 @@ API Gateway.
 | RPA Impuesto Predial | Consulta de predios y generación de factura | Alta |
 | RPA PQRSD | Radicación y consulta de radicados | Alta |
 | Google Gemini API | Respuesta libre conversacional | Media — degrada a catálogo local |
+| Base de conocimiento del Estatuto | Fundamenta las respuestas tributarias. Se recupera en el servidor y se inyecta en la instrucción de sistema | Media — sin ella el asistente responde sin citar el articulado. Ver `docs/BASE_CONOCIMIENTO.md` |
 | Backend de conversaciones | Registro de la atención | ⚠️ PENDIENTE — sin definir |
 
 ### Diagrama de flujo
@@ -372,6 +373,6 @@ jsonPayload.correlation_id="<el identificador>"
 |---|---|
 | `SECURITY.md` | Auditoría de seguridad y hallazgos, incluido H-01 (clave en el navegador) |
 | `REGISTRO_Y_IDENTIDAD.md` | Registro de conversaciones, identificación e Ley 1581 de 2012 |
-| `saas_architecture_guide.md` | Arquitectura multi-tenant del widget |
+| `docs/BASE_CONOCIMIENTO.md` | Base de conocimiento del Estatuto Tributario: extracción, corpus y recuperación |
 | `API_GUIDE_RPA_PREDIAL.md` | Contrato del RPA de Impuesto Predial |
 | `AGENT_GUIDE_PQRSD.md` | Contrato del RPA de PQRSD |
