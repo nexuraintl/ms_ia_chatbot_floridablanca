@@ -17,6 +17,11 @@
     "mode": "off",
     "retentionNoticeDays": 365
   },
+  "assistant": {
+    "_comment": "Identidad del asistente en la cabecera del chat. Si se omite 'icon' se usa el de 'municipality'.",
+    "name": "FLORIA",
+    "icon": "🌸"
+  },
   "municipality": {
     "name": "Floridablanca",
     "slogan": "Capital Dulce",
@@ -36,10 +41,6 @@
       "flow": "predial"
     },
     {
-      "label": "📑 Radicar PQRSD",
-      "flow": "pqrsd_crear"
-    },
-    {
       "label": "🔍 Consultar PQRSD",
       "flow": "pqrsd_consultar"
     }
@@ -53,9 +54,9 @@
       ".dnp.gov.co"
     ]
   },
+  "_routing_comment": "Las palabras de 'routing' OFRECEN un trámite, no lo abren: la IA responde la duda y al final invita a escribir la palabra de confirmación del trámite (ver confirmWord en application/flows/flowRegistry.js). El formulario se abre en el turno siguiente, o de inmediato si el ciudadano pulsa una respuesta rápida. La radicación de PQRSD se retiró a propósito: solo se ofrece la consulta. Este comentario va FUERA de 'routing' porque sus claves se recorren como identificadores de trámite.",
   "routing": {
-    "predial": ["predial", "impuesto", "pagar", "catastro", "catastral"],
-    "pqrsd_crear": ["radicar", "peticion", "queja", "reclamo", "sugerencia", "denuncia", "crear pqrsd", "hacer pqrsd", "poner queja", "radicar pqrsd", "radicar pqrs", "nueva pqrsd"],
+    "predial": ["predial", "catastro", "catastral", "pagar predial", "pagar el predial", "factura del predial", "liquidar predial"],
     "pqrsd_consultar": ["consultar radicado", "estado radicado", "buscar radicado", "trazabilidad", "mi radicado", "consultar pqrsd", "consultar mi pqrsd", "consultar estado", "consultarlo", "consultar pqrs"],
     "pqrsd": ["pqrsd", "pqrs", "robot", "radicado", "neptuno"]
   }
