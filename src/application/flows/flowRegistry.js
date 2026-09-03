@@ -29,6 +29,7 @@ import { sessionMetrics, METRIC_EVENTS } from "../../domain/observability/sessio
  * @typedef {Object} FlowDefinition
  * @property {string} id
  * @property {string} label            Nombre legible, para mensajes al ciudadano.
+ * @property {string} [confirmWord]    Palabra que el ciudadano escribe para abrir el formulario.
  * @property {() => void} start        Efecto que arranca el flujo (normalmente añade un mensaje con formulario).
  */
 
@@ -52,10 +53,10 @@ export const createFlowRegistry = ({
 }) => {
   /** @type {FlowDefinition[]} */
   const definitions = [
-    { id: "sisben", label: "Sisbén", start: startSisben },
-    { id: "predial", label: "Impuesto Predial", start: startPredial },
-    { id: "pqrsd_crear", label: "Radicación de PQRSD", start: startPqrsdCreate },
-    { id: "pqrsd_consultar", label: "Consulta de PQRSD", start: startPqrsdConsult },
+    { id: "sisben", label: "Sisbén", confirmWord: "consultar", start: startSisben },
+    { id: "predial", label: "Impuesto Predial", confirmWord: "pagar", start: startPredial },
+    { id: "pqrsd_crear", label: "Radicación de PQRSD", confirmWord: "radicar", start: startPqrsdCreate },
+    { id: "pqrsd_consultar", label: "Consulta de PQRSD", confirmWord: "consultar", start: startPqrsdConsult },
     // "pqrsd" y "rpa" son intenciones genéricas: muestran el menú de opciones.
     { id: "pqrsd", label: "PQRSD", start: startPqrsdMenu },
     { id: "rpa", label: "PQRSD", start: startPqrsdMenu }
@@ -93,3 +94,13 @@ export const runFlow = (registry, flowId) => {
  */
 export const getFlowLabel = (registry, flowId) =>
   (flowId && registry.get(flowId)?.label) || "el trámite";
+
+/**
+ * Palabra con la que el ciudadano confirma que quiere abrir el formulario.
+ *
+ * @param {Map<string, FlowDefinition>} registry
+ * @param {string|null} flowId
+ * @returns {string}
+ */
+export const getFlowConfirmWord = (registry, flowId) =>
+  (flowId && registry.get(flowId)?.confirmWord) || "iniciar";

@@ -31,6 +31,57 @@ export const ACTIVATION_KEYWORDS = Object.freeze([
 ]);
 
 /**
+ * Palabras con las que el ciudadano confirma que quiere abrir el formulario.
+ * Incluyen las de activación más las propias del pago.
+ */
+export const CONFIRMATION_KEYWORDS = Object.freeze([
+  ...ACTIVATION_KEYWORDS,
+  "pagar",
+  "pago",
+  "si",
+  "dale",
+  "listo",
+  "hazlo",
+  "adelante",
+  "continuar"
+]);
+
+/**
+ * Marcas de que el mensaje es una pregunta. Una consulta no es una confirmación aunque
+ * contenga "pagar": "¿dónde pago el predial?" pide información, no el formulario.
+ *
+ * Los interrogativos cuentan en cualquier posición ("y el ICA dónde se paga"); los verbos
+ * que también aparecen en frases afirmativas solo cuentan al principio.
+ */
+const QUESTION_MARK_RE = /[?¿]/;
+const QUESTION_WORD_RE = /\b(qu[eé]|cu[aá]l(es)?|cu[aá]nto[as]?|c[oó]mo|d[oó]nde|cu[aá]ndo|qui[eé]n)\b/i;
+const QUESTION_START_RE = /^\s*(por\s+qu[eé]|hay|puedo|debo|tengo|necesito|sirve|aplica|existe)\b/i;
+
+const looksLikeQuestion = (text) =>
+  QUESTION_MARK_RE.test(text) || QUESTION_WORD_RE.test(text) || QUESTION_START_RE.test(text);
+
+/** Una confirmación es corta; un párrafo es otra cosa. */
+const MAX_CONFIRMATION_WORDS = 8;
+
+/**
+ * ¿El mensaje confirma que se abra el trámite ofrecido?
+ *
+ * @param {string} text
+ * @param {string[]} [keywords]
+ * @returns {boolean}
+ */
+export const isFlowConfirmation = (text, keywords = CONFIRMATION_KEYWORDS) => {
+  const raw = String(text || "").trim();
+  if (raw === "" || looksLikeQuestion(raw)) return false;
+
+  const normalized = normalizeForMatching(raw);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > MAX_CONFIRMATION_WORDS) return false;
+
+  return containsFuzzyKeyword(normalized, keywords);
+};
+
+/**
  * @typedef {Object} IntentResolution
  * @property {string|null} flow   Identificador del flujo a ejecutar, o null.
  * @property {boolean} viaActivation  true si se resolvió por palabra de activación
@@ -49,7 +100,7 @@ export const ACTIVATION_KEYWORDS = Object.freeze([
  */
 export const resolveIntent = (
   text,
-  { routingMap, pendingService = null, activationKeywords = ACTIVATION_KEYWORDS }
+  { routingMap, pendingService = null, activationKeywords = CONFIRMATION_KEYWORDS }
 ) => {
   if (!text || !routingMap) return { flow: null, viaActivation: false };
 

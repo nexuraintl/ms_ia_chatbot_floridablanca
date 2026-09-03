@@ -48,8 +48,11 @@ export const usePqrsdFlow = ({ addMessage, setIsLoading, scheduleFollowUp }) => 
   const startPqrsdMenu = useCallback(() => {
     addMessage({
       sender: "bot",
-      text: "¿Qué trámite de PQRSD deseas realizar en la Alcaldía de Floridablanca?",
-      quickReplies: ["📑 Radicar PQRSD", "🔍 Consultar PQRSD"]
+      // La radicación se retiró del menú: por ahora solo se ofrece la consulta.
+      text:
+        "Puedo consultar el estado de una PQRSD ya radicada en la Alcaldía de Floridablanca. " +
+        "Para radicar una nueva, hazlo por el canal oficial de correspondencia virtual del municipio.",
+      quickReplies: ["🔍 Consultar PQRSD"]
     });
   }, [addMessage]);
 
