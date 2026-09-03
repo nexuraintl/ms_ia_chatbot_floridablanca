@@ -122,6 +122,21 @@ completa, así que la estrategia es acumular barreras y —sobre todo— cerrar 
    anfitrión hostil no pueda empujar las instrucciones reales fuera de la ventana.
 5. **Control de salida** (el decisivo): ver H-03.
 
+**Sexta capa, añadida con la base de conocimiento.** Las cuatro primeras capas sacaban el
+contenido del DOM de `systemInstruction`, pero la instrucción de sistema **la seguía
+armando el navegador**: el proxy recibía el campo y lo reenviaba recortado a 8.000
+caracteres. Un cliente modificado podía hacer `POST /api/ai/chat` con las reglas de
+comportamiento y el bloque de «información oficial de la Alcaldía» que quisiera.
+
+Ahora, cuando hay corpus cargado, `server/aiProxy.js` **descarta la instrucción del cliente
+y arma la suya**: reglas base, reglas de fundamentación y los fragmentos del Estatuto que
+recupera el servidor. El `systemInstruction` que llegue en el cuerpo pasa a ser un dato
+ignorado. La consulta con la que se recupera se toma del último mensaje del ciudadano y
+**se salta explícitamente el turno de datos de la página**, para que el DOM del portal
+anfitrión no pueda elegir qué artículos del Estatuto se le entregan al modelo.
+
+Verificado en `tests/run-knowledge-tests.mjs`, sección 6.
+
 ---
 
 ## H-03 · Sin lista blanca de destinos (alto)

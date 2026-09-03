@@ -30,9 +30,13 @@ const { createPageContext, CONTEXT_LIMITS } =
   await import("../src/domain/pageContext/pageContext.js");
 const { toDataTurn, MARKERS } = await import("../src/domain/pageContext/promptSerializer.js");
 const { findBestFaq } = await import("../src/domain/faq/faqMatcher.js");
+const { resolveIntent, isFlowConfirmation, CONFIRMATION_KEYWORDS } =
+  await import("../src/domain/intents/intentResolver.js");
+const { createFlowRegistry } = await import("../src/application/flows/flowRegistry.js");
 const { estimateApiUsage } = await import("../src/domain/tokens/tokenEstimator.js");
 const { translateRpaError } = await import("../src/domain/errors/rpaErrorTranslator.js");
 const { createMessageId } = await import("../src/domain/messages/messageFactory.js");
+const { toConversationTurns } = await import("../src/domain/messages/conversationTurns.js");
 const { rankLinksByRelevance } = await import("../src/adapters/browser/DomPageInspector.js");
 const { selectProviderId } = await import("../src/adapters/ai/createAiProvider.js");
 const { createLocalMockProvider } = await import("../src/adapters/ai/LocalMockProvider.js");
@@ -174,6 +178,42 @@ check(
     "el texto registrado no contiene ningún dato personal en claro",
     fugas.length === 0,
     fugas.length ? `siguen presentes: ${fugas.map((f) => f.nombre).join(", ")}` : `-> "${redactado}"`
+  );
+}
+
+// Minimización hacia el proveedor de IA: los mensajes de interfaz no son conversación.
+{
+  const pantalla = [
+    { sender: "system", text: "🔒 Aviso de Privacidad: ..." },
+    { sender: "bot", text: "¡Hola, Mateo! Te doy la bienvenida a la Alcaldía.", interfaceOnly: true },
+    { sender: "bot", text: "Soy tu asistente virtual.", interfaceOnly: true },
+    { sender: "user", text: "cual es la tarifa de predial" },
+    { sender: "bot", text: "La tarifa depende del estrato y del avalúo (artículo 33)." },
+    { sender: "bot", text: "¿Te puedo ayudar con algo más?", interfaceOnly: true }
+  ];
+  const turnos = toConversationTurns(pantalla, "y para un local comercial");
+
+  check(
+    "el nombre del ciudadano no viaja al proveedor de IA",
+    !turnos.some((t) => /mateo/i.test(t.text)),
+    `turnos enviados: ${turnos.length} de ${pantalla.length} mensajes en pantalla`
+  );
+  check(
+    "no se envían saludos ni ofertas de ayuda como turnos del asistente",
+    !turnos.some((t) => /hola|ayudar con algo m[áa]s|asistente virtual/i.test(t.text)),
+    turnos.map((t) => `${t.sender}: ${t.text.slice(0, 32)}`).join(" | ")
+  );
+  check(
+    "sí viajan la pregunta del ciudadano y la respuesta real",
+    turnos.length === 3 &&
+      turnos[0].text.includes("tarifa de predial") &&
+      turnos[1].text.includes("artículo 33") &&
+      turnos[2].text.includes("local comercial"),
+    `-> ${turnos.map((t) => t.sender).join(", ")}`
+  );
+  check(
+    "un mensaje sin texto utilizable no se envía",
+    toConversationTurns([{ sender: "bot", text: "   " }, { sender: "bot" }]).length === 0
   );
 }
 
@@ -353,6 +393,75 @@ section("7. Emparejamiento de FAQ: sin falsos positivos por subcadena");
 
   const real = findBestFaq("cual es el regimen comun del impuesto de industria y comercio", faqCatalog);
   check("una consulta real de ICA sí coincide", real !== null, `-> ${real?.intencion ?? "sin coincidencia"}`);
+}
+
+// Un trámite no se abre por mencionar su tema: hace falta confirmación explícita.
+{
+  const preguntas = [
+    "que es el impuesto predial",
+    "donde pago el predial",
+    "cuanto debo pagar de predial",
+    "tengo que pagar predial si vivo en arriendo",
+    "y el ica donde se paga",
+    "quien paga el alumbrado publico"
+  ];
+  const abren = preguntas.filter((texto) => isFlowConfirmation(texto));
+  check(
+    "una pregunta sobre el tributo no abre el formulario",
+    abren.length === 0,
+    abren.length ? `abrirían el formulario: ${abren.join(" | ")}` : `${preguntas.length} preguntas verificadas`
+  );
+
+  const confirmaciones = ["pagar", "PAGAR", "quiero pagar", "si", "dale", "iniciar", "formulario"];
+  const noAbren = confirmaciones.filter((texto) => !isFlowConfirmation(texto));
+  check(
+    "una confirmación explícita sí abre el formulario",
+    noAbren.length === 0,
+    noAbren.length ? `no abrirían: ${noAbren.join(" | ")}` : `${confirmaciones.length} confirmaciones verificadas`
+  );
+
+  // El mapa de rutas OFRECE el trámite; abrirlo exige el segundo paso.
+  const { flow } = resolveIntent("que es el impuesto predial", { routingMap: chatbotConfig.routing });
+  check(
+    "el tema sí identifica el trámite que se va a ofrecer",
+    flow === "predial",
+    `-> ${flow}`
+  );
+
+  // La palabra que se le promete al ciudadano tiene que ser la que se acepta. Si alguien
+  // cambia un `confirmWord` y no la lista de confirmaciones, la oferta queda muerta.
+  {
+    const noop = () => {};
+    const registry = createFlowRegistry({
+      startSisben: noop,
+      startPredial: noop,
+      startPqrsdCreate: noop,
+      startPqrsdConsult: noop,
+      startPqrsdMenu: noop
+    });
+    const rotas = [];
+    for (const [id, def] of registry) {
+      if (!def.confirmWord) continue;
+      const { flow: resuelto } = resolveIntent(def.confirmWord, {
+        routingMap: chatbotConfig.routing,
+        pendingService: id,
+        activationKeywords: [...CONFIRMATION_KEYWORDS, def.confirmWord]
+      });
+      if (resuelto !== id) rotas.push(`${id}:"${def.confirmWord}" -> ${resuelto}`);
+    }
+    check(
+      "la palabra prometida por cada trámite abre ese trámite",
+      rotas.length === 0,
+      rotas.length ? rotas.join(" | ") : "todas las palabras de confirmación resuelven a su trámite"
+    );
+  }
+
+  check(
+    "la radicación de PQRSD ya no es alcanzable por enrutamiento",
+    !Object.keys(chatbotConfig.routing).includes("pqrsd_crear") &&
+      !chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear"),
+    `rutas: ${Object.keys(chatbotConfig.routing).join(", ")} | botones: ${chatbotConfig.quickReplies.map((r) => r.flow).join(", ")}`
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

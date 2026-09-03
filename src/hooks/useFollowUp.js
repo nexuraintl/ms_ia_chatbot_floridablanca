@@ -11,8 +11,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import { createMessage } from "../domain/messages/messageFactory.js";
 
-/** Retardo por defecto antes de ofrecer más ayuda. */
-export const DEFAULT_FOLLOW_UP_DELAY_MS = 20_000;
+/**
+ * Retardo por defecto antes de ofrecer más ayuda. Minuto y medio: con 20 segundos el
+ * mensaje llegaba mientras el ciudadano seguía leyendo la respuesta anterior.
+ */
+export const DEFAULT_FOLLOW_UP_DELAY_MS = 90_000;
 
 /** Texto que identifica un mensaje de seguimiento ya emitido. */
 const FOLLOW_UP_MARKER = "¿Te puedo ayudar con algo más?";
@@ -58,7 +61,9 @@ export const useFollowUp = ({ setMessages, config, isServicesEnabled }) => {
             text: isServicesEnabled
               ? `${FOLLOW_UP_MARKER} Escribe tu duda o selecciona una opción rápida:`
               : FOLLOW_UP_MARKER,
-            quickReplies: replies
+            quickReplies: replies,
+            // Es interfaz, no conversación: no viaja como turno al proveedor de IA.
+            interfaceOnly: true
           });
 
           return [...prev.map((m) => (m.quickReplies ? { ...m, quickReplies: null } : m)), followUp];

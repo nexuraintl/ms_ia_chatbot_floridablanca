@@ -4,6 +4,12 @@ import { ChatBubble } from "../molecules/ChatBubble";
 import { QuickReplies } from "../molecules/QuickReplies";
 import { StatusDot } from "../atoms/StatusDot";
 import { Send, X, MessageSquare, RefreshCw, Sun, Moon } from "lucide-react";
+import config from "../../config/chatbotConfig.json";
+
+/** Identidad del asistente en la cabecera. Sale de la configuración del tenant. */
+const ASSISTANT_NAME = config.assistant?.name || "Atención Ciudadana";
+const ASSISTANT_ICON = config.assistant?.icon || config.municipality?.icon || "🌸";
+const ASSISTANT_SUBTITLE = `${config.municipality?.name || "Floridablanca"} • Gemini AI`;
 
 export const ChatWindow = () => {
   const {
@@ -117,16 +123,16 @@ export const ChatWindow = () => {
               border: "1px solid rgba(255, 255, 255, 0.3)"
             }}
           >
-            <span style={{ fontSize: "1.3rem" }}>🌲</span>
+            <span style={{ fontSize: "1.3rem" }}>{ASSISTANT_ICON}</span>
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <h4 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "700", color: "#ffffff", letterSpacing: "0.3px" }}>
-                Atención Ciudadana
+                {ASSISTANT_NAME}
               </h4>
               <StatusDot online={true} />
             </div>
-            <span style={{ fontSize: "0.78rem", color: "rgba(255, 255, 255, 0.85)" }}>Floridablanca • Gemini AI</span>
+            <span style={{ fontSize: "0.78rem", color: "rgba(255, 255, 255, 0.85)" }}>{ASSISTANT_SUBTITLE}</span>
           </div>
         </div>
 

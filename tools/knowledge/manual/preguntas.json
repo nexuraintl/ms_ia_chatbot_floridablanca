@@ -1,0 +1,926 @@
+{
+  "_nota": "Banco de preguntas y respuestas redactadas a partir del Acuerdo Municipal 020 de 2026 (Estatuto Tributario de Floridablanca). Cada respuesta cita los articulos de los que sale. El campo vigencia distingue el dato ESTABLE (definiciones, requisitos, procedimientos) del VOLATIL (cifras que cambian cada ano por resolucion o por el valor de la UVT): en lo volatil la respuesta NO da la cifra, remite a la factura y a la Secretaria de Hacienda.",
+  "preguntas": [
+    {
+      "id": "predial-001",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Qué es el impuesto predial unificado?",
+      "respuesta": "Es un gravamen real que recae sobre los bienes inmuebles ubicados en Floridablanca, independientemente de quién sea su propietario. Al ser real, el Municipio puede perseguir el inmueble para hacer efectivo el impuesto, sin importar quién lo posea ni a qué título lo haya adquirido (artículos 16 y 17 del Estatuto Tributario Municipal).",
+      "palabras_clave": ["que es el predial", "impuesto predial", "predial unificado", "gravamen inmueble", "impuesto de mi casa"],
+      "articulos": [16, 17],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-002",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Quién debe pagar el impuesto predial?",
+      "respuesta": "Lo pagan los propietarios y poseedores de predios en Floridablanca: personas naturales o jurídicas, sucesiones ilíquidas, entidades públicas por los predios de su propiedad, usufructuarios, y los tenedores a título de concesión de inmuebles públicos. En copropiedad, cada propietario responde en proporción a su cuota (artículo 20).",
+      "palabras_clave": ["quien paga predial", "sujeto pasivo predial", "obligado a pagar predial", "responsable del predial", "propietario poseedor"],
+      "articulos": [20],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-003",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "Vivo en arriendo, ¿me toca pagar el predial?",
+      "respuesta": "No. La simple tenencia derivada de un contrato de arrendamiento, comodato o uso no genera el impuesto predial en cabeza del arrendatario; la obligación sigue siendo del propietario o poseedor del predio (parágrafo del artículo 17). La excepción son los tenedores de inmuebles públicos a título de concesión.",
+      "palabras_clave": ["arrendatario paga predial", "vivo en arriendo", "inquilino predial", "tenedor predial", "comodato"],
+      "articulos": [17, 20],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-004",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuándo se causa el impuesto predial?",
+      "respuesta": "Se causa el 1 de enero de cada año gravable y se liquida anualmente, con independencia de la fecha en que se expida la factura. Los plazos de pago los señala la Secretaría de Hacienda mediante resolución de vencimientos (artículo 18).",
+      "palabras_clave": ["cuando se causa el predial", "causacion predial", "periodo gravable predial", "primero de enero", "vigencia fiscal"],
+      "articulos": [18, 22],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-005",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Sobre qué valor se calcula el predial?",
+      "respuesta": "Sobre el avalúo catastral vigente para la respectiva vigencia fiscal, determinado por la autoridad catastral. Si existe autoavalúo o declaración privada, la base es el valor declarado, que no puede ser inferior al avalúo catastral vigente (artículo 21). El avalúo se ajusta cada año en el porcentaje que fije el Gobierno Nacional (artículo 23).",
+      "palabras_clave": ["base gravable predial", "sobre que se calcula predial", "avaluo catastral", "autoavaluo", "valor del predio"],
+      "articulos": [21, 23],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-006",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cómo se calcula mi impuesto predial?",
+      "respuesta": "El impuesto es el avalúo catastral multiplicado por la tarifa que corresponda a tu predio. La tarifa es diferencial y progresiva: depende del destino económico del predio (habitacional, comercial, lote, rural), del estrato socioeconómico y del rango de avalúo en UVT (artículo 33). El valor exacto de tu predio aparece liquidado en tu factura.",
+      "palabras_clave": ["como se calcula el predial", "liquidar predial", "cuanto pago de predial", "formula predial", "estrato avaluo tarifa"],
+      "articulos": [33],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-007",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuál es la tarifa de predial para vivienda?",
+      "respuesta": "Para el sector habitacional e institucional la tarifa va del 5 por mil al 12 por mil, según estrato y rango de avalúo: los avalúos hasta 730 UVT en estratos 1 a 3 pagan 5 por mil, y los mayores a 4.748 UVT en estrato 6 pagan 12 por mil (tabla del artículo 33). Confirma la tarifa aplicada a tu predio en la factura.",
+      "palabras_clave": ["tarifa predial vivienda", "tarifa habitacional", "por mil predial casa", "tarifa predial estrato", "cuanto por mil vivienda"],
+      "articulos": [33],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-008",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuál es la tarifa de predial para un local comercial?",
+      "respuesta": "Los predios no habitacionales (comerciales, industriales, culturales, educativos, recreacionales y demás destinos del artículo 33) tienen tarifas del 6,75 por mil al 12,25 por mil, según estrato y rango de avalúo. Son más altas que las del sector habitacional en todos los rangos.",
+      "palabras_clave": ["tarifa predial local", "tarifa comercial predial", "predio no habitacional", "tarifa predial industrial", "local comercial impuesto"],
+      "articulos": [33],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-009",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuánto paga de predial un lote sin construir?",
+      "respuesta": "Los predios urbanizables no urbanizados y los urbanizados no construidos pagan del 18 al 30 por mil según el estrato, con la misma tarifa en todos los rangos de avalúo (tabla del artículo 33). Los lotes no urbanizables y los declarados de reserva pagan el 5 por mil, previa solicitud escrita con los requisitos del parágrafo 1 del artículo 33.",
+      "palabras_clave": ["tarifa lote", "predial lote sin construir", "urbanizable no urbanizado", "lote de engorde", "terreno sin construir impuesto"],
+      "articulos": [33],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-010",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuánto paga un predio rural agropecuario?",
+      "respuesta": "A los inmuebles rurales con destino agropecuario o agroforestal se les aplica la tarifa del 5 por mil, tanto para propietarios como para poseedores. Para acceder al beneficio hay que acreditar los requisitos del artículo 33, entre ellos el certificado catastral, el paz y salvo del predio y la certificación de la Dirección Técnica de Asistencia Rural sobre la explotación agropecuaria. El reconocimiento debe ratificarse cada cuatro años.",
+      "palabras_clave": ["predial rural", "tarifa agropecuaria", "finca impuesto", "agroforestal", "predio rural 5 por mil"],
+      "articulos": [33],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-011",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "Mi predial subió mucho de un año a otro, ¿hay algún límite?",
+      "respuesta": "Sí. Si el impuesto resultante supera el doble del liquidado el año anterior, solo se cobra como incremento una suma igual al 100% del impuesto del año anterior. El límite no aplica a predios que entran por primera vez al catastro, a terrenos urbanizables no urbanizados o urbanizados no edificados, ni a predios que cambiaron de destino económico o de áreas (artículo 34).",
+      "palabras_clave": ["subio el predial", "limite del predial", "incremento predial", "aumento impuesto predial", "tope predial"],
+      "articulos": [34],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-012",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Dónde y cómo pago el impuesto predial?",
+      "respuesta": "En las oficinas, entidades bancarias o plataformas electrónicas de recaudo que determine la Secretaría de Hacienda, dentro de los plazos del calendario tributario que ella fija cada año por resolución. Si no se fijan nuevos plazos, siguen vigentes los del año anterior. Los pagos fuera de plazo causan intereses de mora (artículo 35).",
+      "palabras_clave": ["donde pago predial", "como pagar predial", "pago en linea predial", "medios de pago", "plataforma de recaudo"],
+      "articulos": [35],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-013",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Cuándo vence el plazo para pagar el predial y hay descuento por pronto pago?",
+      "respuesta": "El Estatuto no fija fechas ni porcentajes: los plazos y el calendario tributario los establece la Secretaría de Hacienda cada año mediante resolución de vencimientos (artículos 18 y 35), y los incentivos por pago anticipado deben tramitarse ante el Concejo Municipal. Consulta las fechas y descuentos vigentes en tu factura del año o directamente con la Secretaría de Hacienda.",
+      "palabras_clave": ["fecha limite predial", "vencimiento predial", "descuento pronto pago", "calendario tributario", "hasta cuando pago predial", "plazos de pago"],
+      "articulos": [18, 35, 113],
+      "vigencia": "volatil",
+      "nota_revision": "Actualizar cada ano con la resolucion de vencimientos si la entidad quiere que el asistente informe fechas concretas."
+    },
+    {
+      "id": "predial-014",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "Compré o vendí el predio a mitad de año, ¿quién paga el impuesto de esa vigencia?",
+      "respuesta": "El impuesto de la vigencia en que se perfecciona la transferencia es exigible en su totalidad a quien figure como propietario o poseedor al 1 de enero de ese año, sin perjuicio de lo que las partes hayan pactado entre ellas y de la solidaridad prevista en la norma (parágrafo del artículo 20).",
+      "palabras_clave": ["compre un predio", "vendi mi casa predial", "quien paga el ano de la venta", "enajenacion inmueble impuesto", "cambio de propietario predial"],
+      "articulos": [20],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-015",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "No estoy de acuerdo con el avalúo de mi predio, ¿cómo pido la revisión?",
+      "respuesta": "Puedes solicitar la revisión del avalúo ante la autoridad catastral competente demostrando que el valor no corresponde a las características del predio. Debe resolverse dentro de los tres meses siguientes a la radicación. Importante: mientras se resuelve debes pagar el impuesto con el avalúo vigente para conservar los descuentos; si el avalúo cambia, la Secretaría corrige, reliquida, compensa o devuelve (artículo 24).",
+      "palabras_clave": ["revision de avaluo", "no estoy de acuerdo avaluo", "avaluo muy alto", "reclamar avaluo catastral", "corregir avaluo"],
+      "articulos": [24, 43],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-016",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Qué es la sobretasa ambiental que aparece en mi factura?",
+      "respuesta": "Es un porcentaje del impuesto predial destinado a la protección del medio ambiente, a favor de la autoridad ambiental competente. Se rige por el artículo 317 de la Constitución, la Ley 99 de 1993 y el Decreto 1339 de 1994, y su cuantía la aprueba cada año el Concejo Municipal por acuerdo (artículo 38).",
+      "palabras_clave": ["sobretasa ambiental", "porcentaje ambiental", "cdmb factura", "cobro ambiental predial", "medio ambiente predial"],
+      "articulos": [38],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-017",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Qué es la sobretasa bomberil y cuánto es?",
+      "respuesta": "Es una sobretasa destinada a financiar la actividad bomberil, que se cobra sobre el predial y sobre el impuesto de industria y comercio. En el predial se liquida en UVT según el estrato: desde 0,25 UVT en estrato 0 hasta 3,0 UVT en estrato 6, y 2,0 UVT para predios sin estrato (artículo 325). En industria y comercio es el 10% del impuesto liquidado de ICA y avisos y tableros (artículo 326). No admite descuentos ni amnistías.",
+      "palabras_clave": ["sobretasa bomberil", "bomberos factura", "cobro bomberil", "actividad bomberil", "tarifa bomberil"],
+      "articulos": [322, 325, 326, 327],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-018",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "Vivo en un conjunto, ¿pago predial aparte por las zonas comunes?",
+      "respuesta": "No. Conforme a la Ley 675 de 2001, el impuesto predial de cada bien privado ya incorpora el de los bienes comunes del edificio o conjunto, en proporción al coeficiente de copropiedad (artículo 39).",
+      "palabras_clave": ["zonas comunes predial", "copropiedad predial", "conjunto residencial impuesto", "propiedad horizontal predial", "bienes comunes"],
+      "articulos": [39],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-019",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "¿Debo declarar el predial o me llega factura?",
+      "respuesta": "El mecanismo general y prioritario es la facturación: la Secretaría de Hacienda determina oficialmente el impuesto y la factura presta mérito ejecutivo. El contribuyente también puede determinarlo por autoavalúo cumpliendo los requisitos del Estatuto (artículos 41 y 42).",
+      "palabras_clave": ["declarar predial", "factura predial", "sistema de facturacion", "merito ejecutivo factura", "autoavaluo predial"],
+      "articulos": [41, 42],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-020",
+      "tema": "Impuesto Predial Unificado",
+      "pregunta": "Hice una construcción o cambió mi catastro, ¿reliquidan el impuesto?",
+      "respuesta": "Sí. Cuando la autoridad catastral inscribe una mutación (cambio físico, jurídico o económico del predio) se reliquida el impuesto predial. Si el predio nace por conservación catastral cuando la vigencia ya se causó, se notifica por factura y se paga desde la fecha de inscripción, sin intereses de mora (artículo 44). Las mejoras no incorporadas al catastro deben informarse a la autoridad catastral (artículo 25).",
+      "palabras_clave": ["mejora no incorporada", "mutacion catastral", "reliquidacion predial", "construi y no aparece", "actualizacion catastral"],
+      "articulos": [25, 44, 45],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pazsalvo-001",
+      "tema": "Paz y Salvo",
+      "pregunta": "¿Cómo saco el paz y salvo del impuesto predial?",
+      "respuesta": "Lo expide la Secretaría de Hacienda o la Tesorería Municipal cuando hayas pagado la totalidad del impuesto, sobretasas, intereses, sanciones y demás conceptos exigibles del predio para la vigencia que se certifica. Puede expedirse en medio físico o electrónico (artículo 36).",
+      "palabras_clave": ["paz y salvo predial", "sacar paz y salvo", "certificado paz y salvo", "como obtengo paz y salvo", "estar al dia predio"],
+      "articulos": [36],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pazsalvo-002",
+      "tema": "Paz y Salvo",
+      "pregunta": "¿Hasta cuándo tiene validez el paz y salvo?",
+      "respuesta": "Es válido hasta el último día de la vigencia fiscal respecto de la cual se certifica el pago, salvo que existan obligaciones pendientes de vigencias anteriores, reliquidaciones, procesos de fiscalización o decisiones administrativas que modifiquen la obligación (artículo 36).",
+      "palabras_clave": ["vigencia paz y salvo", "hasta cuando vale paz y salvo", "validez del paz y salvo", "caducidad paz y salvo"],
+      "articulos": [36],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pazsalvo-003",
+      "tema": "Paz y Salvo",
+      "pregunta": "¿Necesito paz y salvo para firmar la escritura de un inmueble?",
+      "respuesta": "Sí. Para autorizar escrituras públicas sobre inmuebles ubicados en Floridablanca debe acreditarse ante el notario el paz y salvo del impuesto predial unificado del predio y el de la contribución de valorización (artículo 37, en concordancia con el artículo 27 de la Ley 14 de 1983).",
+      "palabras_clave": ["paz y salvo escritura", "notaria paz y salvo", "vender inmueble requisitos", "escritura publica predial", "valorizacion paz y salvo"],
+      "articulos": [37],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pazsalvo-004",
+      "tema": "Paz y Salvo",
+      "pregunta": "¿Qué es el paz y salvo municipal y para qué sirve?",
+      "respuesta": "Es el certificado que acredita que no tienes obligaciones pendientes con el Municipio por los tributos que administra. Obtenerlo es un derecho del contribuyente cuando demuestra que no tiene obligaciones pendientes por el gravamen objeto de la solicitud (artículos 498, 657 y 658).",
+      "palabras_clave": ["paz y salvo municipal", "certificado municipal", "no tengo deudas municipio", "paz y salvo tributos"],
+      "articulos": [498, 657, 658],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-benef-001",
+      "tema": "Beneficios del Predial",
+      "pregunta": "¿Qué predios están excluidos del impuesto predial?",
+      "respuesta": "Entre otros: los predios de propiedad del Municipio (salvo los de empresas industriales y comerciales del Estado o sociedades de economía mixta, que sí están gravados), los inmuebles destinados al culto religioso y viviendas de comunidades religiosas de iglesias con personería jurídica reconocida, y los bienes de uso público. Cuando el inmueble se destina solo parcialmente al culto, la exclusión cubre únicamente esa parte (artículo 26).",
+      "palabras_clave": ["predios excluidos", "exclusion predial", "iglesia no paga predial", "bienes de uso publico", "no pago predial"],
+      "articulos": [26],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-benef-002",
+      "tema": "Beneficios del Predial",
+      "pregunta": "¿Cómo solicito que me reconozcan una exclusión del predial?",
+      "respuesta": "Con solicitud escrita ante la Secretaría de Hacienda que indique tus datos e identificación, la dirección de notificación, la identificación catastral del predio, el literal del artículo 26 que invocas y los documentos anexos exigidos. La Secretaría decide mediante resolución motivada dentro de los tres meses siguientes a la radicación completa (artículo 27).",
+      "palabras_clave": ["solicitar exclusion", "tramite exclusion predial", "requisitos exclusion", "radicar exclusion predial"],
+      "articulos": [26, 27],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-benef-003",
+      "tema": "Beneficios del Predial",
+      "pregunta": "¿Qué exenciones de predial existen?",
+      "respuesta": "El artículo 28 establece exenciones para, entre otros: inmuebles de la CDMB destinados a conservación ambiental, predios de madres comunitarias o sustitutas vinculados a programas del ICBF, e inmuebles de entidades sin ánimo de lucro que atienden a personas de la tercera edad en situación de vulnerabilidad. Las exenciones no pueden exceder diez años, no se presumen, no operan retroactivamente y no dan lugar a devolución de pagos anteriores.",
+      "palabras_clave": ["exencion predial", "quien esta exento predial", "madre comunitaria predial", "beneficio tributario predial", "exoneracion predial"],
+      "articulos": [28],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-benef-004",
+      "tema": "Beneficios del Predial",
+      "pregunta": "¿Qué requisitos debo cumplir para pedir una exención de predial?",
+      "respuesta": "Solicitud escrita ante la Secretaría de Hacienda indicando el predio, la causal invocada y los hechos que la sustentan; certificado de libertad y tradición con expedición no mayor a 30 días; certificado de existencia y representación legal cuando aplique; certificado de paz y salvo del predial; y la certificación propia de la causal. Si falta un requisito formal, la solicitud se inadmite y tienes un mes para subsanarla (artículo 29).",
+      "palabras_clave": ["requisitos exencion predial", "documentos exencion", "como pedir exencion", "subsanar exencion"],
+      "articulos": [29],
+      "vigencia": "estable"
+    },
+    {
+      "id": "predial-benef-005",
+      "tema": "Beneficios del Predial",
+      "pregunta": "Soy víctima del conflicto armado, ¿hay algún alivio en el predial?",
+      "respuesta": "Sí. En aplicación del artículo 121 de la Ley 1448 de 2011, se condona la cartera morosa de impuesto predial unificado y contribución de valorización existente a la fecha de restitución o formalización de los inmuebles restituidos, incluyendo capital, intereses de mora y sanciones (artículo 30). Basta la constancia de inscripción en el Registro Único de Víctimas o en el Registro de Tierras Despojadas; no pueden exigirse certificaciones adicionales no previstas en la ley (artículo 28).",
+      "palabras_clave": ["victima conflicto predial", "condonacion victimas", "restitucion de tierras impuesto", "ley 1448 predial", "alivio victimas"],
+      "articulos": [28, 30],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-001",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Qué es el impuesto de industria y comercio (ICA)?",
+      "respuesta": "Es el impuesto que se genera por ejercer actividades industriales, comerciales, de servicios o financieras en Floridablanca, de forma permanente u ocasional, con o sin establecimiento de comercio, e incluso a través del uso de tecnologías de información o economía digital (artículo 48).",
+      "palabras_clave": ["que es el ica", "industria y comercio", "impuesto ica", "ica floridablanca", "impuesto de mi negocio"],
+      "articulos": [48, 49],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-002",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Quién debe pagar el ICA?",
+      "respuesta": "Personas naturales y jurídicas, sociedades de hecho, comunidades organizadas, sucesiones ilíquidas, consorcios, uniones temporales, empresas unipersonales, patrimonios autónomos, entidades sin ánimo de lucro, entidades estatales de cualquier orden y demás sujetos que realicen actividades gravadas en Floridablanca (artículo 47).",
+      "palabras_clave": ["quien paga ica", "sujeto pasivo ica", "obligado a declarar ica", "responsable ica", "debo pagar ica"],
+      "articulos": [47],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-003",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "Vendo por internet o redes sociales, ¿debo pagar ICA?",
+      "respuesta": "Sí, si la actividad se realiza en la jurisdicción del Municipio: el hecho generador incluye expresamente las actividades desarrolladas a través de tecnologías de información y comunicación (TIC) y economía digital, con o sin establecimiento físico (artículos 48 y 56). Las reglas de territorialidad del artículo 97 definen cuándo la operación se entiende realizada en Floridablanca.",
+      "palabras_clave": ["vendo por internet ica", "redes sociales impuesto", "economia digital", "negocio virtual ica", "sin local pago ica"],
+      "articulos": [48, 56, 97],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-004",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Sobre qué se calcula el ICA?",
+      "respuesta": "Sobre la totalidad de los ingresos ordinarios y extraordinarios del período gravable, incluidos rendimientos financieros y comisiones. No hacen parte de la base los ingresos de actividades exentas, excluidas o no sujetas, ni las devoluciones, rebajas y descuentos, las exportaciones y la venta de activos fijos (artículo 58). En comercio y servicios se toman los ingresos del año inmediatamente anterior (artículo 60).",
+      "palabras_clave": ["base gravable ica", "sobre que se calcula ica", "ingresos brutos ica", "que ingresos se declaran", "no hacen parte de la base"],
+      "articulos": [58, 59, 60],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-005",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Cuál es el período gravable del ICA?",
+      "respuesta": "Es anual. Puede haber un período inferior, llamado fracción de año, cuando se inician o cesan actividades (artículo 51). El año base es aquel en el cual se generan los ingresos gravables (artículo 50).",
+      "palabras_clave": ["periodo gravable ica", "ano base ica", "fraccion de ano", "cada cuanto declaro ica", "anual ica"],
+      "articulos": [50, 51, 57],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-006",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Qué tarifa de ICA le aplica a mi actividad?",
+      "respuesta": "La tarifa se fija por código de actividad económica CIIU y depende del rango de ingresos brutos anuales: de 0 a 1.681 UVT, de 1.681 a 4.201 UVT, y más de 4.201 UVT (artículo 93). Dime a qué se dedica tu negocio y te digo la tarifa que figura en el Estatuto para esa actividad; confírmala siempre con la Secretaría de Hacienda antes de declarar.",
+      "palabras_clave": ["tarifa ica", "cuanto es el ica", "milaje ica", "tarifa por actividad", "por mil industria y comercio", "rango de ingresos"],
+      "articulos": [93],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-007",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Cómo sé cuál es el código de actividad de mi negocio?",
+      "respuesta": "Floridablanca adopta la Clasificación Industrial Internacional Uniforme CIIU revisión 4 adaptada para Colombia por el DANE (artículo 92). Si hay incompatibilidad con la Resolución 549 de 2020 del DANE se aplica esta última, y la Secretaría de Hacienda está facultada para actualizar el CIIU por acto administrativo cuando una actividad no quede registrada (artículo 93).",
+      "palabras_clave": ["codigo ciiu", "clasificacion de actividad", "actividad economica codigo", "como clasifico mi negocio", "ciiu revision 4"],
+      "articulos": [92, 93],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-008",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "Mi negocio tiene varias actividades, ¿cómo declaro?",
+      "respuesta": "Debes determinar la base gravable de cada actividad y aplicar la tarifa que corresponda a cada una; el impuesto total es la suma de esos resultados. Es obligatorio llevar registros contables que permitan verificar la separación de las actividades (artículo 98).",
+      "palabras_clave": ["varias actividades ica", "concurrencia de actividades", "multiples actividades", "mas de una actividad", "como declaro varias tarifas"],
+      "articulos": [98],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-009",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "Trabajo en varios municipios, ¿dónde pago el ICA?",
+      "respuesta": "El artículo 97 fija las reglas de territorialidad. En actividad industrial se declara donde esté la planta o sede fabril, y la comercialización de la producción propia no genera impuesto adicional como actividad comercial. En actividad comercial, si hay establecimiento o punto de venta en Floridablanca, la actividad se entiende realizada aquí. Para servicios digitales y economía colaborativa el artículo detalla reglas específicas según dónde se despacha el bien, se ubica el inmueble o reside el usuario.",
+      "palabras_clave": ["territorialidad ica", "varios municipios ica", "donde declaro ica", "sede fabril", "donde pago industria y comercio"],
+      "articulos": [96, 97],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-010",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Qué actividades no están sujetas al ICA?",
+      "respuesta": "Entre otras: la producción primaria agrícola, ganadera y avícola (sin incluir la transformación industrial ni su venta en sitio distinto al de producción); los establecimientos educativos públicos; las actividades de beneficencia; las entidades culturales y deportivas por el ejercicio de esas actividades; los sindicatos y las asociaciones profesionales y gremiales sin ánimo de lucro (artículo 72). Quien solo realiza actividades no sujetas no está obligado a registrarse ni a declarar.",
+      "palabras_clave": ["actividades no sujetas", "no sujecion ica", "exento de ica", "produccion primaria", "no pago ica"],
+      "articulos": [72],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-011",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Hay exenciones del ICA?",
+      "respuesta": "Sí. El artículo 62 exonera por diez años a quienes emprendan proyectos empresariales en la Zona Industrial del Valle de Río Frío, y exonera al 100% a entidades sin ánimo de lucro que desarrollen de manera principal y permanente programas de atención a la niñez, la adolescencia, las personas mayores y la población en extrema vulnerabilidad. La exención solo cubre los ingresos del objeto misional y debe acreditarse anualmente; los porcentajes por año están en el artículo 63.",
+      "palabras_clave": ["exencion ica", "zona industrial rio frio", "sin animo de lucro ica", "beneficio ica", "exoneracion industria y comercio"],
+      "articulos": [62, 63, 64, 65, 68, 69],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-001",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "¿Qué es el RIT?",
+      "respuesta": "El Registro de Información Tributaria es la matrícula que se diligencia ante la Oficina de Industria y Comercio y constituye el mecanismo único para identificar, ubicar y clasificar a los contribuyentes, responsables, declarantes y agentes de retención del ICA. Su información puede usarse para los demás tributos que administra el Municipio (artículo 100).",
+      "palabras_clave": ["que es el rit", "registro informacion tributaria", "matricula industria y comercio", "rit floridablanca"],
+      "articulos": [100],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-002",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "¿Cuándo debo inscribirme en el RIT?",
+      "respuesta": "Dentro del mes siguiente al inicio de la actividad económica en Floridablanca. Se entiende por inicio de actividades la primera actividad industrial, comercial o de servicios ejecutada por el sujeto pasivo (artículo 101).",
+      "palabras_clave": ["cuando me inscribo rit", "plazo inscripcion rit", "abri un negocio rit", "inicio de actividades", "registrar mi negocio"],
+      "articulos": [101],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-003",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "¿Qué documentos necesito para inscribirme en el RIT?",
+      "respuesta": "Entre otros, la matrícula mercantil vigente expedida por la Cámara de Comercio y los demás documentos o soportes que exige el artículo 103 según el tipo de establecimiento. Confirma el listado completo y actualizado con la Oficina de Industria y Comercio antes de radicar.",
+      "palabras_clave": ["documentos rit", "requisitos inscripcion rit", "que necesito para el rit", "matricula mercantil rit"],
+      "articulos": [103],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-004",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "Cerré mi negocio, ¿qué debo hacer?",
+      "respuesta": "Informar el cese definitivo de actividades dentro de los dos meses siguientes a su ocurrencia, a través del Portal Tributario Municipal, y solicitar la cancelación del RIT. Debes estar a paz y salvo en obligaciones y pagos, adjuntar la estampilla de novedades de industria y comercio con su soporte de pago, copia del contrato o acta de terminación y las declaraciones correspondientes (artículos 106 y 107).",
+      "palabras_clave": ["cerre mi negocio", "cancelar rit", "cese de actividades", "cerrar establecimiento", "inactivar rit", "liquidar negocio"],
+      "articulos": [106, 107, 110],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-005",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "¿Qué pasa si no informo el cierre de mi negocio?",
+      "respuesta": "Mientras no informes el cese de actividades sigues obligado a presentar las declaraciones tributarias y serás notificado en la dirección registrada (artículos 106 y 110). Además, la cancelación ficticia del RIT tiene sanción propia (artículo 543).",
+      "palabras_clave": ["no informe el cierre", "sigo declarando", "cese no reportado", "obligacion de declarar cerrado", "cancelacion ficticia rit"],
+      "articulos": [106, 110, 543],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-006",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "¿Qué novedades debo reportar en el RIT?",
+      "respuesta": "El cese de actividades, los cambios de dirección de notificación, los traspasos de propiedad, los traslados de dirección de la actividad, el cambio de actividades y la inclusión de nuevas actividades (artículo 110). Mientras no reportes la novedad sigues obligado a declarar y las notificaciones se harán a la dirección registrada.",
+      "palabras_clave": ["novedades rit", "cambio de direccion negocio", "actualizar rit", "traspaso de negocio", "cambio de actividad"],
+      "articulos": [102, 105, 110],
+      "vigencia": "estable"
+    },
+    {
+      "id": "rit-007",
+      "tema": "Registro de Información Tributaria (RIT)",
+      "pregunta": "Compré un negocio, ¿respondo por las deudas anteriores?",
+      "respuesta": "Sí. Quien adquiere por traspaso un negocio con actividad gravada es responsable solidario de las obligaciones tributarias causadas antes de la adquisición si el traspaso no se registra en los formatos adoptados por la Administración. El registro debe ir suscrito por vendedor y comprador, y solo se acepta si el vendedor está a paz y salvo en el impuesto (artículo 110).",
+      "palabras_clave": ["compre un negocio deudas", "responsabilidad solidaria traspaso", "traspaso negocio deuda", "deudas del anterior dueno"],
+      "articulos": [109, 110],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-012",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Qué es el régimen preferencial del ICA?",
+      "respuesta": "Es un régimen para personas naturales que cumplan todos estos requisitos: ingresos brutos del año anterior o del año en curso por la actividad gravada inferiores a 300 UVT, no más de un establecimiento donde ejerzan la actividad en Floridablanca, y no haber celebrado los contratos que la norma excluye (artículo 117). Los contribuyentes de este régimen presentan declaración anual en los términos que fije la Administración (artículo 118).",
+      "palabras_clave": ["regimen preferencial", "regimen simplificado ica", "pequeno contribuyente", "300 uvt", "regimen ica"],
+      "articulos": [116, 117, 118, 119],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-013",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Qué es el anticipo del ICA?",
+      "respuesta": "En cada año gravable el contribuyente debe liquidar un anticipo igual al 40% del impuesto del año o período gravable (artículo 114).",
+      "palabras_clave": ["anticipo ica", "40 por ciento anticipo", "anticipo estimado", "que es el anticipo"],
+      "articulos": [114],
+      "vigencia": "estable"
+    },
+    {
+      "id": "ica-014",
+      "tema": "Impuesto de Industria y Comercio",
+      "pregunta": "¿Hay descuento por pagar el ICA en la primera cuota?",
+      "respuesta": "El Estatuto prevé la posibilidad de un incentivo fiscal para quienes cancelen la totalidad del ICA en la primera cuota dentro del plazo fijado, pero el porcentaje debe tramitarse cada año ante el Concejo Municipal previa evaluación de conveniencia según el Marco Fiscal de Mediano Plazo (artículo 113). Consulta con la Secretaría de Hacienda si hay descuento vigente para este año.",
+      "palabras_clave": ["descuento ica", "incentivo fiscal ica", "pago primera cuota", "descuento pronto pago ica"],
+      "articulos": [113],
+      "vigencia": "volatil",
+      "nota_revision": "Depende del acuerdo anual del Concejo. Confirmar antes de anunciar un porcentaje."
+    },
+    {
+      "id": "avisos-001",
+      "tema": "Impuesto de Avisos y Tableros",
+      "pregunta": "¿Qué es el impuesto de avisos y tableros?",
+      "respuesta": "Es el impuesto complementario del ICA que se genera al colocar vallas, avisos, tableros, emblemas y enseñas comerciales en la vía pública, en lugares públicos o privados, pasajes, centros comerciales, o avisos en cualquier clase de vehículo (artículo 145).",
+      "palabras_clave": ["avisos y tableros", "que es avisos y tableros", "aviso de mi negocio", "letrero impuesto", "valla comercial"],
+      "articulos": [145, 146],
+      "vigencia": "estable"
+    },
+    {
+      "id": "avisos-002",
+      "tema": "Impuesto de Avisos y Tableros",
+      "pregunta": "¿Cuánto se paga de avisos y tableros?",
+      "respuesta": "La tarifa es el 15% del valor del impuesto de industria y comercio, que es su base gravable (artículos 147 y 148). Se causa sin perjuicio del impuesto de publicidad exterior visual, que es un tributo distinto (parágrafo del artículo 148).",
+      "palabras_clave": ["cuanto es avisos y tableros", "tarifa avisos y tableros", "15 por ciento ica", "base gravable avisos"],
+      "articulos": [147, 148],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-001",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "¿Qué es el ReteICA?",
+      "respuesta": "Es el sistema de retención y autorretención del impuesto de industria y comercio, creado para facilitar, acelerar y asegurar el recaudo. Los agentes de retención practican la retención sobre todos los pagos o abonos en cuenta, lo que ocurra primero, cuando la actividad está gravada en el Municipio (artículo 120).",
+      "palabras_clave": ["que es reteica", "retencion ica", "sistema de retencion", "autorretencion ica", "reteica floridablanca"],
+      "articulos": [120],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-002",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "¿Quiénes son agentes de retención del ICA?",
+      "respuesta": "Las entidades de derecho público del orden nacional, departamental y municipal y cualquier organismo o dependencia del Estado, y las personas de derecho privado, naturales o jurídicas, cualquiera sea su naturaleza jurídica, que adquieran bienes y servicios dentro de la jurisdicción de Floridablanca, en los términos del artículo 121.",
+      "palabras_clave": ["agente retenedor", "quien retiene ica", "agentes de retencion", "obligado a retener", "autorretenedor"],
+      "articulos": [121, 122],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-003",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "¿Cuál es la tarifa de retención del ICA?",
+      "respuesta": "El 6 por mil sobre la base gravable establecida en el Estatuto. Si el sujeto de retención no informa su actividad o esta no se puede establecer, la tarifa de retención es la máxima vigente del ICA, es decir el 10 por mil, y a esa misma tarifa queda gravada la operación (artículo 134).",
+      "palabras_clave": ["tarifa reteica", "6 por mil retencion", "cuanto retienen", "tarifa de retencion ica", "10 por mil"],
+      "articulos": [133, 134],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-004",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "¿Cada cuánto debo declarar el ReteICA?",
+      "respuesta": "Los agentes de retención y autorretención declaran y pagan mensualmente las retenciones practicadas, en el formulario que prescriba la Secretaría de Hacienda (artículo 140).",
+      "palabras_clave": ["cada cuanto declaro reteica", "declaracion mensual reteica", "periodicidad reteica", "cuando declaro retenciones"],
+      "articulos": [140],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-005",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "Este mes no practiqué retenciones, ¿debo declarar en ceros?",
+      "respuesta": "La obligación de declarar mensualmente es de los agentes de retención (artículo 140) y omitir la presentación de una declaración a la que se está obligado genera sanción por no declarar (artículo 519) o por extemporaneidad (artículo 517). Para confirmar el manejo del período sin movimiento en el formulario del Municipio, verifica con la Oficina de Industria y Comercio.",
+      "palabras_clave": ["declaracion en ceros", "periodo sin movimiento", "no practique retenciones", "declarar en cero reteica", "sin retenciones"],
+      "articulos": [140, 517, 519],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-006",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "Me practicaron retención de ICA, ¿cómo la descuento?",
+      "respuesta": "Debes llevar el monto retenido como abono al pago del impuesto a tu cargo en la declaración del período en que se causó la retención. Si declaras retenciones por un valor mayor al efectivamente practicado, se impone sanción por inexactitud (artículo 135). El comprobante de pago o egreso, o el certificado de retención, sirve de soporte (artículo 138).",
+      "palabras_clave": ["descontar retencion", "imputacion de la retencion", "me retuvieron ica", "certificado de retencion", "abono al impuesto"],
+      "articulos": [135, 136, 138],
+      "vigencia": "estable"
+    },
+    {
+      "id": "reteica-007",
+      "tema": "Retención de Industria y Comercio (ReteICA)",
+      "pregunta": "¿Qué pasa si soy agente retenedor y no practico la retención?",
+      "respuesta": "El agente que no efectúa la retención responde por las sumas que estaba obligado a retener y queda sujeto a las sanciones para agentes de retención del artículo 528; hay además casos de solidaridad en las sanciones (artículos 128, 131 y 132). No certificar correctamente las retenciones puede acarrear responsabilidad penal (artículo 139).",
+      "palabras_clave": ["no practique retencion", "responsabilidad agente retenedor", "sancion agente de retencion", "no retuve"],
+      "articulos": [128, 130, 131, 132, 139, 528],
+      "vigencia": "estable"
+    },
+    {
+      "id": "delineacion-001",
+      "tema": "Impuesto de Delineación Urbana",
+      "pregunta": "¿Qué es el impuesto de delineación urbana?",
+      "respuesta": "Es el impuesto que se genera con la expedición de licencias de construcción en todas sus modalidades (obra nueva, ampliación, adecuación, modificación, restauración, reforzamiento estructural, demolición y cerramiento) y con el acto de reconocimiento de edificaciones existentes en Floridablanca (artículos 151 y 152).",
+      "palabras_clave": ["delineacion urbana", "que es delineacion", "licencia de construccion impuesto", "permiso de construccion", "voy a construir"],
+      "articulos": [151, 152],
+      "vigencia": "estable"
+    },
+    {
+      "id": "delineacion-002",
+      "tema": "Impuesto de Delineación Urbana",
+      "pregunta": "¿Cuándo se paga la delineación urbana?",
+      "respuesta": "Antes de la entrega formal de la licencia: debe liquidarse, declararse y pagarse en su totalidad de manera previa a la expedición y entrega de la licencia urbanística o del acto de reconocimiento. El curador urbano no puede entregar la licencia sin que se acredite el pago total y su validación por la Secretaría de Hacienda; si lo hace, responde por los valores dejados de pagar (artículo 153).",
+      "palabras_clave": ["cuando se paga delineacion", "pago previo licencia", "curaduria pago", "antes de la licencia", "requisito licencia"],
+      "articulos": [153, 158, 160],
+      "vigencia": "estable"
+    },
+    {
+      "id": "delineacion-003",
+      "tema": "Impuesto de Delineación Urbana",
+      "pregunta": "¿Cómo se calcula la delineación urbana?",
+      "respuesta": "Se multiplican los metros cuadrados autorizados en la licencia por la tarifa en UVT según destinación y estrato (artículos 156 y 157): residencial estrato 1 son 0,04 UVT por m², estrato 2 son 0,06, estrato 3 son 0,09, estrato 4 son 0,13, estrato 5 son 0,23 y estrato 6 son 0,37; comercio y servicios, institucional, industrial y suelo suburbano o rural comercial son 0,18 UVT por m²; y la licencia de cerramiento son 0,09 UVT por metro lineal. Se usa la UVT vigente al momento del pago.",
+      "palabras_clave": ["calcular delineacion", "tarifa delineacion urbana", "uvt por metro cuadrado", "cuanto cuesta la licencia", "tarifa por m2"],
+      "articulos": [156, 157],
+      "vigencia": "estable"
+    },
+    {
+      "id": "delineacion-004",
+      "tema": "Impuesto de Delineación Urbana",
+      "pregunta": "¿Quién paga la delineación urbana?",
+      "respuesta": "Los propietarios de los inmuebles objeto de licenciamiento, poseedores, fideicomisos, fideicomitentes, beneficiarios o patrimonios autónomos constituidos sobre esos inmuebles. Subsidiariamente responden quienes figuren como titulares en la licencia. El Municipio y sus entidades descentralizadas no son sujetos pasivos (artículo 155).",
+      "palabras_clave": ["quien paga delineacion", "sujeto pasivo delineacion", "titular de la licencia", "responsable delineacion"],
+      "articulos": [155],
+      "vigencia": "estable"
+    },
+    {
+      "id": "nomenclatura-001",
+      "tema": "Tasa de Nomenclatura",
+      "pregunta": "¿Qué es la tasa de nomenclatura y cuánto cuesta?",
+      "respuesta": "Es la tasa que se causa al solicitar la dirección alfanumérica de un inmueble en Floridablanca. La nomenclatura la asigna únicamente la Oficina Asesora de Planeación, previa expedición de la licencia de construcción. La tarifa es 0,5 UVT por cada nomenclatura expedida (artículos 164 y 166), y su pago es requisito para expedir el boletín de nomenclatura (artículo 169).",
+      "palabras_clave": ["tasa de nomenclatura", "asignacion de direccion", "boletin de nomenclatura", "numero de la casa", "nomenclatura tarifa"],
+      "articulos": [164, 166, 169],
+      "vigencia": "estable"
+    },
+    {
+      "id": "alumbrado-001",
+      "tema": "Impuesto sobre el Servicio de Alumbrado Público",
+      "pregunta": "¿Por qué me cobran el impuesto de alumbrado público?",
+      "respuesta": "Porque el hecho generador es ser usuario o beneficiario potencial del servicio de alumbrado público en el área de influencia del Municipio (artículo 254); no depende de que uses efectivamente la iluminación de una vía concreta.",
+      "palabras_clave": ["alumbrado publico", "por que me cobran alumbrado", "impuesto de alumbrado", "cobro en la factura de energia"],
+      "articulos": [254, 255, 256],
+      "vigencia": "estable"
+    },
+    {
+      "id": "alumbrado-002",
+      "tema": "Impuesto sobre el Servicio de Alumbrado Público",
+      "pregunta": "¿Quién paga el impuesto de alumbrado público?",
+      "respuesta": "Toda persona natural o jurídica, incluidas las de derecho público, que consuma energía eléctrica como usuario del servicio domiciliario o como autogenerador. Cuando no hay consumo de energía, lo pagan los propietarios de los predios y demás sujetos pasivos del impuesto predial ubicados en la jurisdicción (artículo 259).",
+      "palabras_clave": ["quien paga alumbrado", "sujeto pasivo alumbrado", "autogenerador", "sin consumo de energia", "lote alumbrado"],
+      "articulos": [259],
+      "vigencia": "estable"
+    },
+    {
+      "id": "alumbrado-003",
+      "tema": "Impuesto sobre el Servicio de Alumbrado Público",
+      "pregunta": "¿Cómo se calcula el impuesto de alumbrado público?",
+      "respuesta": "Para quienes consumen energía, la base son los kilovatios consumidos mensualmente y la tarifa es un valor por kilovatio fijado anualmente de manera diferencial y progresiva según estrato y uso. Cuando no hay consumo de energía, la base es el valor liquidado del impuesto predial y la tarifa un porcentaje de este (artículos 258 y 262). El tope máximo de la tarifa es de 30 UVT (parágrafo 3 del artículo 262).",
+      "palabras_clave": ["calculo alumbrado publico", "tarifa alumbrado", "kilovatios alumbrado", "tope alumbrado", "30 uvt alumbrado"],
+      "articulos": [258, 260, 262],
+      "vigencia": "estable"
+    },
+    {
+      "id": "plusvalia-001",
+      "tema": "Participación en Plusvalía",
+      "pregunta": "¿Qué es la participación en plusvalía?",
+      "respuesta": "Es la participación del Municipio en el mayor valor que adquiere un inmueble por decisiones administrativas de ordenamiento territorial. Sus hechos generadores son: incorporar suelo rural a suelo de expansión urbana o considerarlo suburbano, establecer o modificar el régimen o la zonificación de usos del suelo, autorizar un mayor aprovechamiento en edificación, y las obras públicas en los términos de la ley (artículo 331, con base en la Ley 388 de 1997).",
+      "palabras_clave": ["plusvalia", "participacion en plusvalia", "que es la plusvalia", "mayor valor del suelo", "cambio de uso del suelo"],
+      "articulos": [328, 329, 331],
+      "vigencia": "estable"
+    },
+    {
+      "id": "plusvalia-002",
+      "tema": "Participación en Plusvalía",
+      "pregunta": "¿Cuándo me exigen pagar la plusvalía?",
+      "respuesta": "Solo cuando el efecto de plusvalía ya está liquidado e inscrito en el folio de matrícula inmobiliaria y ocurre una de las situaciones del artículo 336, entre ellas la solicitud de licencia de urbanización o construcción. La tarifa no varía por el tiempo transcurrido: se aplica la vigente al acto de liquidación, ajustada por IPC desde su firmeza.",
+      "palabras_clave": ["cuando se paga plusvalia", "exigibilidad plusvalia", "cobro de plusvalia", "licencia plusvalia", "folio de matricula plusvalia"],
+      "articulos": [334, 336, 339, 340],
+      "vigencia": "estable"
+    },
+    {
+      "id": "plusvalia-003",
+      "tema": "Participación en Plusvalía",
+      "pregunta": "¿La vivienda de interés social paga plusvalía?",
+      "respuesta": "No. El Municipio exonera del pago de la participación en plusvalía a los inmuebles cuya destinación final, acreditada mediante licencia de urbanización o construcción, sea vivienda de interés social (VIS) o vivienda de interés prioritario (VIP), conforme al parágrafo del artículo 83 de la Ley 388 de 1997 (artículo 337).",
+      "palabras_clave": ["plusvalia vis", "vivienda de interes social plusvalia", "exencion plusvalia", "vip plusvalia"],
+      "articulos": [337],
+      "vigencia": "estable"
+    },
+    {
+      "id": "publicidad-001",
+      "tema": "Impuesto a la Publicidad Exterior Visual",
+      "pregunta": "Voy a poner una valla publicitaria, ¿qué impuesto pago?",
+      "respuesta": "El impuesto a la publicidad exterior visual, cuyo hecho generador es la exhibición efectiva de la publicidad (artículo 174). La base gravable es el área de la publicidad, el período gravable es el número de días que está exhibida, y las tarifas están en el artículo 178. Las vallas deben además registrarse (artículo 185). Este impuesto es independiente del de avisos y tableros.",
+      "palabras_clave": ["valla publicitaria", "publicidad exterior visual", "pendon impuesto", "aviso publicitario", "registro de vallas"],
+      "articulos": [174, 178, 180, 185],
+      "vigencia": "estable"
+    },
+    {
+      "id": "espectaculos-001",
+      "tema": "Impuesto de Espectáculos Públicos",
+      "pregunta": "Voy a organizar un evento con boletería, ¿qué debo pagar?",
+      "respuesta": "El impuesto de espectáculos públicos, cuya base gravable es el valor de las boletas de entrada y cuya tarifa es del 10% de la base gravable (artículos 192 y 193). Además debes cumplir los requisitos de autorización de los artículos 197 y 198 y constituir garantía de pago (artículo 199). Existe también el impuesto con destino al deporte, que es un tributo aparte (artículos 225 y siguientes).",
+      "palabras_clave": ["espectaculos publicos", "evento con boleteria", "concierto impuesto", "boletas evento", "organizar un evento"],
+      "articulos": [189, 192, 193, 197, 199, 200],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-001",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Qué pasa si pago mis impuestos tarde?",
+      "respuesta": "Se causan intereses moratorios por cada día calendario de retardo, además de las sanciones que correspondan (artículo 510). La tasa es la misma del interés moratorio de las obligaciones tributarias nacionales que determina la DIAN conforme al artículo 635 del Estatuto Tributario Nacional (artículo 511).",
+      "palabras_clave": ["pago tarde", "intereses de mora", "mora impuestos", "me atrase en el pago", "recargo por mora"],
+      "articulos": [510, 511, 634],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-002",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Cuál es la sanción mínima?",
+      "respuesta": "El valor mínimo de cualquier sanción, incluidas las sanciones reducidas, es de 5 UVT, ya sea que la liquide el contribuyente o la Administración. No aplica a los intereses de mora (artículo 515).",
+      "palabras_clave": ["sancion minima", "5 uvt sancion", "minimo de sancion", "cuanto es la sancion minima"],
+      "articulos": [515, 537],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-003",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Cuánto es la sanción por declarar tarde?",
+      "respuesta": "El 5% del total del impuesto a cargo o retención objeto de la declaración por cada mes o fracción de mes de retardo, sin exceder el 100% del impuesto, y sin perjuicio de los intereses. Cuando la declaración no arroja impuesto a cargo, la sanción por cada mes o fracción se calcula conforme a las reglas del mismo artículo 517.",
+      "palabras_clave": ["sancion extemporaneidad", "declarar tarde", "sancion por demora", "5 por ciento sancion", "presente tarde la declaracion"],
+      "articulos": [517, 518],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-004",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Qué pasa si no presento la declaración de ICA?",
+      "respuesta": "La sanción por no declarar en industria y comercio es el 30 por mil del valor de las consignaciones bancarias o de los ingresos brutos que determine la Administración para el período no declarado (artículo 519). Si presentas la declaración dentro del término para recurrir la resolución que impone la sanción, esta se reduce al 50%, sin que quede por debajo de la sanción por extemporaneidad.",
+      "palabras_clave": ["no declare ica", "sancion por no declarar", "30 por mil sancion", "omitir declaracion", "reducir sancion no declarar"],
+      "articulos": [519, 576, 577, 578],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-005",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Qué es la sanción por inexactitud?",
+      "respuesta": "Equivale al 100% de la diferencia entre el saldo a pagar o el saldo a favor determinado en la liquidación oficial y el declarado por el contribuyente. No se aplica sobre el mayor valor del anticipo que se genere al modificar el impuesto declarado, y se reduce cuando se cumplen los supuestos de corrección provocada de los artículos 568 y 572 (artículo 523).",
+      "palabras_clave": ["sancion por inexactitud", "declare mal", "diferencia en la declaracion", "correccion provocada", "100 por ciento sancion"],
+      "articulos": [522, 523],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-006",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Pueden cerrar mi establecimiento por temas tributarios?",
+      "respuesta": "Sí. La Administración puede imponer la sanción de clausura con sellos que dicen \"CERRADO POR EVASIÓN\", por ejemplo por ocho días cuando el contribuyente no ha adelantado la matrícula en el registro de industria y comercio habiendo sido requerido previamente (artículo 525). Romper los sellos o usar el sitio clausurado duplica el término de la clausura.",
+      "palabras_clave": ["cierre de establecimiento", "clausura", "cerrado por evasion", "sellos", "sancion de cierre"],
+      "articulos": [525],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-007",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Hay multa por inscribirme tarde en el RIT?",
+      "respuesta": "Sí. Quien desarrolle actividades gravadas y no se inscriba dentro del plazo, antes de que la Administración lo haga de oficio, paga 5 UVT por cada año o fracción de año de extemporaneidad. Si la inscripción la hace de oficio la administración, la sanción es de 10 UVT por cada año o fracción (artículo 530).",
+      "palabras_clave": ["multa rit", "inscripcion extemporanea rit", "no me inscribi", "sancion rit", "matricula de oficio"],
+      "articulos": [104, 530],
+      "vigencia": "estable"
+    },
+    {
+      "id": "sancion-008",
+      "tema": "Sanciones e Intereses",
+      "pregunta": "¿Hasta cuándo pueden sancionarme?",
+      "respuesta": "Cuando la sanción se impone en liquidación oficial, la facultad prescribe en el mismo término que existe para practicar esa liquidación. Cuando se impone en resolución independiente y la conducta no se vincula a un período fiscal específico, el pliego de cargos debe formularse dentro de los dos años siguientes en los términos del artículo 514.",
+      "palabras_clave": ["prescripcion sancion", "hasta cuando sancionan", "pliego de cargos plazo", "facultad de sancionar"],
+      "articulos": [514],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-001",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "¿Puedo pagar mi deuda de impuestos por cuotas?",
+      "respuesta": "Sí. La facilidad de pago permite al Tesorero General conceder plazos de hasta cinco años para pagar obligaciones fiscales, incluidos intereses y sanciones, siempre que se constituya garantía: fideicomiso, denuncia de bienes para embargo y secuestro, garantías personales, reales, bancarias o de compañías de seguros (artículo 653).",
+      "palabras_clave": ["acuerdo de pago", "pagar por cuotas", "facilidad de pago", "financiar la deuda", "plazo para pagar impuestos"],
+      "articulos": [653, 654, 656, 683],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-002",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "¿Cuántos años me dan para pagar según el monto de la deuda?",
+      "respuesta": "Los plazos se relacionan con la cuantía: hasta un año para obligaciones de 1 a 185 UVT, hasta dos años de 185 a 463 UVT, y hasta tres años de 463 a 1.159 UVT, con las condiciones de garantía o denuncia de bienes que indica el artículo 655. Para montos mayores consulta el mismo artículo con la Tesorería, y recuerda que el máximo legal es de cinco años.",
+      "palabras_clave": ["plazos acuerdo de pago", "cuantos anos para pagar", "185 uvt", "cuotas segun monto", "plazo maximo"],
+      "articulos": [653, 655],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-003",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "¿Qué pasa si incumplo el acuerdo de pago?",
+      "respuesta": "Si dejas de pagar una cuota o incumples cualquier otra obligación tributaria surgida después de la notificación del acuerdo, el Tesorero puede, mediante resolución motivada, dejar sin efecto la facilidad de pago, declarar sin vigencia el plazo concedido y hacer efectiva la garantía, además de ordenar embargo, secuestro y remate de bienes (artículo 660).",
+      "palabras_clave": ["incumpli el acuerdo", "incumplimiento acuerdo de pago", "se cayo el acuerdo", "perdi la facilidad de pago"],
+      "articulos": [659, 660, 663],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-004",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "¿Puedo pagar mi deuda entregando el bien (dación en pago)?",
+      "respuesta": "Existe la figura de dación en pago, que requiere solicitud escrita y motivada dirigida a la Secretaría de Hacienda manifestando la voluntad de entregar el bien sobre el cual recae la obligación, con indicación de los períodos adeudados y los requisitos del artículo 644. La autoriza el Comité de Dación en Pago (artículos 636 a 652).",
+      "palabras_clave": ["dacion en pago", "pagar con el predio", "entregar el bien", "comite de dacion"],
+      "articulos": [635, 641, 644, 646, 647],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-005",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "¿Cuándo prescribe una deuda de impuestos municipales?",
+      "respuesta": "La acción de cobro prescribe en cinco años, contados desde el vencimiento del término para declarar en las declaraciones oportunas, desde la fecha de presentación en las extemporáneas, desde la presentación de la corrección respecto de los mayores valores, o desde la ejecutoria del acto de determinación o discusión (artículo 668). El término se interrumpe y suspende en los casos del artículo 669.",
+      "palabras_clave": ["prescripcion de la deuda", "cinco anos deuda", "cuando prescribe", "accion de cobro prescripcion", "deuda vieja"],
+      "articulos": [668, 669],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-006",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "Pagué una deuda que ya estaba prescrita, ¿me la devuelven?",
+      "respuesta": "No. Lo pagado para satisfacer una obligación prescrita no puede ser objeto de devolución ni de compensación, aunque el pago se haya hecho sin conocer la prescripción (artículo 670).",
+      "palabras_clave": ["pague deuda prescrita", "devolucion deuda prescrita", "no se puede repetir", "pague sin saber"],
+      "articulos": [670],
+      "vigencia": "estable"
+    },
+    {
+      "id": "pago-007",
+      "tema": "Formas de Pago y Acuerdos",
+      "pregunta": "Tengo un saldo a favor, ¿puedo cruzarlo con otra deuda?",
+      "respuesta": "Sí. Puedes imputarlo en tu declaración privada del mismo impuesto del siguiente período gravable, o solicitar su compensación con deudas por impuestos, anticipos, retenciones, intereses y sanciones a tu cargo (artículo 666). La solicitud de compensación debe presentarse a más tardar dos años después del vencimiento del término para declarar (artículo 667).",
+      "palabras_clave": ["saldo a favor", "compensacion", "cruzar deuda", "imputar saldo", "tengo credito a favor"],
+      "articulos": [666, 667, 714],
+      "vigencia": "estable"
+    },
+    {
+      "id": "devolucion-001",
+      "tema": "Devoluciones",
+      "pregunta": "Pagué de más o pagué el predio equivocado, ¿me devuelven la plata?",
+      "respuesta": "Sí. Tienen derecho a devolución quienes liquiden saldos a favor en sus declaraciones, quienes paguen sumas superiores a las que les correspondían y quienes por error involuntario paguen a predios equivocados, previa certificación (artículo 706).",
+      "palabras_clave": ["devolucion de dinero", "pague de mas", "pague otro predio", "saldo a favor devolucion", "me devuelven"],
+      "articulos": [706, 707],
+      "vigencia": "estable"
+    },
+    {
+      "id": "devolucion-002",
+      "tema": "Devoluciones",
+      "pregunta": "¿Cuánto demora una devolución?",
+      "respuesta": "La Secretaría de Hacienda debe devolver, previas las compensaciones a que haya lugar, dentro de los 50 días siguientes a la solicitud presentada oportunamente y en debida forma. Si la solicitud se formula dentro de los dos meses siguientes a la presentación de la declaración o su corrección, la Administración dispone de un mes adicional (artículo 708).",
+      "palabras_clave": ["cuanto demora la devolucion", "plazo devolucion", "50 dias devolucion", "termino para devolver"],
+      "articulos": [708, 709, 711],
+      "vigencia": "estable"
+    },
+    {
+      "id": "devolucion-003",
+      "tema": "Devoluciones",
+      "pregunta": "¿Me pagan intereses si el Municipio me debe una devolución?",
+      "respuesta": "Sí, en los casos del artículo 715: se causan intereses corrientes cuando se presentó solicitud de devolución y el saldo a favor está en discusión, e intereses moratorios en los supuestos allí previstos, a la tasa señalada en el Estatuto Tributario Nacional.",
+      "palabras_clave": ["intereses a favor", "me pagan intereses", "intereses devolucion", "interes corriente"],
+      "articulos": [715],
+      "vigencia": "estable"
+    },
+    {
+      "id": "cobro-001",
+      "tema": "Cobro Persuasivo y Coactivo",
+      "pregunta": "¿Qué es el cobro persuasivo?",
+      "respuesta": "Son las actuaciones previas al cobro coactivo en las que la Administración invita al deudor a pagar voluntariamente, normalizar su obligación, aclarar su estado de cuenta o solicitar una facilidad de pago. Puede hacerse por comunicaciones físicas o electrónicas, llamadas, mensajes de datos, avisos, estados de cuenta, facturas, requerimientos o atención personalizada (artículos 681 y 682).",
+      "palabras_clave": ["cobro persuasivo", "me estan cobrando", "requerimiento de pago", "llamada de cobro", "normalizar deuda"],
+      "articulos": [680, 681, 682],
+      "vigencia": "estable"
+    },
+    {
+      "id": "cobro-002",
+      "tema": "Cobro Persuasivo y Coactivo",
+      "pregunta": "Me llegó un mandamiento de pago, ¿qué hago?",
+      "respuesta": "El mandamiento de pago ordena pagar la obligación del título ejecutivo con intereses, sanciones, costas y gastos (artículo 687). Dentro de los 15 días siguientes a su notificación debes pagar o proponer por escrito las excepciones legalmente procedentes (artículo 690). También puedes solicitar una facilidad de pago en etapa coactiva (artículo 683).",
+      "palabras_clave": ["mandamiento de pago", "me llego cobro coactivo", "15 dias mandamiento", "que hago con el mandamiento", "proceso coactivo"],
+      "articulos": [685, 687, 688, 690],
+      "vigencia": "estable"
+    },
+    {
+      "id": "cobro-003",
+      "tema": "Cobro Persuasivo y Coactivo",
+      "pregunta": "¿Qué excepciones puedo presentar contra el mandamiento de pago?",
+      "respuesta": "Entre otras: el pago efectivo, la existencia de un acuerdo o facilidad de pago vigente, la falta de ejecutoria del título, la pérdida de ejecutoria por revocatoria o suspensión provisional, la interposición de demanda de nulidad y restablecimiento del derecho cuando proceda como excepción, y la prescripción de la acción de cobro (artículo 691).",
+      "palabras_clave": ["excepciones mandamiento", "como me defiendo cobro", "excepcion de pago", "prescripcion excepcion", "defensa coactivo"],
+      "articulos": [691, 692, 693, 694],
+      "vigencia": "estable"
+    },
+    {
+      "id": "cobro-004",
+      "tema": "Cobro Persuasivo y Coactivo",
+      "pregunta": "¿Pueden embargarme por una deuda de impuestos municipales?",
+      "respuesta": "Sí, el proceso coactivo permite decretar medidas preventivas como el embargo y el secuestro de bienes (artículo 698). Se respetan los límites de inembargabilidad vigentes al momento de la medida para cuentas de ahorro, depósitos, salarios y prestaciones, y no son embargables los bienes que la Constitución o la ley declaren inembargables (artículos 699 y 700).",
+      "palabras_clave": ["embargo", "me pueden embargar", "inembargabilidad", "embargo de cuenta", "secuestro de bienes"],
+      "articulos": [698, 699, 700, 701],
+      "vigencia": "estable"
+    },
+    {
+      "id": "recurso-001",
+      "tema": "Recursos y Derechos del Contribuyente",
+      "pregunta": "No estoy de acuerdo con una liquidación o sanción, ¿qué recurso tengo?",
+      "respuesta": "Procede el recurso de reconsideración contra las liquidaciones oficiales, las resoluciones que imponen sanciones u ordenan el reintegro de sumas devueltas y los demás actos relacionados con los impuestos municipales. Debe presentarse dentro de los dos meses siguientes a la notificación del acto, cumpliendo los requisitos del artículo 584 (artículo 583).",
+      "palabras_clave": ["recurso de reconsideracion", "no estoy de acuerdo", "impugnar liquidacion", "reclamar sancion", "dos meses recurso"],
+      "articulos": [583, 584, 586, 587],
+      "vigencia": "estable"
+    },
+    {
+      "id": "recurso-002",
+      "tema": "Recursos y Derechos del Contribuyente",
+      "pregunta": "¿En cuánto tiempo deben responderme el recurso?",
+      "respuesta": "La Administración tiene un año para resolver el recurso de reconsideración, contado desde su interposición en debida forma (artículo 593). Si no lo resuelve en ese término, se entiende fallado a favor del recurrente por silencio administrativo positivo, y el funcionario competente así lo declarará de oficio o a petición de parte (artículo 595).",
+      "palabras_clave": ["plazo para resolver recurso", "silencio administrativo", "un ano recurso", "no me han respondido", "silencio positivo"],
+      "articulos": [593, 594, 595],
+      "vigencia": "estable"
+    },
+    {
+      "id": "recurso-003",
+      "tema": "Recursos y Derechos del Contribuyente",
+      "pregunta": "¿Qué derechos tengo como contribuyente?",
+      "respuesta": "Entre otros: obtener de la Secretaría de Hacienda toda la información sobre tu situación tributaria, obtener el paz y salvo municipal cuando acredites que no tienes obligaciones pendientes, y los demás derechos que enumera el artículo 498. Además existe la figura del Defensor del Contribuyente para garantizar el respeto de esos derechos (artículo 721).",
+      "palabras_clave": ["derechos del contribuyente", "que derechos tengo", "defensor del contribuyente", "informacion tributaria", "atencion al contribuyente"],
+      "articulos": [498, 721],
+      "vigencia": "estable"
+    },
+    {
+      "id": "recurso-004",
+      "tema": "Recursos y Derechos del Contribuyente",
+      "pregunta": "¿Me pueden notificar por correo electrónico?",
+      "respuesta": "Sí. La Administración Tributaria puede notificar electrónicamente actos administrativos, requerimientos, emplazamientos, liquidaciones oficiales, resoluciones y demás actuaciones, conforme a los mecanismos previstos en la ley. Para eso los contribuyentes pueden registrar y actualizar sus direcciones electrónicas (artículos 459 y 468).",
+      "palabras_clave": ["notificacion electronica", "notificar por correo", "correo electronico notificacion", "buzon electronico", "notificacion digital"],
+      "articulos": [456, 457, 458, 459, 468],
+      "vigencia": "estable"
+    },
+    {
+      "id": "general-001",
+      "tema": "General",
+      "pregunta": "¿Qué impuestos administra el Municipio de Floridablanca?",
+      "respuesta": "El Estatuto regula, entre otros: predial unificado, industria y comercio, retenciones de ICA, avisos y tableros, delineación urbana, tasa de nomenclatura, publicidad exterior visual, espectáculos públicos, telefonía, juegos y azar, alumbrado público, degüello de ganado menor, transporte de hidrocarburos, registro de marquillas, tasa especial de seguridad, sobretasa a la gasolina, sobretasa bomberil, plusvalía, participación en vehículos automotores, estampillas, cuota de fiscalización, tasa pro deporte, contribuciones de seguridad, valorización y aporte solidario, estacionamiento en vía pública y derechos de tránsito (artículo 12).",
+      "palabras_clave": ["que impuestos hay", "tributos municipales", "lista de impuestos", "impuestos floridablanca", "que administra el municipio"],
+      "articulos": [12],
+      "vigencia": "estable"
+    },
+    {
+      "id": "general-002",
+      "tema": "General",
+      "pregunta": "¿Qué es la UVT y cuánto vale?",
+      "respuesta": "La Unidad de Valor Tributario es la medida que permite ajustar los valores de las disposiciones tributarias. La adopta el Municipio conforme al artículo 868 del Estatuto Tributario Nacional y su valor lo reajusta anualmente la DIAN (artículos 13 y 14). El valor en pesos cambia cada año, así que consúltalo en la resolución vigente de la DIAN o en tu factura.",
+      "palabras_clave": ["que es la uvt", "cuanto vale la uvt", "unidad de valor tributario", "valor uvt", "uvt en pesos"],
+      "articulos": [13, 14],
+      "vigencia": "volatil",
+      "nota_revision": "El valor en pesos lo fija la DIAN cada ano. No incluir cifra en el catalogo."
+    },
+    {
+      "id": "general-003",
+      "tema": "General",
+      "pregunta": "¿Desde cuándo rige este Estatuto Tributario?",
+      "respuesta": "El Acuerdo Municipal 020 del 31 de julio de 2026 actualiza, compila, modifica, adiciona y adopta el Estatuto Tributario del Municipio de Floridablanca. Su vigencia y las derogatorias están en el artículo 726, y el régimen del acuerdo anterior se trata en el artículo 725.",
+      "palabras_clave": ["desde cuando rige", "vigencia del estatuto", "acuerdo 020 de 2026", "estatuto tributario nuevo", "que norma aplica"],
+      "articulos": [720, 725, 726],
+      "vigencia": "estable"
+    },
+    {
+      "id": "general-004",
+      "tema": "General",
+      "pregunta": "¿Quién administra los impuestos en el Municipio?",
+      "respuesta": "El Municipio de Floridablanca es el sujeto activo de todos los impuestos y derechos, y las funciones de administración, control, recaudo, fiscalización, determinación, imposición de sanciones, discusión, devolución y cobro las ejerce la Secretaría de Hacienda Municipal a través de sus oficinas técnicas y la Tesorería (artículos 5, 8 y 449).",
+      "palabras_clave": ["quien administra los impuestos", "secretaria de hacienda", "sujeto activo", "quien cobra los impuestos", "tesoreria"],
+      "articulos": [5, 8, 449],
+      "vigencia": "estable"
+    }
+  ]
+}

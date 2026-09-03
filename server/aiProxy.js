@@ -13,9 +13,11 @@
  * error de Gemini (describe el estado de la credencial). Al cliente, motivo genérico.
  */
 
+import { buildKnowledgePrompt, citedArticles, isKnowledgeAvailable } from "./knowledge/index.js";
 import { createRateLimiter, createDailyQuota, createTokenBudget } from "./rateLimit.js";
 import { resolveClientIp, resolveSessionKey, DEFAULT_TRUSTED_HOPS } from "./clientIdentity.js";
 import { CORRELATION_HEADER, CONVERSATION_HEADER } from "./correlation.js";
+import { isOriginAllowed } from "./corsPolicy.js";
 import { info, warning, error } from "./logging.js";
 
 /** Ruta del endpoint. */
@@ -33,7 +35,9 @@ const MAX_BODY_BYTES = 128 * 1024;
 const LIMITS = Object.freeze({
   maxHistoryTurns: 20,
   maxTurnChars: 4000,
-  maxSystemChars: 8000,
+  // Ampliado para que quepan las reglas más los fragmentos del Estatuto. No sube el coste
+  // máximo por petición: el techo que lo fija es `maxTotalInputChars`, que no cambia.
+  maxSystemChars: 12_000,
   /** Techo de caracteres de entrada. ~4 caracteres por token: unos 6.000 tokens. */
   maxTotalInputChars: 24_000,
   maxOutputTokens: 200,
@@ -82,44 +86,115 @@ export const createProxyConfig = (env = process.env) => ({
   isLocal: String(env.ENVIRONMENT || "local").toLowerCase() === "local"
 });
 
-/**
- * ¿El origen está autorizado a llamar al proxy? En orden: mismo origen que el servidor,
- * coincidencia con `ALLOWED_ORIGINS` (una entrada con punto inicial es comodín de sufijo,
- * misma convención que `security.allowedLinkHosts`), o localhost en ambiente local.
- *
- * Nunca se responde con `*`: el endpoint gasta dinero, así que quién puede invocarlo es
- * parte del control de gasto.
- *
- * @param {string|undefined} origin
- * @param {string|undefined} host
- * @param {ReturnType<createProxyConfig>} config
- * @returns {boolean}
- */
-export const isOriginAllowed = (origin, host, config) => {
-  // Sin cabecera `Origin`: no es una petición de navegador entre orígenes (curl, una
-  // prueba, un servidor). No hay nada que autorizar por CORS.
-  if (!origin) return true;
+// `isOriginAllowed` vive ahora en `corsPolicy.js`, compartida con el proxy de los RPA.
+// Se re-exporta para no cambiar la superficie pública de este módulo.
+export { isOriginAllowed };
 
-  let hostname;
-  try {
-    hostname = new URL(origin).hostname.toLowerCase();
-  } catch {
-    return false;
+/** Marcador del turno de datos de la página, que no es una consulta del ciudadano. */
+const UNTRUSTED_PAGE_MARKER = "<<<DATOS_NO_CONFIABLES_DE_LA_PAGINA>>>";
+
+/** Tope de cada mensaje que entra en la consulta de recuperación. */
+const MAX_QUERY_CHARS = 500;
+
+/** Mensajes del ciudadano que entran en la consulta: el actual y el anterior. */
+const QUERY_USER_TURNS = 2;
+
+/** Un artículo citado con su número: la consulta ya se basta sola. */
+const ARTICLE_WITH_NUMBER_RE = /art[íi]?c?u?l?o?s?\s*\d{1,3}\b/i;
+
+/**
+ * Señales de que el mensaje continúa el tema anterior en vez de abrir uno nuevo
+ * ("de ese artículo", "dame más detalles", "y los requisitos"). Sin ellas, arrastrar el
+ * artículo del turno anterior desviaría una consulta nueva.
+ */
+const FOLLOW_UP_RE =
+  /\b(ese|esa|eso|esos|esas|este|esta|esto|dicho|dicha|mismo|misma|anterior|detalle|detalles|amplia|amplía|ampliar|explica|expl[íi]came|profundiza|m[áa]s)\b/i;
+
+/** Cuántos artículos se arrastran de un turno del asistente. */
+const MAX_HINTED_ARTICLES = 2;
+
+/** Longitud hasta la que un mensaje con marca de seguimiento se trata como tal. */
+const FOLLOW_UP_MAX_CHARS = 80;
+
+/**
+ * Mensajes del ciudadano, del más reciente al más antiguo. Se salta el turno de datos de
+ * la página: viene del DOM del portal anfitrión y no debe decidir qué se recupera.
+ *
+ * @param {unknown} payload
+ * @returns {string[]}
+ */
+const citizenTurns = (payload) => {
+  const turns = Array.isArray(payload?.contents) ? payload.contents : [];
+  const out = [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn?.role !== "user") continue;
+    const text = turn?.parts?.[0]?.text;
+    if (typeof text !== "string" || text.trim() === "") continue;
+    if (text.includes(UNTRUSTED_PAGE_MARKER)) continue;
+    out.push(text.slice(0, MAX_QUERY_CHARS));
+  }
+  return out;
+};
+
+/** Último turno del asistente, de donde se arrastran los artículos ya citados. */
+const lastModelText = (payload) => {
+  const turns = Array.isArray(payload?.contents) ? payload.contents : [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn?.role === "user") continue;
+    const text = turn?.parts?.[0]?.text;
+    if (typeof text === "string" && text.trim() !== "") return text;
+  }
+  return "";
+};
+
+/**
+ * Último mensaje escrito por el ciudadano.
+ *
+ * @param {unknown} payload
+ * @returns {string}
+ */
+export const lastUserText = (payload) => citizenTurns(payload)[0] || "";
+
+/**
+ * Las dos consultas con las que se recupera del Estatuto.
+ *
+ * Van SEPARADAS a propósito. Mezclarlas en una sola cadena hacía que el mensaje anterior
+ * ganara por número de términos: ante "y de ICA?" tras una pregunta de predial, BM25
+ * prefería los fragmentos de predial —que casaban cinco términos— frente al único
+ * término nuevo, y el modelo se quedaba sin nada de ICA que citar.
+ *
+ * - `query`: el mensaje actual, más los artículos que el asistente acababa de citar
+ *   cuando el mensaje es un seguimiento ("dame detalles de ese artículo").
+ * - `contextQuery`: el mensaje anterior del ciudadano, que sostiene el tema cuando el
+ *   actual no lo repite ("¿cuáles son los requisitos?").
+ *
+ * @param {unknown} payload
+ * @returns {{query: string, contextQuery: string}}
+ */
+export const buildRetrievalQueries = (payload) => {
+  const turns = citizenTurns(payload).slice(0, QUERY_USER_TURNS);
+  if (turns.length === 0) return { query: "", contextQuery: "" };
+
+  const [current, previous = ""] = turns;
+  const parts = [current];
+
+  // Se arrastra el artículo anterior solo con señal clara: o el mensaje nombra un
+  // artículo sin decir cuál, o es un seguimiento corto. Un mensaje largo con un "más"
+  // suelto suele ser una consulta nueva, y arrastrar el artículo la desviaría.
+  const citesArticle = ARTICLE_WITH_NUMBER_RE.test(current);
+  const namesArticleWithoutNumber = /art[íi]?culo/i.test(current) && !citesArticle;
+  const isShortFollowUp = current.length <= FOLLOW_UP_MAX_CHARS && FOLLOW_UP_RE.test(current);
+
+  if (!citesArticle && (namesArticleWithoutNumber || isShortFollowUp)) {
+    const cited = [...citedArticles(lastModelText(payload))].slice(0, MAX_HINTED_ARTICLES);
+    // El plural importa: es la señal con la que el recuperador lee una enumeración.
+    if (cited.length === 1) parts.push(`artículo ${cited[0]}`);
+    else if (cited.length > 1) parts.push(`artículos ${cited.join(" y ")}`);
   }
 
-  if (host && String(host).toLowerCase().split(":")[0] === hostname) return true;
-
-  if (config.isLocal && ["localhost", "127.0.0.1", "::1"].includes(hostname)) return true;
-
-  return config.allowedOrigins.some((entry) => {
-    if (entry.startsWith(".")) return hostname === entry.slice(1) || hostname.endsWith(entry);
-    // Se admite tanto `https://portal.gov.co` como `portal.gov.co` en la variable.
-    try {
-      return new URL(entry).hostname === hostname;
-    } catch {
-      return entry === hostname;
-    }
-  });
+  return { query: parts.join(" ").trim(), contextQuery: previous.trim() };
 };
 
 /**
@@ -127,9 +202,12 @@ export const isOriginAllowed = (origin, host, config) => {
  * El historial se recorta por el PRINCIPIO: si hay que sacrificar contexto, el más antiguo.
  *
  * @param {unknown} payload
+ * @param {Object} [options]
+ * @param {string} [options.systemOverride]  Instrucción armada por el servidor. Cuando
+ *   viene, sustituye a la del cliente: la del cliente es un dato del navegador.
  * @returns {{ ok: true, request: Object, inputChars: number } | { ok: false, detail: string }}
  */
-export const buildGeminiRequest = (payload) => {
+export const buildGeminiRequest = (payload, { systemOverride } = {}) => {
   if (!payload || typeof payload !== "object") {
     return { ok: false, detail: "cuerpo ausente o no es un objeto" };
   }
@@ -156,10 +234,11 @@ export const buildGeminiRequest = (payload) => {
     return { ok: false, detail: "ningún turno con texto utilizable" };
   }
 
-  const systemText = String(payload.systemInstruction?.parts?.[0]?.text || "").slice(
-    0,
-    LIMITS.maxSystemChars
-  );
+  const rawSystem =
+    typeof systemOverride === "string" && systemOverride !== ""
+      ? systemOverride
+      : String(payload.systemInstruction?.parts?.[0]?.text || "");
+  const systemText = rawSystem.slice(0, LIMITS.maxSystemChars);
 
   // Recorte por techo total de entrada, empezando por los turnos más antiguos.
   let inputChars = systemText.length + contents.reduce((acc, t) => acc + t.parts[0].text.length, 0);
@@ -482,8 +561,29 @@ export const createAiProxyHandler = ({
         return send(res, 400, { error: "Invalid JSON", reason: REASONS.INVALID_PAYLOAD }, origin);
       }
 
+      // ── Base de conocimiento ──────────────────────────────────────────────
+      // La instrucción de sistema se arma AQUÍ cuando hay corpus: es la sección de
+      // máxima autoridad para el modelo y no puede depender de lo que envíe el cliente.
+      let systemOverride;
+      if (isKnowledgeAvailable()) {
+        const { query, contextQuery } = buildRetrievalQueries(parsed);
+        const prompt = buildKnowledgePrompt({
+          query,
+          contextQuery,
+          maxChars: LIMITS.maxSystemChars
+        });
+        if (prompt) {
+          systemOverride = prompt.text;
+          // Se registran los fragmentos citados, nunca la consulta: es dato personal.
+          info("ai_knowledge_context", {
+            matches: prompt.coincidencias,
+            chunks: prompt.incluidos.join(",")
+          });
+        }
+      }
+
       // ── Capa 1: coste acotado ─────────────────────────────────────────────
-      const built = buildGeminiRequest(parsed);
+      const built = buildGeminiRequest(parsed, { systemOverride });
       if (!built.ok) {
         warning("ai_invalid_payload", { detail: built.detail });
         return send(res, 400, { error: "Invalid payload", reason: REASONS.INVALID_PAYLOAD }, origin);

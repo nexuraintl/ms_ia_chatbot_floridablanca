@@ -24,6 +24,10 @@ dist-ssr
 tests
 security-tests
 
+# Pipeline de la base de conocimiento: genera `server/knowledge/corpus.json` en el
+# equipo del desarrollador. La imagen solo necesita el corpus ya generado.
+tools
+
 # Logs
 *.log
 logs
