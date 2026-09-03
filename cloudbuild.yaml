@@ -279,11 +279,13 @@ steps:
         # Se acumulan en una sola lista separada por comas porque --set-secrets no admite
         # repetirse: la segunda vez pisa a la primera en vez de sumarse.
         #
-        # OJO: toda variable bash local de aqui en adelante se lee como "$$NOMBRE", con
-        # doble signo de pesos. Cloud Build escanea el YAML entero buscando "$ALGO" para
-        # sustituirlo — no solo lo que empieza en "_" — y si "ALGO" no es una sustitucion
-        # declarada, el build falla ANTES de arrancar con "is not a valid built-in
-        # substitution". Ya paso una vez con SECRETS_LIST sin escapar.
+        # OJO: toda variable bash local de aqui en adelante se lee con doble signo de
+        # pesos por delante. Cloud Build escanea el YAML COMPLETO -incluidos los
+        # comentarios- buscando ese signo seguido de un nombre para sustituirlo, no solo
+        # lo que empieza en guion bajo; si el nombre no es una sustitucion declarada, el
+        # build falla ANTES de arrancar con "is not a valid built-in substitution". Ya
+        # paso dos veces: una en el codigo real, otra en un comentario que solo lo
+        # explicaba.
         SECRETS_LIST=""
         if [ -n "${_GEMINI_SECRET}" ]; then
           SECRETS_LIST="GEMINI_API_KEY=${_GEMINI_SECRET}:latest"
