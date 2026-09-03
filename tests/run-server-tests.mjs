@@ -820,7 +820,7 @@ section("9. Proxy de los RPA: lista blanca, credencial y datos personales");
 
   check(
     "la barra final no cambia el enrutado",
-    matchRoute("/rpa/factura/v1/clientes/")?.upstream === "/api/clientes"
+    matchRoute("/rpa/factura/v1/clientes/")?.upstream === "/v1/clientes"
   );
 
   check(
@@ -849,7 +849,7 @@ section("9. Proxy de los RPA: lista blanca, credencial y datos personales");
     const call = fetchImpl.calls[0];
     check(
       "la ruta pública se traduce a la del RPA",
-      call?.url === "https://rpa-factura.example.com/api/clientes",
+      call?.url === "https://rpa-factura.example.com/v1/clientes",
       "llamó a " + call?.url
     );
     check(
@@ -989,7 +989,7 @@ section("9. Proxy de los RPA: lista blanca, credencial y datos personales");
     );
     check(
       "el parámetro cliente sí se propaga",
-      call?.url?.endsWith("/api/prewarm?cliente=floridablanca") === true
+      call?.url?.endsWith("/v1/prewarm?cliente=floridablanca") === true
     );
   }
 

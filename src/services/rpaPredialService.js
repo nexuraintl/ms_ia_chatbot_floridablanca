@@ -15,6 +15,9 @@ import { forBackendResource } from "../domain/security/urlPolicy.js";
 
 const BASE_URL = environment.predialApiUrl;
 
+/** Prefijo de version del RPA. Sus rutas pasaron de `/api` a `/v1`. */
+const API = `${BASE_URL}/v1`;
+
 /** Timeout amplio: el RPA navega un portal externo y resuelve un captcha. */
 const RPA_TIMEOUT_MS = 60_000;
 
@@ -41,13 +44,13 @@ const FALLBACK_CLIENTES = Object.freeze({
 
 /**
  * Municipios disponibles y tipos de búsqueda válidos.
- * Endpoint: GET /api/clientes
+ * Endpoint: GET /v1/clientes
  *
  * @returns {Promise<Object>}
  */
 export const getClientes = async () => {
   try {
-    return await get(`${BASE_URL}/api/clientes`);
+    return await get(`${API}/clientes`);
   } catch (error) {
     console.warn(
       "⚠️ [Predial] Servicio no alcanzable, usando configuración por defecto:",
@@ -59,14 +62,14 @@ export const getClientes = async () => {
 
 /**
  * Resolución anticipada del reCAPTCHA, para acortar el trámite posterior.
- * Endpoint: POST /api/prewarm
+ * Endpoint: POST /v1/prewarm
  *
  * @param {string} [cliente]
  * @returns {Promise<void>}
  */
 export const prewarmCaptcha = async (cliente = "floridablanca") => {
   try {
-    await post(`${BASE_URL}/api/prewarm?cliente=${encodeURIComponent(cliente)}`, undefined, {
+    await post(`${API}/prewarm?cliente=${encodeURIComponent(cliente)}`, undefined, {
       timeoutMs: 15_000
     });
   } catch (error) {
@@ -77,7 +80,7 @@ export const prewarmCaptcha = async (cliente = "floridablanca") => {
 
 /**
  * Inicia la generación de la factura en modo asíncrono.
- * Endpoint: POST /api/generar_factura?mode=async
+ * Endpoint: POST /v1/generar_factura?mode=async
  *
  * @param {Object} payload
  * @param {string} payload.searchType
@@ -96,7 +99,7 @@ export const generarFacturaAsync = async ({
 }) => {
   try {
     return await post(
-      `${BASE_URL}/api/generar_factura?mode=async`,
+      `${API}/generar_factura?mode=async`,
       {
         search_type: searchType,
         search_value: searchValue,
@@ -123,7 +126,7 @@ export const generarFacturaAsync = async ({
 
 /**
  * Escucha el stream SSE de eventos de un job.
- * Endpoint: GET /api/jobs/{jobId}/stream
+ * Endpoint: GET /v1/jobs/{jobId}/stream
  *
  * @param {string} jobId
  * @param {(evt: Object) => void} onEvent
@@ -131,7 +134,7 @@ export const generarFacturaAsync = async ({
  * @returns {() => void} Función de limpieza que cierra el stream.
  */
 export const listenJobStream = (jobId, onEvent, onError) => {
-  const streamUrl = `${BASE_URL}/api/jobs/${encodeURIComponent(jobId)}/stream`;
+  const streamUrl = `${API}/jobs/${encodeURIComponent(jobId)}/stream`;
   const eventSource = new EventSource(streamUrl);
   const processedEvents = new Set();
 
@@ -166,7 +169,7 @@ export const listenJobStream = (jobId, onEvent, onError) => {
 
 /**
  * Selecciona un predio cuando la búsqueda devolvió varios.
- * Endpoint: POST /api/seleccionar_predio?mode=async
+ * Endpoint: POST /v1/seleccionar_predio?mode=async
  *
  * @param {Object} payload
  * @param {string} payload.sessionId
@@ -179,7 +182,7 @@ export const listenJobStream = (jobId, onEvent, onError) => {
 export const seleccionarPredio = async ({ sessionId, index, phone, email, mode = "async" }) => {
   try {
     return await post(
-      `${BASE_URL}/api/seleccionar_predio?mode=${encodeURIComponent(mode)}`,
+      `${API}/seleccionar_predio?mode=${encodeURIComponent(mode)}`,
       { session_id: sessionId, index: Number(index), phone, email, mode },
       { timeoutMs: RPA_TIMEOUT_MS }
     );

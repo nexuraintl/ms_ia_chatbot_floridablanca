@@ -32,8 +32,8 @@ import { info, warning, error } from "./logging.js";
  * Rutas expuestas al navegador y su equivalente en el RPA.
  *
  * `path` sigue la nomenclatura del gateway (`/rpa/factura/v1/...`) y `upstream` es lo que
- * el RPA expone hoy (`/api/...`). Esa traducción es el motivo por el que el RPA no tiene
- * que cambiar sus rutas: el desajuste entre `/api` y `/v1` se resuelve en esta tabla.
+ * el RPA expone hoy (`/v1/...`). Esa traducción es el motivo por el que un cambio de rutas
+ * en el RPA se absorbe en esta tabla y no en el resto del proxy.
  *
  * @type {ReadonlyArray<{path: string, methods: string[], upstream: string, query: string[]}>}
  */
@@ -41,26 +41,26 @@ export const ROUTES = Object.freeze([
   {
     path: "/rpa/factura/v1/clientes",
     methods: ["GET"],
-    upstream: "/api/clientes",
+    upstream: "/v1/clientes",
     query: []
   },
   {
     // El frontend lo llama por POST sin cuerpo; el gateway lo declara para ambos métodos.
     path: "/rpa/factura/v1/prewarm",
     methods: ["GET", "POST"],
-    upstream: "/api/prewarm",
+    upstream: "/v1/prewarm",
     query: ["cliente"]
   },
   {
     path: "/rpa/factura/v1/generar_factura",
     methods: ["POST"],
-    upstream: "/api/generar_factura",
+    upstream: "/v1/generar_factura",
     query: ["mode"]
   },
   {
     path: "/rpa/factura/v1/seleccionar_predio",
     methods: ["POST"],
-    upstream: "/api/seleccionar_predio",
+    upstream: "/v1/seleccionar_predio",
     query: ["mode"]
   }
 ]);
