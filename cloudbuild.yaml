@@ -278,6 +278,12 @@ steps:
         # preguntas; sin BD, el registro de conversaciones simplemente no se guarda.
         # Se acumulan en una sola lista separada por comas porque --set-secrets no admite
         # repetirse: la segunda vez pisa a la primera en vez de sumarse.
+        #
+        # OJO: toda variable bash local de aqui en adelante se lee como "$$NOMBRE", con
+        # doble signo de pesos. Cloud Build escanea el YAML entero buscando "$ALGO" para
+        # sustituirlo — no solo lo que empieza en "_" — y si "ALGO" no es una sustitucion
+        # declarada, el build falla ANTES de arrancar con "is not a valid built-in
+        # substitution". Ya paso una vez con SECRETS_LIST sin escapar.
         SECRETS_LIST=""
         if [ -n "${_GEMINI_SECRET}" ]; then
           SECRETS_LIST="GEMINI_API_KEY=${_GEMINI_SECRET}:latest"
@@ -286,8 +292,8 @@ steps:
           echo "       respondera con el banco de preguntas frecuentes."
         fi
         if [ -n "${_DB_PASS_SECRET}" ]; then
-          if [ -n "$SECRETS_LIST" ]; then
-            SECRETS_LIST="${SECRETS_LIST},DB_PASS=${_DB_PASS_SECRET}:latest"
+          if [ -n "$$SECRETS_LIST" ]; then
+            SECRETS_LIST="$$SECRETS_LIST,DB_PASS=${_DB_PASS_SECRET}:latest"
           else
             SECRETS_LIST="DB_PASS=${_DB_PASS_SECRET}:latest"
           fi
@@ -296,8 +302,8 @@ steps:
           echo "       conversaciones queda deshabilitado."
         fi
         SECRET_ARG=""
-        if [ -n "$SECRETS_LIST" ]; then
-          SECRET_ARG="--set-secrets=${SECRETS_LIST}"
+        if [ -n "$$SECRETS_LIST" ]; then
+          SECRET_ARG="--set-secrets=$$SECRETS_LIST"
         fi
 
         # El conector VPC solo hace falta para alcanzar la BD (IP interna). Sin _DB_HOST no
