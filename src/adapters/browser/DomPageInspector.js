@@ -23,9 +23,6 @@ const STOP_WORDS = [
   "link", "buscar", "pagina", "sitio", "favor", "dame", "esta", "este"
 ];
 
-/** Palabras que se eliminan al construir la consulta del buscador del portal. */
-const SEARCH_NOISE = /(pasame|dame|el|link|enlace|de|por|favor|dónde|donde|está|busco)/gi;
-
 /** Máximo de enlaces relevantes devueltos. */
 const MAX_RELEVANT_LINKS = 3;
 
@@ -71,18 +68,6 @@ export const rankLinksByRelevance = (userText, links, limit = MAX_RELEVANT_LINKS
 };
 
 /**
- * Construye la URL del buscador del portal a partir de la consulta del ciudadano.
- * @param {string} origin
- * @param {string} userMessage
- * @returns {string}
- */
-export const buildPortalSearchUrl = (origin, userMessage) => {
-  const cleaned = String(userMessage || "").replace(SEARCH_NOISE, "").trim();
-  const query = encodeURIComponent(cleaned || "tramites");
-  return `${origin}/buscar/?q=${query}`;
-};
-
-/**
  * Crea el inspector.
  *
  * @param {Object} [deps]
@@ -113,9 +98,6 @@ export const createDomPageInspector = ({ doc = globalThis.document, win = global
         currentUrl: win.location?.href || "",
         origin,
         sitemapUrl: origin ? `${origin}/mapa-del-sitio` : "",
-        // Solo se ofrece el buscador si no encontramos un enlace concreto.
-        fallbackSearchUrl:
-          relevantLinks.length === 0 && origin ? buildPortalSearchUrl(origin, userMessage) : null,
         relevantLinks
       });
     } catch (error) {

@@ -30,6 +30,8 @@ import { sessionMetrics, METRIC_EVENTS } from "../../domain/observability/sessio
  * @property {string} id
  * @property {string} label            Nombre legible, para mensajes al ciudadano.
  * @property {string} [confirmWord]    Palabra que el ciudadano escribe para abrir el formulario.
+ * @property {boolean} [opensDirectly]  true si mencionarlo puede lanzarlo sin confirmar,
+ *                                      porque su primer paso no es un formulario.
  * @property {() => void} start        Efecto que arranca el flujo (normalmente añade un mensaje con formulario).
  */
 
@@ -55,7 +57,16 @@ export const createFlowRegistry = ({
   const definitions = [
     { id: "sisben", label: "Sisbén", confirmWord: "consultar", start: startSisben },
     { id: "predial", label: "Impuesto Predial", confirmWord: "pagar", start: startPredial },
-    { id: "pqrsd_crear", label: "Radicación de PQRSD", confirmWord: "radicar", start: startPqrsdCreate },
+    // Entra directo: su primer paso es la pregunta de orientación, no el formulario, así
+    // que mencionarlo no puede abrir nada sin querer. La palabra de confirmación se
+    // conserva para cuando la orientación previa está desactivada.
+    {
+      id: "pqrsd_crear",
+      label: "Radicación de PQRSD",
+      confirmWord: "radicar",
+      opensDirectly: true,
+      start: startPqrsdCreate
+    },
     { id: "pqrsd_consultar", label: "Consulta de PQRSD", confirmWord: "consultar", start: startPqrsdConsult },
     // "pqrsd" y "rpa" son intenciones genéricas: muestran el menú de opciones.
     { id: "pqrsd", label: "PQRSD", start: startPqrsdMenu },
@@ -104,3 +115,13 @@ export const getFlowLabel = (registry, flowId) =>
  */
 export const getFlowConfirmWord = (registry, flowId) =>
   (flowId && registry.get(flowId)?.confirmWord) || "iniciar";
+
+/**
+ * ¿El trámite puede lanzarse con solo mencionarlo?
+ *
+ * @param {Map<string, FlowDefinition>} registry
+ * @param {string|null} flowId
+ * @returns {boolean}
+ */
+export const flowOpensDirectly = (registry, flowId) =>
+  Boolean(flowId && registry.get(flowId)?.opensDirectly);

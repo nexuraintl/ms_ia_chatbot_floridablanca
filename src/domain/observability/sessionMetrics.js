@@ -16,7 +16,11 @@ export const METRIC_EVENTS = Object.freeze({
   /** El trámite entregó su resultado (factura, radicado, trazabilidad). */
   FLOW_COMPLETED: "flow_completed",
   /** El trámite no pudo completarse. */
-  FLOW_FAILED: "flow_failed"
+  FLOW_FAILED: "flow_failed",
+  /** El trámite se evitó: la orientación previa resolvió la necesidad. */
+  FLOW_AVOIDED: "flow_avoided",
+  /** Una consulta fuera del alcance municipal que no llegó a la IA. */
+  OFF_TOPIC_BLOCKED: "off_topic_blocked"
 });
 
 /** Tope de muestras de latencia conservadas, para acotar la memoria de una sesión larga. */
@@ -32,6 +36,7 @@ const MAX_DETAIL_CHARS = 160;
  * @property {number} started
  * @property {number} completed
  * @property {number} failed
+ * @property {number} avoided  Veces que la orientación previa evitó el trámite.
  * @property {string|null} lastError  Último motivo de fallo, ya apto para mostrar.
  */
 
@@ -58,6 +63,7 @@ const createEmptyState = (startedAt) => ({
   fallbackReplies: 0,
   lastFallbackReason: null,
   fallbackActive: false,
+  offTopicBlocked: 0,
   latencies: [],
   lastLatencyMs: null,
   tokensReported: 0,
@@ -118,7 +124,15 @@ const flowEntry = (flows, id, label) => {
     if (label && existing.label === key) existing.label = label;
     return existing;
   }
-  const fresh = { id: key, label: label || key, started: 0, completed: 0, failed: 0, lastError: null };
+  const fresh = {
+    id: key,
+    label: label || key,
+    started: 0,
+    completed: 0,
+    failed: 0,
+    avoided: 0,
+    lastError: null
+  };
   flows.set(key, fresh);
   return fresh;
 };
@@ -236,6 +250,18 @@ export const createSessionMetrics = ({
       const entry = flowEntry(state.flows, flowId, label);
       entry.failed += 1;
       entry.lastError = toDetail(reason);
+    },
+
+    /**
+     * @param {{flowId: string, label?: string}} payload
+     */
+    [METRIC_EVENTS.FLOW_AVOIDED]({ flowId, label }) {
+      flowEntry(state.flows, flowId, label).avoided += 1;
+    },
+
+    /** Consulta descartada por el guardia de alcance, antes de gastar tokens. */
+    [METRIC_EVENTS.OFF_TOPIC_BLOCKED]() {
+      state.offTopicBlocked += 1;
     }
   };
 
@@ -280,6 +306,7 @@ export const createSessionMetrics = ({
           fallbackReplies: state.fallbackReplies,
           lastFallbackReason: state.lastFallbackReason,
           fallbackActive: state.fallbackActive,
+          offTopicBlocked: state.offTopicBlocked,
           lastLatencyMs: state.lastLatencyMs,
           p50LatencyMs: percentile(sorted, 50),
           p95LatencyMs: percentile(sorted, 95),

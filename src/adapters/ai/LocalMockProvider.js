@@ -1,27 +1,9 @@
 /**
  * Adaptador de IA que responde localmente, sin red. Implementa `ports/AiProviderPort`.
  *
- * Se usa cuando no hay clave de API configurada, de modo que el chatbot sigue siendo
- * demostrable y desarrollable sin credenciales ni gasto.
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * CORRECCIÓN DE TRES RAMAS MUERTAS
- *
- * La versión anterior (`queryMockGemini`) recibía el contexto de página como un STRING
- * formateado y lo volvía a parsear con expresiones regulares. Las etiquetas que
- * emitía `getPageContext()` y las que buscaba el mock se habían desincronizado:
- *
- *   busca `[SECCIONES Y ENLACES EXTRAÍDOS DEL MAPA DEL SITIO]` … emitía `[ENLACES RELEVANTES ENCONTRADOS PARA LA CONSULTA]`
- *   busca `- Título: "…"`                                     … emitía `- Título de la página: "…"`
- *   busca `- Enlace Mapa del Sitio: …`                        … emitía `- URL Mapa del Sitio: …`
- *
- * Resultado: la búsqueda de enlaces del mapa del sitio y la respuesta a "¿dónde
- * estoy?" nunca se ejecutaban, y el mock caía siempre al fallback del buscador.
- * La suite `security-tests` (sección 9) documenta y verifica esto.
- *
- * Ahora el contexto llega como OBJETO y se leen campos, no cadenas. El acoplamiento
- * por formato de texto desaparece, y con él toda esta clase de fallo.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Se usa cuando no hay clave de API configurada: el chatbot sigue siendo demostrable y
+ * desarrollable sin credenciales ni gasto. El contexto de página llega como objeto, no
+ * como texto que haya que volver a parsear.
  */
 
 import { findBestFaq, selectBestAnswer } from "../../domain/faq/faqMatcher.js";
@@ -138,10 +120,6 @@ export const createLocalMockProvider = ({ faqCatalog = [], latencyMs = SIMULATED
       const match = findMatchingLink(normalizedQuery, ctx.relevantLinks);
       if (match) {
         reply = `Aquí tienes el enlace directo para realizar tu consulta: [${match.title}](${match.url}).`;
-      } else if (ctx.fallbackSearchUrl) {
-        reply =
-          "Puedes consultar los resultados oficiales para tu trámite en el buscador del portal: " +
-          `[Buscar en el Portal](${ctx.fallbackSearchUrl}).`;
       } else {
         reply =
           "Puedes consultar todos los enlaces e información en la sección oficial de Trámites de la página principal.";
