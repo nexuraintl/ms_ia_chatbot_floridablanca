@@ -44,6 +44,28 @@
       "flow": "pqrsd_consultar"
     }
   ],
+  "pqrsd": {
+    "preGuidance": {
+      "_comment": "Atención previa a la radicación: antes de abrir el formulario el chatbot pregunta la inquietud, intenta resolverla con la información disponible y solo continúa con la PQRSD si el ciudadano indica que su necesidad persiste. Poner 'enabled' en false para volver al formulario directo.",
+      "enabled": true,
+      "maxGuidanceRounds": 2,
+      "question": "Antes de radicar, cuéntanos: ¿cuál es tu duda, inquietud o novedad? Con esa información intento resolverte de inmediato y, si hace falta, continuamos con la radicación.",
+      "decisionQuestion": "¿Con esta información quedó resuelta tu solicitud?",
+      "resolvedLabel": "✅ Sí, quedó resuelta",
+      "unresolvedLabel": "📑 No, quiero radicar la PQRSD",
+      "resolvedReply": "Me alegra haberte podido ayudar. Si más adelante necesitas una gestión formal, escríbeme \"radicar PQRSD\" y te abro el formulario.",
+      "bridgeReply": "Si tu solicitud aún no ha sido resuelta, podemos continuar con la radicación de una PQRSD para que sea atendida por el área correspondiente.",
+      "exhaustedReply": "Para que tu caso lo revise el área correspondiente, lo mejor es dejarlo radicado como PQRSD.",
+      "errorReply": "No pude consultar la información en este momento, así que continuemos con la radicación de tu PQRSD."
+    }
+  },
+  "topicGuard": {
+    "_comment": "Filtro de alcance previo a la IA. Un mensaje sin ninguna señal municipal no llega al modelo, de modo que no consume tokens. 'allowKeywords' añade vocabulario propio del municipio y 'blockKeywords' temas vetados adicionales.",
+    "enabled": true,
+    "message": "Soy el asistente de la Alcaldía de Floridablanca, así que solo puedo orientarte en trámites, servicios e información del municipio. Cuéntame qué necesitas de la Alcaldía y con gusto te ayudo.",
+    "allowKeywords": [],
+    "blockKeywords": []
+  },
   "security": {
     "_comment": "Hosts en los que se permite que un enlace generado por la IA se renderice como enlace pulsable. Todo lo demás se muestra como texto plano. El dominio de la página anfitriona se añade automáticamente. Un valor que empieza por punto es comodín de sufijo: '.gov.co' acepta 'floridablanca.gov.co' pero no 'floridablanca.gov.co.dominio-falso.com'.",
     "allowedLinkHosts": [

@@ -1208,6 +1208,202 @@ section("22. Alcance de las cabeceras internas");
   );
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
+// ══════════════════════════════════════════════════════════════════════════════
+// Cada llamada arrastra prompt de sistema, FAQ y contexto de página: una consulta fuera
+// del ámbito municipal cuesta lo mismo que una legítima.
+{
+  const { evaluateTopic, TOPIC_REASONS, resolveTopicGuardSettings } =
+    await import("../src/domain/moderation/topicGuard.js");
+
+  const guard = (text, extra = {}) =>
+    evaluateTopic(text, {
+      faqCatalog,
+      routingMap: chatbotConfig.routing,
+      ...extra
+    });
+
+  const fuera = [
+    "cual es el gato mas grande del mundo",
+    "quien gano el mundial de futbol",
+    "dame una receta de arroz con pollo",
+    "escribeme un poema de amor",
+    "hazme un codigo en python que ordene una lista",
+    "traduceme esto al ingles",
+    "cual es la capital de francia"
+  ];
+  for (const texto of fuera) {
+    const v = guard(texto);
+    check(`bloquea fuera de ámbito: "${texto.slice(0, 44)}"`, v.allowed === false, `motivo=${v.reason}`);
+  }
+
+  const dentro = [
+    "como pago el impuesto predial",
+    "quiero radicar una peticion",
+    "cuando vence el plazo del ica",
+    "el alumbrado de mi barrio esta dañado",
+    "necesito el certificado de estrato",
+    "que requisitos piden para cancelar el rit",
+    "hay un bache enorme en la via",
+    "mi vecino hace mucho ruido en la noche",
+    "cual es el horario de atencion de la alcaldia",
+    "quiero consultar el estado de mi radicado",
+    "hola buenos dias",
+    "muchas gracias"
+  ];
+  for (const texto of dentro) {
+    const v = guard(texto);
+    check(`deja pasar: "${texto.slice(0, 44)}"`, v.allowed === true, `motivo=${v.reason}`);
+  }
+
+  // Un seguimiento corto no tiene vocabulario municipal propio: lo sostiene el contexto.
+  check(
+    "un seguimiento corto sobre el tema en curso pasa",
+    guard("y cuanto cuesta?", { activeContext: "impuesto_predial" }).allowed === true
+  );
+  check(
+    "un seguimiento corto pero fuera de tema se bloquea igual",
+    guard("y el futbol?", { activeContext: "impuesto_predial" }).allowed === false
+  );
+  check(
+    "sin conversación previa, un mensaje corto y ajeno no pasa",
+    guard("dime algo curioso").allowed === false
+  );
+
+  // Un término vetado dentro de una consulta municipal no puede tumbarla.
+  check(
+    "la señal municipal manda sobre el veto",
+    guard("cuanto es el impuesto de un negocio de recetas").allowed === true
+  );
+
+  check(
+    "apagado desde la configuración, no bloquea nada",
+    guard("cual es el gato mas grande del mundo", { enabled: false }).allowed === true,
+    "el tenant puede desactivarlo sin tocar código"
+  );
+
+  const settings = resolveTopicGuardSettings(chatbotConfig);
+  check("el guardia viene activo en la configuración del tenant", settings.enabled === true);
+  check(
+    "el mensaje de rechazo ofrece una salida al ciudadano",
+    typeof settings.message === "string" && settings.message.length > 40,
+    `-> "${settings.message.slice(0, 60)}…"`
+  );
+  check(
+    "el motivo del bloqueo es una etiqueta conocida",
+    Object.values(TOPIC_REASONS).includes(guard("cuentame un chiste").reason)
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("24. Orientación previa a la radicación de PQRSD");
+// ══════════════════════════════════════════════════════════════════════════════
+// La decisión de radicar o cerrar depende de interpretar la respuesta del ciudadano:
+// equivocarse abre un expediente que nadie pidió, o deja sin radicar a quien lo necesita.
+{
+  const { classifyDecision, PRE_GUIDANCE_DECISIONS, resolvePreGuidanceSettings } =
+    await import("../src/domain/pqrsd/preGuidance.js");
+
+  const settings = resolvePreGuidanceSettings(chatbotConfig);
+  const decide = (text) => classifyDecision(text, settings);
+
+  check("la orientación previa viene activa en el tenant", settings.enabled === true);
+  check(
+    "el puente hacia la radicación dice lo acordado con la Alcaldía",
+    settings.bridgeReply.includes("aún no ha sido resuelta") && settings.bridgeReply.includes("PQRSD"),
+    `-> "${settings.bridgeReply.slice(0, 64)}…"`
+  );
+
+  check(
+    "el botón de radicar se interpreta como 'persiste'",
+    decide(settings.unresolvedLabel) === PRE_GUIDANCE_DECISIONS.UNRESOLVED
+  );
+  check(
+    "el botón de resuelta se interpreta como 'resuelta'",
+    decide(settings.resolvedLabel) === PRE_GUIDANCE_DECISIONS.RESOLVED
+  );
+
+  for (const texto of ["no", "no me sirvio", "quiero radicarla", "sigue igual", "continuemos"]) {
+    check(`"${texto}" continúa con la radicación`, decide(texto) === PRE_GUIDANCE_DECISIONS.UNRESOLVED);
+  }
+
+  for (const texto of ["si", "listo gracias", "quedo claro", "perfecto", "no gracias", "eso es todo"]) {
+    check(`"${texto}" cierra sin radicar`, decide(texto) === PRE_GUIDANCE_DECISIONS.RESOLVED);
+  }
+
+  check(
+    '"no gracias" no se confunde con un "no" de continuar',
+    decide("no gracias") === PRE_GUIDANCE_DECISIONS.RESOLVED,
+    "un cierre cortés no debe abrir un expediente"
+  );
+
+  check(
+    "una respuesta ambigua no decide por el ciudadano",
+    decide("mmm y entonces") === PRE_GUIDANCE_DECISIONS.UNCLEAR
+  );
+  check("un mensaje vacío tampoco decide", decide("") === PRE_GUIDANCE_DECISIONS.UNCLEAR);
+
+  check(
+    "hay tope de rondas de orientación",
+    Number.isInteger(settings.maxGuidanceRounds) && settings.maxGuidanceRounds > 0,
+    `máximo ${settings.maxGuidanceRounds} rondas antes de ofrecer el formulario`
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("25. El buscador del portal ya no se ofrece");
+// ══════════════════════════════════════════════════════════════════════════════
+// El enlace a /buscar/?q=<consulta> se colaba al final de respuestas que nadie había
+// pedido, con el mensaje del ciudadano incrustado en la URL.
+{
+  const ctxSinEnlaces = createPageContext({
+    title: "Alcaldía de Floridablanca",
+    origin: ORIGIN,
+    sitemapUrl: `${ORIGIN}/mapa-del-sitio`,
+    relevantLinks: []
+  });
+
+  const turno = toDataTurn(ctxSinEnlaces);
+  const texto = turno ? turno.parts[0].text : "";
+  check(
+    "el contexto de página no le entrega al modelo una URL de búsqueda",
+    !texto.includes("/buscar/") && !texto.toLowerCase().includes("url_buscador"),
+    turno ? "turno de datos emitido sin url_buscador_del_portal" : "sin turno de datos"
+  );
+
+  const { createDomPageInspector } = await import("../src/adapters/browser/DomPageInspector.js");
+  const inspector = createDomPageInspector({
+    doc: { title: "Alcaldía de Floridablanca", querySelector: () => null, querySelectorAll: () => [] },
+    win: { location: { origin: ORIGIN, href: `${ORIGIN}/tramites` } }
+  });
+  const inspeccion = inspector.inspect("como puedo pagar", []);
+  check(
+    "el inspector del DOM ya no compone la URL del buscador",
+    inspeccion.fallbackSearchUrl === undefined,
+    "el campo desapareció del contrato de PageContext"
+  );
+
+  const mock = createLocalMockProvider({ faqCatalog, latencyMs: 0 });
+  const r = await mock.generateReply({
+    history: [{ sender: "user", text: "pasame el enlace de algo que no existe aqui" }],
+    pageContext: ctxSinEnlaces,
+    activeContext: null
+  });
+  check(
+    "el catálogo local tampoco ofrece el buscador",
+    !r.text.includes("/buscar/") && !r.text.includes("Buscar en el Portal"),
+    `-> "${r.text.slice(0, 70)}…"`
+  );
+
+  const prompt = buildSystemPrompt({ faqContext: "" });
+  check(
+    "el prompt de sistema prohibe improvisar buscadores",
+    prompt.includes("ni ofrezcas buscadores del portal")
+  );
+  check("el prompt de sistema acota el alcance al municipio", prompt.includes("ALCANCE TEMÁTICO"));
+}
+
 // ── Resumen ────────────────────────────────────────────────────────────────────
 const fallos = results.filter((r) => !r.passed);
 console.log(`\n\x1b[1m${"═".repeat(74)}\x1b[0m`);

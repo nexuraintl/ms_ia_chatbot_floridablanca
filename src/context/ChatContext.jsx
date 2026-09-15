@@ -28,12 +28,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import config from "../config/chatbotConfig.json";
+import faqCatalog from "../config/NewFaqConfig.json";
 import { getBackendHosts } from "../config/environment.js";
 import { configureUrlPolicy } from "../domain/security/urlPolicy.js";
 import { configureCorrelation } from "../domain/observability/correlation.js";
 import { resolveIntent, mentionsService } from "../domain/intents/intentResolver.js";
+import { evaluateTopic, resolveTopicGuardSettings } from "../domain/moderation/topicGuard.js";
 import { createFlowRegistry, runFlow, getFlowLabel } from "../application/flows/flowRegistry.js";
-import { sessionMetrics } from "../domain/observability/sessionMetrics.js";
+import { sessionMetrics, METRIC_EVENTS } from "../domain/observability/sessionMetrics.js";
 
 import { useMessageStore, buildGreetingMessages } from "../hooks/useMessageStore.js";
 import { useFollowUp } from "../hooks/useFollowUp.js";
@@ -57,6 +59,9 @@ configureUrlPolicy({
 
 // GOB-GCP-STD-01: emisión de cabeceras de correlación hacia los microservicios.
 configureCorrelation({ enabled: config.observability?.sendCorrelationId !== false });
+
+/** Filtro de alcance temático, resuelto una vez: la configuración no cambia en caliente. */
+const TOPIC_GUARD = resolveTopicGuardSettings(config);
 
 const ChatContext = createContext(null);
 
@@ -126,6 +131,28 @@ export const ChatProvider = ({ children }) => {
   // distingue lo que informa la API de lo que estimamos.
   const { ask, providerName } = useAiConversation({ apiKey, sitemapLinks });
 
+  /**
+   * Orientación con la información disponible, para la etapa previa a una PQRSD.
+   * Devuelve solo el texto: el flujo decide cómo presentarlo.
+   *
+   * @param {string} text
+   * @returns {Promise<string>}
+   */
+  const requestGuidance = useCallback(
+    async (text) => {
+      // El mensaje del ciudadano ya se añadió en este mismo tick, así que `messages`
+      // todavía no lo incluye y hay que adjuntarlo al historial a mano.
+      const reply = await ask({
+        history: toConversationHistory(text),
+        userText: text,
+        activeContext
+      });
+      if (reply.contextIntent) setActiveContext(reply.contextIntent);
+      return reply.text;
+    },
+    [ask, toConversationHistory, activeContext]
+  );
+
   // ── Flujos de trámite ─────────────────────────────────────────────────────
   const flowDeps = useMemo(
     () => ({ addMessage, setIsLoading, scheduleFollowUp }),
@@ -133,8 +160,20 @@ export const ChatProvider = ({ children }) => {
   );
 
   const { startPredial, submitPredialForm, selectPredio } = usePredialFlow(flowDeps);
-  const { startPqrsdCreate, startPqrsdConsult, startPqrsdMenu, submitPqrsdConsult } =
-    usePqrsdFlow(flowDeps);
+  // Con la respuesta libre desactivada no hay con qué orientar: el botón de radicar
+  // vuelve a abrir el formulario directamente.
+  const {
+    startPqrsdCreate,
+    startPqrsdConsult,
+    startPqrsdMenu,
+    submitPqrsdConsult,
+    consumePreGuidance,
+    resetPreGuidance
+  } = usePqrsdFlow({
+    ...flowDeps,
+    requestGuidance: isGeminiEnabled ? requestGuidance : null,
+    config
+  });
   const { startSisben, submitForm: submitSisbenForm } = useSisbenFlow(flowDeps);
 
   /**
@@ -175,9 +214,10 @@ export const ChatProvider = ({ children }) => {
     ) {
       prevPrefsRef.current = { isServicesEnabled, isGeminiEnabled };
       setIsTextInputEnabled(true);
+      resetPreGuidance();
       reset(isServicesEnabled);
     }
-  }, [isServicesEnabled, isGeminiEnabled, reset]);
+  }, [isServicesEnabled, isGeminiEnabled, resetPreGuidance, reset]);
 
   /** Muestra el formulario de identidad como una tarjeta dentro del chat. */
   const showIdentityForm = useCallback(
@@ -232,6 +272,43 @@ export const ChatProvider = ({ children }) => {
   );
 
   /**
+   * ¿El mensaje pertenece al ámbito de la Alcaldía?
+   *
+   * Se consulta antes de llamar al proveedor de IA: cada llamada arrastra el prompt de
+   * sistema, el bloque de FAQ y el contexto de página, de modo que una consulta ajena
+   * cuesta lo mismo que una legítima.
+   *
+   * @param {string} text
+   * @returns {boolean} true si se descartó el mensaje (y ya se respondió al ciudadano).
+   */
+  const rejectIfOffTopic = useCallback(
+    (text) => {
+      const verdict = evaluateTopic(text, {
+        enabled: TOPIC_GUARD.enabled,
+        faqCatalog,
+        routingMap: config.routing,
+        allowKeywords: TOPIC_GUARD.allowKeywords,
+        blockKeywords: TOPIC_GUARD.blockKeywords,
+        activeContext,
+        // `messages` aún no incluye el mensaje recién añadido, así que esto responde a
+        // "¿el ciudadano ya había escrito antes?".
+        hasPriorExchange: messages.some((m) => m.sender === "user")
+      });
+
+      if (verdict.allowed) return false;
+
+      sessionMetrics.record(METRIC_EVENTS.OFF_TOPIC_BLOCKED, { reason: verdict.reason });
+      addMessage({
+        sender: "bot",
+        text: TOPIC_GUARD.message,
+        quickReplies: isServicesEnabled ? (config.quickReplies || []).map((r) => r.label) : null
+      });
+      return true;
+    },
+    [activeContext, addMessage, isServicesEnabled, messages]
+  );
+
+  /**
    * Envía un mensaje de texto libre.
    *
    * @param {string} text
@@ -251,7 +328,10 @@ export const ChatProvider = ({ children }) => {
       setIsLoading(true);
 
       try {
-        // 1. ¿Es un trámite?
+        // 1. ¿La orientación previa a una PQRSD está esperando este mensaje?
+        if (await consumePreGuidance(userText)) return;
+
+        // 2. ¿Es un trámite?
         if (isServicesEnabled) {
           if (tryRouteToFlow(userText)) return;
         } else if (mentionsService(userText)) {
@@ -263,7 +343,10 @@ export const ChatProvider = ({ children }) => {
           return;
         }
 
-        // 2. Conversación libre con IA.
+        // 3. Fuera del ámbito municipal: se responde sin gastar una llamada a la IA.
+        if (rejectIfOffTopic(userText)) return;
+
+        // 4. Conversación libre con IA.
         if (!isGeminiEnabled) {
           addMessage({
             sender: "bot",
@@ -307,6 +390,8 @@ export const ChatProvider = ({ children }) => {
       clearFollowUpTimer,
       isServicesEnabled,
       isGeminiEnabled,
+      consumePreGuidance,
+      rejectIfOffTopic,
       tryRouteToFlow,
       toConversationHistory,
       ask,
@@ -346,6 +431,10 @@ export const ChatProvider = ({ children }) => {
         return;
       }
 
+      // La orientación previa se consulta antes del enrutamiento: sus botones contienen
+      // palabras de trámite ("radicar la PQRSD") que volverían a lanzar el flujo.
+      if (await consumePreGuidance(option)) return;
+
       if (tryRouteToFlow(option)) return;
 
       // Sin trámite directo: derivar al flujo normal sin duplicar el mensaje.
@@ -354,6 +443,7 @@ export const ChatProvider = ({ children }) => {
     [
       addMessage,
       isServicesEnabled,
+      consumePreGuidance,
       tryRouteToFlow,
       sendMessage,
       identityState.isInputBlocked,
@@ -432,6 +522,7 @@ export const ChatProvider = ({ children }) => {
     setActiveContext(null);
     setLastServiceMentioned(null);
     clearFollowUpTimer();
+    resetPreGuidance();
     identityState.reset();
     // Un reinicio abre una conversación nueva en el registro, en lugar de mezclar los
     // mensajes con los de la atención anterior.
@@ -441,7 +532,7 @@ export const ChatProvider = ({ children }) => {
     sessionMetrics.reset();
     gateShownRef.current = false;
     reset(isServicesEnabled);
-  }, [clearFollowUpTimer, reset, isServicesEnabled, identityState, recorder]);
+  }, [clearFollowUpTimer, resetPreGuidance, reset, isServicesEnabled, identityState, recorder]);
 
   /**
    * Valor del contexto. Se memoiza para no re-renderizar a todos los consumidores en

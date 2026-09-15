@@ -45,7 +45,6 @@ export const CONTEXT_LIMITS = Object.freeze({
  * @property {string} currentUrl
  * @property {string} origin
  * @property {string} sitemapUrl
- * @property {string|null} fallbackSearchUrl
  * @property {PageLink[]} relevantLinks
  */
 
@@ -57,7 +56,6 @@ export const EMPTY_PAGE_CONTEXT = Object.freeze({
   currentUrl: "",
   origin: "",
   sitemapUrl: "",
-  fallbackSearchUrl: null,
   relevantLinks: []
 });
 
@@ -81,9 +79,6 @@ export const createPageContext = (raw = {}) => ({
   currentUrl: truncate(String(raw.currentUrl || ""), CONTEXT_LIMITS.maxUrlLength),
   origin: truncate(String(raw.origin || ""), CONTEXT_LIMITS.maxUrlLength),
   sitemapUrl: truncate(String(raw.sitemapUrl || ""), CONTEXT_LIMITS.maxUrlLength),
-  fallbackSearchUrl: raw.fallbackSearchUrl
-    ? truncate(String(raw.fallbackSearchUrl), CONTEXT_LIMITS.maxUrlLength)
-    : null,
   relevantLinks: (Array.isArray(raw.relevantLinks) ? raw.relevantLinks : [])
     .map((l) => ({
       title: sanitizeForPrompt(l?.title, CONTEXT_LIMITS.linkTitle),

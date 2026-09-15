@@ -777,7 +777,13 @@ export const ChatbotConsole = () => {
                   label={flow.label}
                   value={`${flow.started} ▸ ${flow.completed} ✓ ${flow.failed} ✕`}
                   tone={flow.failed > 0 ? "error" : flow.completed > 0 ? "ok" : "info"}
-                  footnote={flow.lastError ? `Último fallo: ${flow.lastError}` : null}
+                  footnote={
+                    flow.lastError
+                      ? `Último fallo: ${flow.lastError}`
+                      : flow.avoided > 0
+                        ? `${pluralize(flow.avoided, "caso resuelto", "casos resueltos")} en la orientación previa, sin radicar.`
+                        : null
+                  }
                 />
               ))
             )}
@@ -829,6 +835,13 @@ export const ChatbotConsole = () => {
                 footnote={`Aproximación por longitud de texto en ${pluralize(metrics.tokens.estimatedCalls, "llamada", "llamadas")} sin usageMetadata. No usar para facturación.`}
               />
             )}
+
+            <DetailRow
+              label="Consultas fuera del alcance municipal"
+              value={metrics.ai.offTopicBlocked}
+              tone={metrics.ai.offTopicBlocked > 0 ? "ok" : "idle"}
+              footnote="Mensajes ajenos a la Alcaldía que el filtro previo respondió sin llamar a la IA: no consumieron tokens."
+            />
 
             {metrics.ai.fallbackReplies > 0 && (
               <DetailRow

@@ -66,8 +66,6 @@ export const toDataTurn = (ctx) => {
     for (const link of ctx.relevantLinks) {
       lines.push(`  - ${link.title} => ${link.url}`);
     }
-  } else if (ctx.fallbackSearchUrl) {
-    lines.push(`url_buscador_del_portal: ${ctx.fallbackSearchUrl}`);
   }
 
   const text = `${HARDENING_PREAMBLE}\n\n${OPEN_MARKER}\n${lines.join("\n")}\n${CLOSE_MARKER}`;

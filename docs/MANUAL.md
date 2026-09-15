@@ -35,11 +35,86 @@ está en la sección 9.
 ### Funcionalidades
 
 - Conversación libre con IA (Google Gemini) y catálogo local de preguntas frecuentes
+- Filtro de alcance temático previo a la IA, para no pagar tokens por consultas ajenas al municipio
 - Consulta y generación de factura del Impuesto Predial (vía RPA)
-- Radicación y consulta de PQRSD (vía RPA)
+- Radicación y consulta de PQRSD (vía RPA), con orientación previa para evitar radicaciones innecesarias
 - Consulta de Sisbén (actualmente simulada)
 - Registro de conversaciones como evidencia de atención — ver `REGISTRO_Y_IDENTIDAD.md`
 - Identificación del ciudadano configurable por tenant
+
+### Atención previa a la radicación de PQRSD
+
+Antes de abrir el formulario de radicación, el chatbot pregunta al ciudadano cuál es su
+duda, inquietud o novedad, responde con la información disponible (catálogo de FAQ e IA)
+y solo continúa con la PQRSD si el ciudadano indica que su necesidad persiste. El objetivo
+es que la PQRSD quede reservada para lo que de verdad exige gestión formal del área
+competente, y no para consultas informativas que se resuelven en el momento.
+
+Secuencia:
+
+```
+"Radicar PQRSD"
+  └─▶ "¿cuál es tu duda, inquietud o novedad?"        (etapa awaiting_query)
+        └─▶ orientación con FAQ + IA
+              └─▶ "¿quedó resuelta tu solicitud?"     (etapa awaiting_decision)
+                    ├─ Sí   ─▶ cierre, sin radicar    (métrica flow_avoided)
+                    └─ No   ─▶ "Si tu solicitud aún no ha sido resuelta, podemos
+                                continuar con la radicación…" + formulario
+```
+
+Detalles de implementación:
+
+- Máquina de estados en `src/hooks/usePqrsdFlow.js`; la interpretación de la respuesta
+  (`resolved` / `unresolved` / `unclear`) es una función pura en
+  `src/domain/pqrsd/preGuidance.js`.
+- `ChatContext` consulta la etapa **antes** del enrutamiento de intenciones, tanto en
+  `sendMessage` como en `selectQuickReply`. Sin eso, la etiqueta del botón "No, quiero
+  radicar la PQRSD" contiene la palabra "radicar" y volvería a lanzar el trámite en bucle.
+- Una respuesta ambigua ("mmm y entonces") abre otra ronda de orientación, con un tope de
+  `maxGuidanceRounds` (2 por defecto) para no encadenar llamadas a la IA indefinidamente.
+- Un cierre cortés que empieza por "no" ("no gracias", "eso es todo") se interpreta como
+  resuelto: abrir un expediente que el ciudadano no pidió es peor que cerrar de más.
+- Si la orientación falla (red, cuota), se abre el formulario: nadie se queda sin radicar
+  porque la IA no esté disponible.
+- Los textos son del tenant: `chatbotConfig.json` → `pqrsd.preGuidance`. Con
+  `enabled: false` el botón vuelve a abrir el formulario directamente.
+- El panel de monitoreo muestra los casos resueltos en la orientación previa bajo el
+  trámite "Radicación de PQRSD".
+
+### Filtro de alcance temático
+
+Un mensaje que no guarda relación con el municipio ("¿cuál es el gato más grande del
+mundo?") se responde localmente, sin llamar al proveedor de IA. No es solo una cuestión de
+alcance: cada llamada arrastra el prompt de sistema, el bloque de FAQ y el contexto de
+página, de modo que una consulta ajena cuesta prácticamente lo mismo que una legítima.
+
+La decisión vive en `src/domain/moderation/topicGuard.js` (función pura) y se aplica en
+`ChatContext.sendMessage`, después del enrutamiento de trámites y antes de `ask()`.
+
+Política, en orden de evaluación:
+
+1. **Señal municipal** — léxico de la administración municipal (comparación difusa,
+   tolera erratas), palabra clave de una ruta de trámite, o coincidencia con el catálogo
+   de FAQ → **pasa**. Se evalúa primero para que un término vetado dentro de una consulta
+   legítima ("impuesto de un negocio de recetas") no la tumbe.
+2. **Tema vetado** — lista corta de temas inequívocamente ajenos (deportes,
+   entretenimiento, recetas, programación, traducciones), comparación exacta → **bloquea**.
+   Va antes de cortesía y seguimiento para que un "¿y el fútbol?" no se cuele como
+   continuación de una conversación válida.
+3. **Cortesía** — saludos, agradecimientos, preguntas sobre el propio asistente → **pasa**.
+4. **Seguimiento corto** — hasta 5 palabras con una intención activa o conversación previa
+   ("¿y cuánto cuesta?") → **pasa**. Sin esto, cualquier repregunta quedaría bloqueada.
+5. Sin ninguna señal → **bloquea**.
+
+El mensaje de rechazo explica el alcance y ofrece las opciones rápidas, para que un bloqueo
+equivocado no deje al ciudadano sin salida. El léxico se amplía por tenant con
+`topicGuard.allowKeywords` y `topicGuard.blockKeywords`; `topicGuard.enabled: false` lo
+desactiva por completo.
+
+El prompt de sistema refuerza la misma regla (sección "ALCANCE TEMÁTICO"), de modo que lo
+que pase el filtro tampoco se salga del municipio.
+
+El panel de monitoreo cuenta estas consultas bajo "Consultas fuera del alcance municipal".
 
 ---
 

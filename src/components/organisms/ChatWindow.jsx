@@ -4,6 +4,9 @@ import { ChatBubble } from "../molecules/ChatBubble";
 import { QuickReplies } from "../molecules/QuickReplies";
 import { StatusDot } from "../atoms/StatusDot";
 import { Send, X, MessageSquare, RefreshCw, Sun, Moon } from "lucide-react";
+// Se importa como módulo para que Vite resuelva la URL. Una ruta absoluta (`/logo.svg`)
+// se resolvería contra el portal anfitrión, no contra el origen del widget.
+import floriaLogo from "../../assets/floria-logo.svg";
 
 export const ChatWindow = () => {
   const {
@@ -110,14 +113,22 @@ export const ChatWindow = () => {
               width: "42px",
               height: "42px",
               borderRadius: "50%",
-              backgroundColor: "rgba(255, 255, 255, 0.2)",
+              // Fondo claro: el logo es multicolor y sobre la cabecera verde perdía contraste.
+              backgroundColor: "rgba(255, 255, 255, 0.95)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "1px solid rgba(255, 255, 255, 0.3)"
+              border: "1px solid rgba(255, 255, 255, 0.5)",
+              overflow: "hidden"
             }}
           >
-            <span style={{ fontSize: "1.3rem" }}>🌲</span>
+            <img
+              src={floriaLogo}
+              alt="FlorIA"
+              width="34"
+              height="28"
+              style={{ display: "block" }}
+            />
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
