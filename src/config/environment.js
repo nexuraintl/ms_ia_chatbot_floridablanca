@@ -6,10 +6,24 @@
  * bundle. No convertirlo en un bucle ni en un helper parametrizado.
  *
  * Nunca leer aquí `VITE_GEMINI_API_KEY`. Ver SECURITY.md (H-01).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * LOS RPA YA NO SE LLAMAN DESDE EL NAVEGADOR
+ *
+ * Los dos microservicios exigen un identity token de Google, y el navegador no puede
+ * acuñar uno sin una llave de service account en el cliente. Así que el widget habla con
+ * el backend de este mismo chatbot (`/rpa/factura`, `/rpa/pqrsd`), que pone el token.
+ *
+ * De ahí que aquí ya no haya URLs de microservicio, solo el origen del backend propio.
+ * Ver docs/INTEGRACION_RPA.md.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
-/** Valor por defecto para desarrollo local. */
-const LOCAL_DEFAULT = "http://localhost:8000";
+/** Prefijos con los que el backend del chatbot publica cada RPA. */
+export const RPA_MOUNTS = Object.freeze({
+  factura: "/rpa/factura",
+  pqrsd: "/rpa/pqrsd"
+});
 
 /**
  * Envuelve una lectura estática para que no falle fuera de un bundle de Vite
@@ -36,42 +50,31 @@ const isProduction = safeRead(() => import.meta.env.PROD) === "true";
 const normalizeBaseUrl = (url) => String(url || "").replace(/\/+$/, "");
 
 /**
- * Valida una URL base de microservicio y avisa de los problemas detectables.
+ * Valida el origen del backend propio y avisa de los problemas detectables.
+ *
+ * Vacío es el caso normal y correcto: significa "el mismo origen que sirve el widget", que
+ * es lo que ocurre cuando el chatbot se abre desde su propio Cloud Run. Solo hace falta
+ * definirlo cuando el widget va incrustado en un portal de otro dominio.
  *
  * @param {string} value
- * @param {string} varName
- * @returns {string} La URL normalizada (se devuelve incluso si hay avisos, para no
- *          romper el desarrollo local).
+ * @returns {string} El origen normalizado, o "" para mismo origen.
  */
-const resolveServiceUrl = (value, varName) => {
-  const url = normalizeBaseUrl(value || LOCAL_DEFAULT);
+const resolveBackendOrigin = (value) => {
+  const url = normalizeBaseUrl(value);
+  if (!url) return "";
 
-  if (!value) {
-    const msg =
-      `[config] ${varName} no está definida; se usará ${LOCAL_DEFAULT}.`;
-    if (isProduction) {
-      console.error(
-        `❌ ${msg} En un build de producción esto deja los trámites apuntando a la ` +
-        `máquina del propio ciudadano y fallarán todos. Define ${varName} antes de compilar.`
-      );
-    } else {
-      console.info(`ℹ️ ${msg}`);
-    }
-    return url;
-  }
-
-  // Contenido mixto: página https:// llamando a http://
   try {
     const pageProtocol = globalThis.window?.location?.protocol;
+    // Contenido mixto: página https:// llamando a http://
     if (pageProtocol === "https:" && url.startsWith("http://")) {
       console.error(
-        `❌ [config] ${varName} usa http:// (${url}) pero la página se sirve por https://. ` +
-        `El navegador bloqueará estas peticiones por contenido mixto. Usa https://.`
+        `[config] VITE_BACKEND_ORIGIN usa http:// (${url}) pero la página se sirve por https://. ` +
+        "El navegador bloqueará estas peticiones por contenido mixto. Usa https://."
       );
     }
     if (pageProtocol === "http:" && isProduction) {
       console.warn(
-        "⚠️ [config] La página se sirve por http://. Los datos personales del ciudadano " +
+        "[config] La página se sirve por http://. Los datos personales del ciudadano " +
         "(documento, teléfono, correo) viajarían sin cifrar. Habilita HTTPS."
       );
     }
@@ -81,13 +84,42 @@ const resolveServiceUrl = (value, varName) => {
 
   if (isProduction && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(url)) {
     console.error(
-      `❌ [config] ${varName} apunta a ${url} en un build de producción. ` +
+      `[config] VITE_BACKEND_ORIGIN apunta a ${url} en un build de producción. ` +
       "Ningún ciudadano tiene ese servicio en su máquina."
     );
   }
 
   return url;
 };
+
+/**
+ * Avisa si sigue definida una variable de la etapa anterior. Ya no se lee: apuntar el
+ * navegador directo a un Cloud Run con IAM devuelve 403 en todas las llamadas, y el aviso
+ * es más barato que descubrirlo en un trámite real.
+ */
+const warnAboutRetiredVars = () => {
+  const retired = [
+    ["VITE_RPA_PREDIAL_API_URL", safeRead(() => import.meta.env.VITE_RPA_PREDIAL_API_URL)],
+    ["VITE_RPA_PQRSD_API_URL", safeRead(() => import.meta.env.VITE_RPA_PQRSD_API_URL)]
+  ];
+  for (const [name, value] of retired) {
+    if (value) {
+      console.warn(
+        `[config] ${name} ya no se usa y se ignora. Los RPA exigen IAM, así que el widget ` +
+        "los llama a través del backend del chatbot. Configura RPA_FACTURA_URL y " +
+        "RPA_PQRSD_URL como variables de RUNTIME del contenedor, no como VITE_*."
+      );
+    }
+  }
+};
+
+warnAboutRetiredVars();
+
+/** Origen del backend propio del chatbot. Vacío = mismo origen que sirve el widget. */
+const backendOrigin = resolveBackendOrigin(
+  // Acceso estático obligatorio: ver la nota de cabecera.
+  safeRead(() => import.meta.env.VITE_BACKEND_ORIGIN)
+);
 
 /**
  * Ambientes válidos según GOB-GCP-STD-01.
@@ -132,18 +164,20 @@ export const environment = Object.freeze({
   /** Proyecto GCP, para correlacionar trazas en Cloud Logging. */
   googleCloudProject: safeRead(() => import.meta.env.VITE_GOOGLE_CLOUD_PROJECT),
 
-  /** URL base del microservicio RPA de Impuesto Predial. */
-  predialApiUrl: resolveServiceUrl(
-    // Acceso estático obligatorio: ver la nota de cabecera.
-    safeRead(() => import.meta.env.VITE_RPA_PREDIAL_API_URL),
-    "VITE_RPA_PREDIAL_API_URL"
-  ),
+  /**
+   * Origen del backend propio del chatbot. Vacío = mismo origen que sirve el widget.
+   * Solo hace falta definirlo cuando el widget va incrustado en un portal de otro dominio.
+   */
+  backendOrigin,
 
-  /** URL base del microservicio RPA de PQRSD. */
-  pqrsdApiUrl: resolveServiceUrl(
-    safeRead(() => import.meta.env.VITE_RPA_PQRSD_API_URL),
-    "VITE_RPA_PQRSD_API_URL"
-  ),
+  /**
+   * Base del RPA de Impuesto Predial, vista desde el navegador: es el proxy del propio
+   * backend, no el Cloud Run. El token lo pone el servidor.
+   */
+  predialApiUrl: `${backendOrigin}${RPA_MOUNTS.factura}`,
+
+  /** Base del RPA de PQRSD, vista desde el navegador. Mismo motivo. */
+  pqrsdApiUrl: `${backendOrigin}${RPA_MOUNTS.pqrsd}`,
 
   /**
    * Origen del proxy de IA del backend.
@@ -152,12 +186,26 @@ export const environment = Object.freeze({
    * clave, que es justamente lo que este proxy existe para no publicar—. Vacío significa
    * "mismo origen que el widget", que es el caso cuando lo sirve el propio Cloud Run.
    *
-   * Definirla cambia el proveedor de IA: con proxy, la clave de Gemini vive en el servidor
-   * y el gasto se controla ahí (límite por IP, cuota por sesión y techo diario de tokens).
-   * Sin ella, el widget vuelve al modo de desarrollo, en el que la clave la escribe el
-   * operador en la consola y queda visible en su navegador.
+   * Por defecto es el mismo origen del backend: el proxy de IA y el de los RPA viven en el
+   * mismo servicio. `VITE_AI_PROXY_URL` sigue admitiéndose para separarlos.
    */
-  aiProxyUrl: normalizeBaseUrl(safeRead(() => import.meta.env.VITE_AI_PROXY_URL)),
+  aiProxyUrl: normalizeBaseUrl(safeRead(() => import.meta.env.VITE_AI_PROXY_URL)) || backendOrigin,
+
+  /**
+   * ¿Hay un backend con el proxy de IA montado?
+   *
+   * No basta con mirar `aiProxyUrl`: en el despliegue normal el widget lo sirve su propio
+   * backend, así que el proxy está en el MISMO origen y su URL base es la cadena vacía. Sin
+   * esta bandera, ese caso —el de producción— caía en el modo de desarrollo y volvía a
+   * pedir la clave de Gemini en el navegador. Ver SECURITY.md (H-01).
+   *
+   * Por defecto activo en un build de producción, que siempre lo sirve este servidor.
+   * `VITE_AI_PROXY_ENABLED=false` lo desactiva para trabajar con la clave del navegador.
+   */
+  aiProxyEnabled:
+    safeRead(() => import.meta.env.VITE_AI_PROXY_ENABLED).toLowerCase() === "false"
+      ? false
+      : safeRead(() => import.meta.env.VITE_AI_PROXY_ENABLED).toLowerCase() === "true" || isProduction,
 
   /**
    * Activa el registro de consumo de tokens en el servidor de desarrollo.
@@ -189,15 +237,21 @@ export const environment = Object.freeze({
  * Hosts de los backends propios, derivados de la configuración.
  * Se usan en `urlPolicy` para reconocer los recursos que devuelven los RPA.
  *
+ * Los RPA ya no aportan host propio: se llaman por el backend del chatbot. El host que sí
+ * hay que reconocer es el del propio backend, porque de ahí sale el PDF de la factura.
+ *
  * @returns {string[]}
  */
 export const getBackendHosts = () => {
   const hosts = new Set();
-  for (const url of [environment.predialApiUrl, environment.pqrsdApiUrl]) {
+  const candidates = [environment.backendOrigin, globalThis.window?.location?.origin];
+
+  for (const url of candidates) {
+    if (!url) continue;
     try {
       hosts.add(new URL(url).hostname);
     } catch {
-      /* URL inválida: ya se avisó arriba */
+      /* origen inválido: ya se avisó arriba */
     }
   }
   return Array.from(hosts);

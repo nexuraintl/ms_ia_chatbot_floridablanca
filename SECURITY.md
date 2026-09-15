@@ -19,7 +19,7 @@ Ver H-01.
 
 | ID | Severidad | Hallazgo | Estado |
 |----|-----------|----------|--------|
-| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Cerrado al configurar el proxy del backend |
+| H-01 | **Crítico** | Clave de Gemini expuesta en el navegador | Cerrado: en un build de producción el widget usa siempre el proxy del backend |
 | H-02 | **Alto** | Inyección de prompt vía DOM de la página anfitriona | Corregido (defensa en 5 capas) |
 | H-03 | **Alto** | Sin lista blanca de destinos: phishing con apariencia oficial | Corregido |
 | H-04 | **Alto** | Datos personales persistidos en claro en `token_usage.log` | Corregido |
@@ -121,6 +121,21 @@ completa, así que la estrategia es acumular barreras y —sobre todo— cerrar 
 4. **Topes de longitud** en título, descripción, encabezados y enlaces, para que un
    anfitrión hostil no pueda empujar las instrucciones reales fuera de la ventana.
 5. **Control de salida** (el decisivo): ver H-03.
+
+**Sexta capa, añadida con la base de conocimiento.** Las cuatro primeras capas sacaban el
+contenido del DOM de `systemInstruction`, pero la instrucción de sistema **la seguía
+armando el navegador**: el proxy recibía el campo y lo reenviaba recortado a 8.000
+caracteres. Un cliente modificado podía hacer `POST /api/ai/chat` con las reglas de
+comportamiento y el bloque de «información oficial de la Alcaldía» que quisiera.
+
+Ahora, cuando hay corpus cargado, `server/aiProxy.js` **descarta la instrucción del cliente
+y arma la suya**: reglas base, reglas de fundamentación y los fragmentos del Estatuto que
+recupera el servidor. El `systemInstruction` que llegue en el cuerpo pasa a ser un dato
+ignorado. La consulta con la que se recupera se toma del último mensaje del ciudadano y
+**se salta explícitamente el turno de datos de la página**, para que el DOM del portal
+anfitrión no pueda elegir qué artículos del Estatuto se le entregan al modelo.
+
+Verificado en `tests/run-knowledge-tests.mjs`, sección 6.
 
 ---
 
@@ -240,15 +255,23 @@ sustituye por un objeto estructurado, lo que elimina toda esa clase de fallo.
 4. **Rellenar `security.allowedLinkHosts`** en `src/config/chatbotConfig.json` con los
    dominios reales de la Alcaldía. Los valores actuales son una base razonable, no una
    lista verificada.
-5. **Definir `VITE_RPA_*_API_URL` con `https://`** antes de compilar para producción.
+5. **Conceder `roles/run.invoker` a la service account del chatbot sobre los dos RPA**, y
+   definir `RPA_FACTURA_URL` y `RPA_PQRSD_URL` como variables de RUNTIME con la URL exacta y
+   sin barra final. Los dos servicios exigen un identity token de Google, así que el
+   navegador ya no los llama: lo hace el backend a través de `/rpa/factura` y `/rpa/pqrsd`.
+   Sin el rol, el token es válido y la respuesta es 403; con la barra final sobrante, 401.
+   La sonda de arranque (`RPA_STARTUP_PROBE=strict`) detecta las dos cosas antes de que un
+   ciudadano pida su factura. Ver `docs/INTEGRACION_RPA.md`.
 6. **Añadir una Content-Security-Policy.** `index.html` no tiene ninguna, y el widget se
    embebe en portales de terceros. Requiere decidirla con quien opere el portal, por eso
    no se incluyó aquí.
 7. **Revisar `services/apiMock.js`**: contiene datos de ciudadanos ficticios y carga
    imágenes desde `images.unsplash.com`. En un portal de gobierno eso filtra la IP del
    visitante a un tercero y rompe si no hay internet.
-8. **Valorar un almacén compartido para la cuota diaria.** Los contadores del proxy viven
-   en la memoria de cada instancia: con `max-instances=10` el tope real puede llegar a ~10x
-   el configurado, y un escalado a cero los borra. El límite por IP y el techo de tokens
-   siguen actuando, pero la cuota por sesión es aproximada. `server/rateLimit.js` deja el
-   almacén detrás de una interfaz mínima para poder cambiarlo sin tocar la lógica.
+8. **Valorar un almacén compartido para la cuota diaria y para el control de admisión.**
+   Los contadores viven en la memoria de cada instancia. El despliegue quedó en
+   `max-instances=1` justamente por eso —el techo de 2 trámites simultáneos del RPA de
+   factura solo es real con una instancia—, así que hoy los topes se cumplen; el día que haya
+   que escalar, el tope efectivo se multiplica por el número de instancias y un escalado a
+   cero los borra. `server/rateLimit.js` y `server/rpaAdmission.js` dejan el almacén detrás
+   de una interfaz mínima para poder cambiarlo sin tocar la lógica.

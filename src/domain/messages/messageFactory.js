@@ -23,6 +23,8 @@
  * @property {Object} [form]
  * @property {Object} [attachment]
  * @property {string} [customComponent]
+ * @property {boolean} [interfaceOnly]  Mensaje de interfaz (saludo, aviso, oferta de más
+ *   ayuda). Se muestra al ciudadano pero NO se envía como turno al proveedor de IA.
  */
 
 /**

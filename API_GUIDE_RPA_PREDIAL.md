@@ -1,5 +1,16 @@
 # Guía de integración — API RPA Impuesto Predial
 
+> ⚠️ **Las rutas de esta guía están desactualizadas.** El RPA migró de `/api/...` a
+> `/v1/...`. Verificado el 2026-09-02 contra el `openapi.json` del servicio en ejecución,
+> que declara: `GET /v1/clientes`, `GET|POST /v1/prewarm`, `POST /v1/generar_factura`,
+> `POST /v1/seleccionar_predio`, `GET /v1/jobs/{job_id}`, `GET /v1/jobs/{job_id}/stream`,
+> más `GET /health` y `GET /version`. `imprimir_factura` ya no aparece.
+>
+> El chatbot ya está corregido (`src/services/rpaPredialService.js` y la tabla `ROUTES` de
+> `server/rpaProxy.js`). Al leer lo que sigue, sustituya mentalmente `/api/` por `/v1/`.
+> Sigue sin confirmar la ruta de descarga del PDF (`/facturas/{filename}`): no la declara
+> el `openapi.json` y hace falta una factura real para comprobarla.
+
 Para agentes / desarrolladores que van a consumir este servicio desde un chatbot o una integración
 externa. Todo lo de acá está verificado contra el código (`app.py`, `rpa_bot.py`, `clients_config.py`).
 

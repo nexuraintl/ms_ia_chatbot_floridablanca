@@ -12,10 +12,6 @@
  *   · Log `request_completed` con método, path, status, duration_ms y correlation_id
  *   · Respeta `$PORT` de Cloud Run
  *
- * Además de servir el bundle, actúa de intermediario para las dependencias que exigen una
- * credencial que el navegador no puede tener: `aiProxy` para Gemini y `rpaProxy` para los
- * RPA. Ese es el motivo de que el servicio tenga rutas de API y no solo archivos.
- *
  * Sin dependencias de terceros a propósito: usa solo módulos nativos de Node. Un
  * servidor de archivos estáticos no justifica arrastrar Express y su árbol de
  * dependencias a una imagen que sirve contenido público.
@@ -27,10 +23,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { withCorrelation } from "./correlation.js";
-import { setupLogging, info, warning, error } from "./logging.js";
-import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
-import { createRpaProxyHandler, createRpaProxyConfig, RPA_PATH_PREFIX } from "./rpaProxy.js";
+import { setupLogging, info, warning, error, critical } from "./logging.js";
+import {
+  createAiProxyHandler,
+  createProxyConfig,
+  AI_CHAT_PATH,
+  isOriginAllowed
+} from "./aiProxy.js";
 import { describeIpResolution } from "./clientIdentity.js";
+import { createIdentityTokenProvider, warnIfModeLooksWrong } from "./googleIdentity.js";
+import { createRpaProxyConfig, createRpaProxyHandler, matchMount } from "./rpaProxy.js";
+import { resolveTargets } from "./rpaTargets.js";
+import { PROBE_POLICIES, describeDependencies, runStartupChecks } from "./startupChecks.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -42,6 +46,59 @@ const ENVIRONMENT = process.env.ENVIRONMENT || "local";
 const LOG_LEVEL = process.env.LOG_LEVEL || "INFO";
 const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "";
 const STATIC_ROOT = path.resolve(__dirname, "..", "dist");
+
+/**
+ * Prefijo bajo el que un proxy de delante publica este servicio, normalizado con barra
+ * inicial y sin barra final. Cadena vacía = sin prefijo, que es el comportamiento de
+ * siempre y el de QAM mientras el ingress sea `all`.
+ *
+ * Hace falta cuando el widget se sirve detrás del API Gateway o del balanceador con una
+ * ruta por delante (`/apig/qa/chatbot/floridablanca`). Con `APPEND_PATH_TO_ADDRESS` el
+ * gateway reenvía la ruta COMPLETA, así que el servidor recibe
+ * `/apig/qa/chatbot/floridablanca/health` y no `/health`: sin recortarlo, `/health` y
+ * `/version` caen al servidor de archivos, el proxy de IA devuelve 405, los montajes de
+ * los RPA no coinciden y los assets acaban en el fallback de SPA.
+ *
+ * NO tiene que coincidir con el `base` del bundle (`VITE_BASE_PATH`). Son dos prefijos
+ * distintos y en QAM difieren: el navegador pide
+ * `/apig/qa/chatbot/floridablanca/...` y el balanceador recorta `/apig/qa` antes de llegar
+ * aquí, así que este servidor solo ve `/chatbot/floridablanca/...`.
+ *
+ * `VITE_BASE_PATH` es el prefijo PÚBLICO, el que se incrusta en el bundle porque es el que
+ * el navegador tiene que pedir. `BASE_PATH` es el que llega. Coinciden solo cuando nada
+ * recorta en medio.
+ */
+const BASE_PATH = (() => {
+  const raw = String(process.env.BASE_PATH || "").trim();
+  if (raw === "" || raw === "/") return "";
+  return `/${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+})();
+
+/**
+ * Quita el prefijo del comienzo de una URL, dejando la ruta que las tablas de rutas de
+ * este servidor esperan.
+ *
+ * Una ruta que NO empieza por el prefijo se devuelve intacta, a propósito: las sondas de
+ * salud de Cloud Run y del balanceador llegan a `/health` sin prefijo, y rechazarlas
+ * dejaría el servicio marcado como caído estando sano.
+ *
+ * La comparación exige frontera de segmento. Sin eso, un prefijo que solo coincide como
+ * texto —`/chatbot/floridablanca-otro`— se recortaría y serviría contenido de este
+ * servicio como si fuera de otro.
+ *
+ * @param {string} rawUrl  URL completa, con query.
+ * @param {string} [basePath]
+ * @returns {string}
+ */
+export const stripBasePath = (rawUrl, basePath = BASE_PATH) => {
+  const url = rawUrl || "/";
+  if (basePath === "") return url;
+  if (url === basePath) return "/";
+  if (url.startsWith(`${basePath}/`) || url.startsWith(`${basePath}?`)) {
+    return url.slice(basePath.length) || "/";
+  }
+  return url;
+};
 
 // El logging se configura antes de atender cualquier petición.
 setupLogging({
@@ -59,13 +116,29 @@ setupLogging({
 const aiProxyConfig = createProxyConfig();
 const aiProxy = createAiProxyHandler({ config: aiProxyConfig });
 
-/**
- * Proxy de los RPA. Firma el `google_sa_jwt` que el navegador no puede firmar, así que
- * también mantiene su estado en el proceso: el limitador por IP es lo único que separa al
- * público del RPA una vez que el gateway deja de ver al ciudadano.
- */
+// ── Integración con los microservicios RPA ────────────────────────────────────
+// El navegador no puede acuñar un identity token de Google, así que todo el tráfico hacia
+// los RPA pasa por aquí: el token se pone en el servidor, por servicio.
+const rpaTargets = resolveTargets();
+const identity = createIdentityTokenProvider();
 const rpaProxyConfig = createRpaProxyConfig();
-const rpaProxy = createRpaProxyHandler({ config: rpaProxyConfig });
+const rpaProxy = createRpaProxyHandler({
+  config: rpaProxyConfig,
+  services: rpaTargets.services,
+  identity
+});
+
+/**
+ * Política de la sonda de arranque. En un ambiente desplegado, un fallo de configuración debe
+ * cortar el arranque; en local se avisa y se sigue, porque lo normal es no tener los dos RPA
+ * levantados mientras se trabaja en el widget.
+ */
+const STARTUP_PROBE_POLICY =
+  process.env.RPA_STARTUP_PROBE ||
+  (ENVIRONMENT.toLowerCase() === "local" ? PROBE_POLICIES.OFF : PROBE_POLICIES.STRICT);
+
+/** Resultado de las sondas, para exponerlo en /health. */
+let rpaDependencies = {};
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -132,6 +205,33 @@ const SECURITY_HEADERS = {
   "Cross-Origin-Resource-Policy": "cross-origin"
 };
 
+/**
+ * Cabeceras CORS del contenido estático.
+ *
+ * Hacen falta porque el widget se carga como MÓDULO desde portales de otro dominio
+ * (`<script type="module" src="https://…">`), y un módulo ES se pide SIEMPRE en modo CORS:
+ * sin `Access-Control-Allow-Origin` el navegador descarta la respuesta aunque llegue con
+ * 200. Un `<script>` clásico no lo exige, y esa diferencia es lo que hace el caso fácil de
+ * pasar por alto. La firma en la consola es `net::ERR_FAILED 200 (OK)`.
+ *
+ * El CSS del widget viaja por la misma vía, así que le aplica igual.
+ *
+ * Se refleja el origen concreto contra `ALLOWED_ORIGINS`, nunca `*`. No es por proteger los
+ * archivos —son públicos y cualquiera los descarga con curl— sino porque un portal no
+ * autorizado que lograra cargar el widget consumiría la cuota de IA y la capacidad de los
+ * RPA a nombre de la Alcaldía, y encima con los proxies rechazándole cada llamada: un
+ * widget a medias en vez de un fallo claro al cargar.
+ *
+ * @param {string|undefined} origin
+ * @param {string|undefined} host
+ * @returns {Record<string, string>}
+ */
+export const staticCorsHeaders = (origin, host, config = aiProxyConfig) => {
+  if (!origin) return {};
+  if (!isOriginAllowed(origin, host, config)) return {};
+  return { "Access-Control-Allow-Origin": origin, Vary: "Origin" };
+};
+
 const sendJson = (res, status, payload) => {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
@@ -149,7 +249,7 @@ const sendJson = (res, status, payload) => {
  * @param {string} filePath
  * @param {(status: number) => void} done
  */
-const sendFile = (res, filePath, done) => {
+const sendFile = (res, filePath, done, cors = {}) => {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       done(404);
@@ -167,7 +267,8 @@ const sendFile = (res, filePath, done) => {
       "Content-Type": MIME_TYPES[ext] || "application/octet-stream",
       "Content-Length": data.length,
       "Cache-Control": isHashedAsset ? "public, max-age=31536000, immutable" : "no-cache",
-      ...SECURITY_HEADERS
+      ...SECURITY_HEADERS,
+      ...cors
     });
     res.end(data);
     done(200);
@@ -181,6 +282,12 @@ const sendFile = (res, filePath, done) => {
  */
 const handleRequest = (req, res) => {
   const startedAt = process.hrtime.bigint();
+
+  // Se reescribe `req.url` en vez de pasar la ruta recortada por parámetro: así todo lo
+  // que va detrás —los dos proxies incluidos, que leen `req.url` para su propio enrutado
+  // y su query— funciona sin saber que existe un prefijo.
+  const receivedPath = (req.url || "/").split("?")[0];
+  req.url = stripBasePath(req.url);
   const urlPath = (req.url || "/").split("?")[0];
 
   /** Registra el cierre de la petición, como exige el estándar. */
@@ -188,7 +295,10 @@ const handleRequest = (req, res) => {
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     info("request_completed", {
       method: req.method,
-      path: urlPath,
+      // La ruta tal como llegó, que es la que se puede cruzar con los logs del gateway y
+      // del balanceador. `route` es la que resolvió este servidor.
+      path: receivedPath,
+      ...(receivedPath === urlPath ? {} : { route: urlPath }),
       status,
       duration_ms: Math.round(durationMs * 100) / 100
     });
@@ -214,20 +324,17 @@ const handleRequest = (req, res) => {
   }
 
   // ── Proxy de los RPA ──────────────────────────────────────────────────────
-  // Se compara por PREFIJO y no por ruta exacta, para que una ruta del prefijo que aún no
-  // está implementada devuelva un 404 en JSON. Si cayera al fallback de más abajo
-  // devolvería `index.html` con estado 200, y el frontend recibiría HTML donde espera
-  // JSON: un fallo silencioso, que es el más difícil de diagnosticar.
-  if (urlPath.startsWith(RPA_PATH_PREFIX)) {
+  // También antes de la comprobación de método: admite POST y OPTIONS.
+  if (matchMount(urlPath)) {
     rpaProxy
       .handle(req, res)
       .then(complete)
       .catch((err) => {
-        error("rpa_proxy_unhandled", { path: urlPath, error: err?.message });
+        error("rpa_proxy_unhandled", { error: err?.message });
         if (!res.headersSent) {
-          sendJson(res, 503, { error: "RPA unavailable", reason: "rpa_unavailable" });
+          sendJson(res, 502, { error: "Bad Gateway", reason: "rpa_upstream_unavailable" });
         }
-        complete(503);
+        complete(502);
       });
     return;
   }
@@ -240,7 +347,9 @@ const handleRequest = (req, res) => {
 
   // ── Endpoints de infraestructura (sin prefijo de versión, sin autenticación) ──
   if (urlPath === "/health") {
-    sendJson(res, 200, { status: "UP" });
+    // `status` no depende de los RPA: es la sonda con la que Cloud Run decide si mata la
+    // instancia, y matarla no arregla una dependencia caída. El detalle va aparte.
+    sendJson(res, 200, { status: "UP", dependencies: rpaDependencies });
     complete(200);
     return;
   }
@@ -264,15 +373,19 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  // El widget se carga como módulo desde portales de otro dominio, y un módulo ES exige
+  // CORS. Se resuelve una vez por petición, antes de leer el archivo.
+  const cors = staticCorsHeaders(req.headers.origin, req.headers.host);
+
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
       // El widget es una aplicación de una sola página: cualquier ruta desconocida
       // devuelve index.html para que el enrutado del cliente pueda resolverla.
       const fallback = path.join(STATIC_ROOT, "index.html");
-      sendFile(res, fallback, complete);
+      sendFile(res, fallback, complete, cors);
       return;
     }
-    sendFile(res, filePath, complete);
+    sendFile(res, filePath, complete, cors);
   });
 };
 
@@ -319,25 +432,6 @@ server.listen(PORT, "0.0.0.0", () => {
     ...describeIpResolution(aiProxyConfig.trustedProxyHops)
   });
 
-  // El proxy de los RPA falla en bloque si `RPA_PREDIAL_API_URL` no está definida, y sin
-  // este log no habría forma de notarlo hasta que un ciudadano intentara un trámite.
-  info("rpa_proxy_configured", {
-    path_prefix: RPA_PATH_PREFIX,
-    upstream_configured: rpaProxyConfig.predialBaseUrl !== "",
-    audience_configured: rpaProxyConfig.predialAudience !== "",
-    rate_limit_per_minute: rpaProxyConfig.ratePerMinute,
-    request_timeout_ms: rpaProxyConfig.requestTimeoutMs,
-    ...rpaProxy.snapshot()
-  });
-
-  if (rpaProxyConfig.predialBaseUrl === "") {
-    warning("rpa_upstream_missing", {
-      note:
-        "RPA_PREDIAL_API_URL no está definida: las rutas de factura responderán " +
-        "rpa_not_configured. El widget sigue sirviéndose con normalidad."
-    });
-  }
-
   if (aiProxyConfig.apiKey === "") {
     warning("ai_key_missing", {
       note:
@@ -345,6 +439,42 @@ server.listen(PORT, "0.0.0.0", () => {
         "atenderá con el banco de preguntas frecuentes."
     });
   }
+
+  // La configuración del RPA se deja registrada antes de sondear: si el arranque se corta,
+  // este log es el que dice con qué valores lo intentó.
+  info("rpa_proxy_configured", {
+    auth_mode: identity.mode,
+    via_gateway: rpaTargets.viaGateway,
+    startup_probe: STARTUP_PROBE_POLICY,
+    max_concurrent_tramites: rpaProxyConfig.maxConcurrentTramites,
+    rate_limit_per_minute: rpaProxyConfig.ratePerMinute,
+    effectful_limit_per_hour: rpaProxyConfig.effectfulPerHour,
+    services: Object.fromEntries(
+      Object.values(rpaTargets.services).map((s) => [s.id, { audience: s.audience, mount: s.mountPrefix }])
+    )
+  });
+  warnIfModeLooksWrong(identity.mode, ENVIRONMENT);
+
+  // Falla al arrancar, no en el primer trámite de un ciudadano.
+  runStartupChecks({
+    services: rpaTargets.services,
+    configErrors: rpaTargets.errors,
+    identity,
+    policy: STARTUP_PROBE_POLICY
+  })
+    .then(({ fatal, results }) => {
+      rpaDependencies = describeDependencies(results);
+      if (fatal && STARTUP_PROBE_POLICY === PROBE_POLICIES.STRICT) {
+        critical("startup_aborted", {
+          note: "Configuración inválida de los RPA. Ver los registros rpa_config_invalid y rpa_probe_fatal."
+        });
+        process.exit(1);
+      }
+    })
+    .catch((err) => {
+      // Un fallo de la propia comprobación no debe dejar el servicio en un estado ambiguo.
+      critical("startup_checks_failed", { error: err?.message });
+    });
 });
 
-export { server, handleRequest, aiProxy, rpaProxy };
+export { server, handleRequest, aiProxy, rpaProxy, identity };

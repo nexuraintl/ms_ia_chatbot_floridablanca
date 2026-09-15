@@ -1,0 +1,327 @@
+{
+ "articulos_detectados": 726,
+ "ultimo_articulo": 726,
+ "numeros_sin_detectar": [],
+ "cabeceras_descartadas": [
+  {
+   "numero": 908,
+   "pagina_pdf": 123,
+   "texto": "ARTICULO 908 DEL ESTATUTO"
+  }
+ ],
+ "avisos_tarifas_ica": [
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4632",
+   "actividad": "Comercio al por mayor de bebidas y tabaco",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 75
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4663",
+   "actividad": "pinturas, productos de vidrio, equipo y materiales de fontanería y calefacción",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 77
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4719",
+   "actividad": "compuesto principalmente por productos diferentes de alimentos (víveres en general), bebidas (alcohólicas y no alcohólicas) y tabaco.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 79
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4723",
+   "actividad": "pescados y productos de mar en establecimientos especializados",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 79
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4723",
+   "actividad": "pescados y productos de mar en establecimientos especializados",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 79
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4724",
+   "actividad": "especializados",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 80
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4729",
+   "actividad": "establecimientos especializados",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 80
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4729",
+   "actividad": "establecimientos especializados",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 80
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4752",
+   "actividad": "en establecimientos especializados",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 81
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4753",
+   "actividad": "pisos en establecimientos especializados.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 81
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4754",
+   "actividad": "doméstico, muebles y equipos de iluminación en establecimientos especializados.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 81
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4754",
+   "actividad": "doméstico, muebles y equipos de iluminación en establecimientos especializados.",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 81
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4754",
+   "actividad": "doméstico, muebles y equipos de iluminación en establecimientos especializados.",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 81
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4759",
+   "actividad": "especializados",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 82
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4762",
+   "actividad": "especializados",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 82
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4762",
+   "actividad": "especializados",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 82
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4772",
+   "actividad": "sucedáneos del cuero en establecimientos especializados.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 83
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4773",
+   "actividad": "artículos de toc:ador en establecimientos especializados",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 83
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4774",
+   "actividad": "especializados",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 83
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "4781",
+   "actividad": "móviles",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 83
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "5630",
+   "actividad": "Expendio de bebidas alcohólic:as para el consumo dentro del establecimiento",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 92
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "611",
+   "actividad": "Actividades de telecomunicaciones alámbricas Actividades de telecomunicaciones alámbricas",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 94
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6130",
+   "actividad": "Actividades de telecomunicación satelital",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 95
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6130",
+   "actividad": "Actividades de telecomunicación satelital",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 95
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6391",
+   "actividad": "Actividades de agencias de noticias",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 96
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6399",
+   "actividad": "Otras actividades de servicio de información n.c.p.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 96
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6399",
+   "actividad": "Otras actividades de servicio de información n.c.p.",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 96
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6810",
+   "actividad": "Actividades inmobiliarias realizadas con bienes propios o arrendados",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 101
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6820",
+   "actividad": "Actividades inmobiliarias realizadas a czmbio de una retribución o por contrata",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 101
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6820",
+   "actividad": "Actividades inmobiliarias realizadas a czmbio de una retribución o por contrata",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 101
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "6920",
+   "actividad": "tributaria",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 102
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "711",
+   "actividad": "Actividades de ingeniería y otras actividades conexas de consultoría técnica",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 103
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "7410",
+   "actividad": "Actividades especializadas de diseño",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 104
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "7420",
+   "actividad": "Actividades de fotografía",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 104
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "7420",
+   "actividad": "Actividades de fotografía",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 104
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "7820",
+   "actividad": "Actividades de empresas de servicios temporales.",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 106
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "8219",
+   "actividad": "apoyo de oficina",
+   "rango": "de 0 a 1.681 UVT",
+   "pagina_pdf": 109
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "8220",
+   "actividad": "Actividades de centros de llamadas (Call center)",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 109
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "9004",
+   "actividad": "Creación audiovisual",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 116
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "9006",
+   "actividad": "Actividades teatrales",
+   "rango": "de 1.681 a 4.201 UVT",
+   "pagina_pdf": 116
+  },
+  {
+   "tipo": "tarifa_ausente",
+   "codigo": "9102",
+   "actividad": "Ingresos Brutos anuales periodo gravable de I ,681 UVT a 4,201 UVT",
+   "rango": "más de 4.201 UVT",
+   "pagina_pdf": 117
+  }
+ ],
+ "correcciones_tarifas_ica": [
+  {
+   "codigo": "4761",
+   "actividad": "y escritorio, en establecimientos especializados",
+   "rango": "de 1.681 a 4.201 UVT",
+   "leido": "45",
+   "corregido": "4,5",
+   "pagina_pdf": 82
+  },
+  {
+   "codigo": "4775",
+   "actividad": "Comercio al por menor de artículos de segunda mano",
+   "rango": "de 1.681 a 4.201 UVT",
+   "leido": "45",
+   "corregido": "4,5",
+   "pagina_pdf": 83
+  },
+  {
+   "codigo": "6190",
+   "actividad": "Otras actividades de telecomunicaciones",
+   "rango": "de 1.681 a 4.201 UVT",
+   "leido": "72",
+   "corregido": "7,2",
+   "pagina_pdf": 95
+  }
+ ]
+}

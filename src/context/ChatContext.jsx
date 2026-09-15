@@ -32,9 +32,20 @@ import faqCatalog from "../config/NewFaqConfig.json";
 import { getBackendHosts } from "../config/environment.js";
 import { configureUrlPolicy } from "../domain/security/urlPolicy.js";
 import { configureCorrelation } from "../domain/observability/correlation.js";
-import { resolveIntent, mentionsService } from "../domain/intents/intentResolver.js";
+import {
+  resolveIntent,
+  mentionsService,
+  isFlowConfirmation,
+  CONFIRMATION_KEYWORDS
+} from "../domain/intents/intentResolver.js";
 import { evaluateTopic, resolveTopicGuardSettings } from "../domain/moderation/topicGuard.js";
-import { createFlowRegistry, runFlow, getFlowLabel } from "../application/flows/flowRegistry.js";
+import {
+  createFlowRegistry,
+  runFlow,
+  getFlowLabel,
+  getFlowConfirmWord,
+  flowOpensDirectly
+} from "../application/flows/flowRegistry.js";
 import { sessionMetrics, METRIC_EVENTS } from "../domain/observability/sessionMetrics.js";
 
 import { useMessageStore, buildGreetingMessages } from "../hooks/useMessageStore.js";
@@ -234,21 +245,50 @@ export const ChatProvider = ({ children }) => {
   /**
    * Intenta resolver el mensaje como un trámite local.
    *
+   * Mencionar un trámite NO abre el formulario: "¿qué es el impuesto predial?" es una
+   * pregunta, no una orden. La primera mención solo deja el trámite ofrecido, la IA
+   * responde la duda y al final se invita a escribir la palabra de confirmación. El
+   * formulario se abre en el turno siguiente, o de inmediato si el ciudadano pulsó una
+   * respuesta rápida (`direct`), que ya es una acción explícita.
+   *
    * En modo `progressive`, un trámite que notifica resultados (Predial, PQRSD) pide
    * antes nombre y correo, y queda en espera para reanudarse en cuanto se entreguen.
    * Así se captura el dato sin poner una barrera a quien solo viene a consultar algo.
    *
+   * Devuelve el trámite a ofrecer EN ESTE TURNO en lugar de dejarlo solo en el estado:
+   * leerlo del estado hacía que la invitación se repitiera en cada respuesta posterior,
+   * incluso cuando el ciudadano ya había cambiado de tema.
+   *
    * @param {string} text
-   * @returns {boolean} true si se atendió (se lanzó el flujo o se pidió la identidad)
+   * @param {Object} [options]
+   * @param {boolean} [options.direct] true si viene de una acción explícita del ciudadano.
+   * @returns {{handled: boolean, offeredFlow: string|null}}
    */
   const tryRouteToFlow = useCallback(
-    (text) => {
-      const { flow } = resolveIntent(text, {
+    (text, { direct = false } = {}) => {
+      // Se acepta exactamente la palabra que se le prometió al ciudadano en la oferta,
+      // además de las confirmaciones genéricas.
+      const { flow, viaActivation } = resolveIntent(text, {
         routingMap: config.routing,
-        pendingService: lastServiceMentioned
+        pendingService: lastServiceMentioned,
+        activationKeywords: lastServiceMentioned
+          ? [...CONFIRMATION_KEYWORDS, getFlowConfirmWord(flowRegistry, lastServiceMentioned)]
+          : CONFIRMATION_KEYWORDS
       });
 
-      if (!flow) return false;
+      if (!flow) return { handled: false, offeredFlow: null };
+
+      const confirmed =
+        direct ||
+        viaActivation ||
+        flowOpensDirectly(flowRegistry, flow) ||
+        (Boolean(lastServiceMentioned) && isFlowConfirmation(text));
+
+      if (!confirmed) {
+        // Queda pendiente para el turno siguiente, y se devuelve para invitar ahora.
+        setLastServiceMentioned(flow);
+        return { handled: false, offeredFlow: flow };
+      }
 
       if (identityState.flowRequiresIdentity(flow)) {
         identityState.requestIdentityForFlow(flow);
@@ -258,7 +298,7 @@ export const ChatProvider = ({ children }) => {
         );
         setLastServiceMentioned(null);
         setIsLoading(false);
-        return true;
+        return { handled: true, offeredFlow: null };
       }
 
       const { executed } = runFlow(flowRegistry, flow);
@@ -266,7 +306,7 @@ export const ChatProvider = ({ children }) => {
         setLastServiceMentioned(null);
         setIsLoading(false);
       }
-      return executed;
+      return { handled: executed, offeredFlow: null };
     },
     [flowRegistry, lastServiceMentioned, identityState, showIdentityForm]
   );
@@ -332,8 +372,11 @@ export const ChatProvider = ({ children }) => {
         if (await consumePreGuidance(userText)) return;
 
         // 2. ¿Es un trámite?
+        let offeredFlow = null;
         if (isServicesEnabled) {
-          if (tryRouteToFlow(userText)) return;
+          const routed = tryRouteToFlow(userText);
+          if (routed.handled) return;
+          offeredFlow = routed.offeredFlow;
         } else if (mentionsService(userText)) {
           addMessage({
             sender: "bot",
@@ -366,10 +409,13 @@ export const ChatProvider = ({ children }) => {
 
         let replyText = reply.text;
 
-        // Si quedó un trámite mencionado sin lanzar, ofrecer activarlo.
-        if (lastServiceMentioned) {
-          const label = getFlowLabel(flowRegistry, lastServiceMentioned);
-          replyText += `\n\n*(Escribe "iniciar" para realizar el trámite interactivo de ${label} aquí mismo)*`;
+        // Solo se invita en el turno en que se mencionó el trámite, no en los siguientes.
+        if (offeredFlow) {
+          const label = getFlowLabel(flowRegistry, offeredFlow);
+          const palabra = getFlowConfirmWord(flowRegistry, offeredFlow);
+          replyText +=
+            `\n\n¿Quieres hacer el trámite de ${label} aquí mismo? ` +
+            `Escribe **${palabra}** y te abro el formulario.`;
         }
 
         addMessage({ sender: "bot", text: replyText });
@@ -396,7 +442,6 @@ export const ChatProvider = ({ children }) => {
       toConversationHistory,
       ask,
       activeContext,
-      lastServiceMentioned,
       flowRegistry,
       scheduleFollowUp
     ]
@@ -435,7 +480,7 @@ export const ChatProvider = ({ children }) => {
       // palabras de trámite ("radicar la PQRSD") que volverían a lanzar el flujo.
       if (await consumePreGuidance(option)) return;
 
-      if (tryRouteToFlow(option)) return;
+      if (tryRouteToFlow(option, { direct: true }).handled) return;
 
       // Sin trámite directo: derivar al flujo normal sin duplicar el mensaje.
       await sendMessage(option, true);
@@ -471,7 +516,8 @@ export const ChatProvider = ({ children }) => {
       if (result.resumedFlow) {
         addMessage({
           sender: "bot",
-          text: `¡Gracias, ${firstName}! Ya tengo tus datos.`
+          text: `¡Gracias, ${firstName}! Ya tengo tus datos.`,
+          interfaceOnly: true
         });
         runFlow(flowRegistry, result.resumedFlow);
         return result;

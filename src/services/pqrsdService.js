@@ -1,8 +1,14 @@
 /**
  * Adaptador del microservicio RPA de PQRSD (Alcaldía de Floridablanca / Suite Neptuno).
  *
- * Refactor: usa el cliente HTTP compartido (timeout incluido) y valida los adjuntos
- * antes de enviarlos.
+ * Habla con el proxy del backend del chatbot, no con el Cloud Run: el servicio exige un
+ * identity token de Google y el navegador no puede acuñar uno. Ver docs/INTEGRACION_RPA.md.
+ *
+ * Dos detalles del contrato que no se deducen del código de estado:
+ *   · `found: false` llega con HTTP 200. Se distingue por el campo, no por el código.
+ *   · `anexos` y `flujo` pueden venir vacíos en una consulta exitosa: son accesorios.
+ *
+ * Usa el cliente HTTP compartido (timeout incluido) y valida los adjuntos antes de enviarlos.
  *
  * Validación de archivos: la versión anterior aceptaba `Array.from(e.target.files)`
  * sin comprobar nada —cualquier tipo, cualquier tamaño, cualquier cantidad— y lo
@@ -19,11 +25,15 @@ const BASE_URL = environment.pqrsdApiUrl;
 /** Timeout amplio: el RPA opera contra el portal municipal. */
 const RPA_TIMEOUT_MS = 60_000;
 
+/** Radicar con anexos tarda más: hay hasta 25 MB que subir antes de que el RPA empiece. */
+const CREATE_TIMEOUT_MS = 180_000;
+
 /** Restricciones de los archivos adjuntos. */
 export const FILE_CONSTRAINTS = Object.freeze({
-  maxFiles: 5,
-  maxBytesPerFile: 5 * 1024 * 1024,   // 5 MB
-  maxTotalBytes: 15 * 1024 * 1024,    // 15 MB
+  // Los del servicio. Excederlos da 413, así que validarlos aquí ahorra una subida perdida.
+  maxFiles: 10,
+  maxBytesPerFile: 10 * 1024 * 1024,  // 10 MB
+  maxTotalBytes: 25 * 1024 * 1024,    // 25 MB
   allowedExtensions: ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx", "txt"],
   allowedMimeTypes: [
     "application/pdf",
@@ -109,22 +119,22 @@ export const validateAttachments = (files) => {
 
 /**
  * Catálogos de tipos de correspondencia y dependencias.
- * Endpoint: GET /api/v1/pqrsd/catalogos
+ * Endpoint: GET /v1/pqrsd/catalogos
  *
  * @returns {Promise<Object>}
  */
 export const getCatalogos = async () => {
   try {
-    return await get(`${BASE_URL}/api/v1/pqrsd/catalogos`);
+    return await get(`${BASE_URL}/v1/pqrsd/catalogos`);
   } catch (error) {
-    console.warn("⚠️ [PQRSD] Catálogos no disponibles, usando valores por defecto:", error?.message);
+    console.warn("[PQRSD] Catálogos no disponibles, usando valores por defecto:", error?.message);
     return { ...FALLBACK_CATALOGOS, error: error?.message };
   }
 };
 
 /**
  * Consulta el estado, anexos y trazabilidad de un radicado.
- * Endpoint: POST /api/v1/pqrsd/consultar
+ * Endpoint: POST /v1/pqrsd/consultar
  *
  * El par (radicado, código de autenticación) es la credencial que da acceso al
  * expediente completo del ciudadano, así que nunca se registra en consola.
@@ -136,7 +146,7 @@ export const getCatalogos = async () => {
 export const consultarPqrsd = async (radicado, codigoAutenticacion) => {
   try {
     return await post(
-      `${BASE_URL}/api/v1/pqrsd/consultar`,
+      `${BASE_URL}/v1/pqrsd/consultar`,
       {
         radicado: String(radicado).trim(),
         codigo_autenticacion: String(codigoAutenticacion).trim()
@@ -145,7 +155,7 @@ export const consultarPqrsd = async (radicado, codigoAutenticacion) => {
     );
   } catch (error) {
     // Sin datos de la consulta en el log: son credenciales del ciudadano.
-    console.error(`❌ [PQRSD] Fallo en consulta (status=${error?.status ?? "n/d"})`);
+    console.error(`[PQRSD] Fallo en consulta (status=${error?.status ?? "n/d"})`);
 
     // `cause` preserva el error original para depuración sin que su texto llegue al
     // ciudadano: solo se muestra el `message`, nunca la causa.
@@ -172,7 +182,10 @@ export const consultarPqrsd = async (radicado, codigoAutenticacion) => {
 
 /**
  * Radica una nueva PQRSD, con adjuntos opcionales.
- * Endpoint: POST /api/v1/pqrsd/crear
+ * Endpoint: POST /v1/pqrsd/crear
+ *
+ * Genera un trámite oficial real que alguien tendrá que atender y que no se puede anular.
+ * Esta llamada no se reintenta nunca de forma automática.
  *
  * @param {Object} params
  * @returns {Promise<Object>}
@@ -217,21 +230,32 @@ export const crearPqrsd = async ({
 
   try {
     // `httpClient` detecta FormData y no fija Content-Type, para preservar el boundary.
-    return await post(`${BASE_URL}/api/v1/pqrsd/crear`, formData, {
-      timeoutMs: RPA_TIMEOUT_MS
+    // Timeout propio: 25 MB de anexos no caben en el de una consulta.
+    return await post(`${BASE_URL}/v1/pqrsd/crear`, formData, {
+      timeoutMs: CREATE_TIMEOUT_MS
     });
   } catch (error) {
-    console.error(`❌ [PQRSD] Fallo al radicar (status=${error?.status ?? "n/d"})`);
+    console.error(`[PQRSD] Fallo al radicar (status=${error?.status ?? "n/d"})`);
 
+    if (error?.status === 413) {
+      const mb = (FILE_CONSTRAINTS.maxTotalBytes / 1024 / 1024).toFixed(0);
+      throw new Error(`Los archivos adjuntos superan el límite de ${mb} MB en total.`, {
+        cause: error
+      });
+    }
     if (error?.status === 422) {
       throw new Error("Faltan campos obligatorios o la información ingresada no es válida.", {
         cause: error
       });
     }
     if (error?.status === 502) {
-      throw new Error("No se pudo conectar con la plataforma municipal para generar el radicado.", {
-        cause: error
-      });
+      // Nunca reintentar aquí: el radicado pudo quedar creado en el portal y un reenvío lo
+      // duplicaría. Hay que verificar antes de volver a intentarlo. Ver docs, regla 1.
+      throw new Error(
+        "No se pudo confirmar el radicado con la plataforma municipal. Antes de volver a " +
+          "enviarlo, consulta si ya quedó registrado: reenviarlo podría duplicar el trámite.",
+        { cause: error }
+      );
     }
     throw new Error(
       error instanceof HttpError && error.publicMessage

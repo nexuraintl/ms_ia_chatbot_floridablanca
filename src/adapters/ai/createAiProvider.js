@@ -55,15 +55,21 @@ export const registerAiProvider = (id, factory) => {
  * backend, una clave olvidada en el `localStorage` del operador no debe hacer que sus
  * consultas se salten el control de gasto.
  *
+ * `proxyEnabled` existe porque un proxy en el MISMO origen no tiene URL que mirar: su
+ * ruta es `/api/ai/chat`, relativa. Sin este parámetro, el despliegue normal —el widget
+ * servido por su propio backend— caía en `gemini-api` y volvía a pedir la clave en el
+ * navegador, que es justo lo que el proxy existe para evitar.
+ *
  * @param {Object} params
  * @param {string} params.apiKey
- * @param {string} [params.proxyUrl]
+ * @param {string} [params.proxyUrl]    Origen del proxy. Vacío = mismo origen.
+ * @param {boolean} [params.proxyEnabled] ¿Hay un backend con el proxy montado?
  * @param {string} [params.preferred]  Fuerza un proveedor concreto (diagnóstico/pruebas).
  * @returns {string} id del proveedor
  */
-export const selectProviderId = ({ apiKey, proxyUrl, preferred }) => {
+export const selectProviderId = ({ apiKey, proxyUrl, proxyEnabled = false, preferred }) => {
   if (preferred && PROVIDER_REGISTRY[preferred]) return preferred;
-  if (proxyUrl && String(proxyUrl).trim() !== "") return "ai-proxy";
+  if (proxyEnabled || (proxyUrl && String(proxyUrl).trim() !== "")) return "ai-proxy";
   return apiKey && String(apiKey).trim() !== "" ? "gemini-api" : "local-mock";
 };
 
@@ -80,12 +86,19 @@ export const selectProviderId = ({ apiKey, proxyUrl, preferred }) => {
  * @param {() => string} deps.getApiKey
  * @param {import("../../domain/faq/faqMatcher.js").FaqItem[]} deps.faqCatalog
  * @param {string} [deps.proxyUrl]
+ * @param {boolean} [deps.proxyEnabled]
  * @param {string} [deps.preferred]
  * @returns {import("../../ports/AiProviderPort.js").AiProvider}
  */
-export const createAiProvider = ({ getApiKey, faqCatalog, proxyUrl = "", preferred }) => {
+export const createAiProvider = ({
+  getApiKey,
+  faqCatalog,
+  proxyUrl = "",
+  proxyEnabled = false,
+  preferred
+}) => {
   const apiKey = typeof getApiKey === "function" ? getApiKey() : "";
-  const id = selectProviderId({ apiKey, proxyUrl, preferred });
+  const id = selectProviderId({ apiKey, proxyUrl, proxyEnabled, preferred });
   const factory = PROVIDER_REGISTRY[id];
 
   if (!factory) {

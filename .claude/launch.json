@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 5173
+    },
+    {
+      "_comment": "Servidor de Cloud Run en local: sirve dist/ y las rutas de API en el mismo origen, que es la ruta real de produccion y la unica que ejerce la base de conocimiento. Requiere `npm run build` previo. --env-file carga GEMINI_API_KEY, que el proceso no lee por si solo.",
+      "name": "chatbot-server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=.env", "server/index.js"],
+      "port": 8080
     }
   ]
 }

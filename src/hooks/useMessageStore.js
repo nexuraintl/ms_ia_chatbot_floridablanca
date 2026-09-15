@@ -12,6 +12,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { createMessage, createTimestamp } from "../domain/messages/messageFactory.js";
+import { toConversationTurns } from "../domain/messages/conversationTurns.js";
 
 /**
  * Inserta el nombre del ciudadano en el saludo.
@@ -71,9 +72,17 @@ export const buildGreetingMessages = ({ config, isServicesEnabled, firstName }) 
     : config.welcome?.message2_no_services ||
       "Soy tu asistente virtual. Escribe tu duda o pregunta y te responderé con gusto.";
 
+  // `interfaceOnly`: el saludo se le muestra al ciudadano pero no se le envía al modelo.
+  // Si viajara como turno del asistente, el modelo copiaría el patrón y abriría cada
+  // respuesta con "¡Hola, <nombre>!".
   return [
-    { sender: "bot", text: presentation },
-    { sender: "bot", text: invitation, quickReplies: replies.length > 0 ? replies : null }
+    { sender: "bot", text: presentation, interfaceOnly: true },
+    {
+      sender: "bot",
+      text: invitation,
+      quickReplies: replies.length > 0 ? replies : null,
+      interfaceOnly: true
+    }
   ];
 };
 
@@ -185,13 +194,7 @@ export const useMessageStore = ({ config, isServicesEnabled, isGateVisible = fal
 
   /** Conversación en el formato que consume el proveedor de IA. */
   const toConversationHistory = useCallback(
-    (extraUserText) => {
-      const history = messages
-        .filter((m) => m.sender === "user" || m.sender === "bot")
-        .map((m) => ({ sender: m.sender, text: m.text }));
-      if (extraUserText) history.push({ sender: "user", text: extraUserText });
-      return history;
-    },
+    (extraUserText) => toConversationTurns(messages, extraUserText),
     [messages]
   );
 

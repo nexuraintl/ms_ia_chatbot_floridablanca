@@ -4,9 +4,17 @@ import { ChatBubble } from "../molecules/ChatBubble";
 import { QuickReplies } from "../molecules/QuickReplies";
 import { StatusDot } from "../atoms/StatusDot";
 import { Send, X, MessageSquare, RefreshCw, Sun, Moon } from "lucide-react";
+import config from "../../config/chatbotConfig.json";
 // Se importa como módulo para que Vite resuelva la URL. Una ruta absoluta (`/logo.svg`)
 // se resolvería contra el portal anfitrión, no contra el origen del widget.
 import floriaLogo from "../../assets/floria-logo.svg";
+
+/** Identidad del asistente en la cabecera. Sale de la configuración del tenant. */
+const ASSISTANT_NAME = config.assistant?.name || "Atención Ciudadana";
+const ASSISTANT_ICON = config.assistant?.icon || config.municipality?.icon || "🌸";
+const ASSISTANT_SUBTITLE = `${config.municipality?.name || "Floridablanca"} • Gemini AI`;
+/** El logo es de este tenant: con `assistant.useLogo` en false se vuelve al emoji. */
+const ASSISTANT_LOGO = config.assistant?.useLogo === false ? null : floriaLogo;
 
 export const ChatWindow = () => {
   const {
@@ -113,31 +121,36 @@ export const ChatWindow = () => {
               width: "42px",
               height: "42px",
               borderRadius: "50%",
-              // Fondo claro: el logo es multicolor y sobre la cabecera verde perdía contraste.
-              backgroundColor: "rgba(255, 255, 255, 0.95)",
+              // Fondo claro solo con el logo: es multicolor y sobre la cabecera verde
+              // perdía contraste. Un emoji se ve mejor sobre el círculo translúcido.
+              backgroundColor: ASSISTANT_LOGO ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 255, 255, 0.2)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "1px solid rgba(255, 255, 255, 0.5)",
+              border: `1px solid rgba(255, 255, 255, ${ASSISTANT_LOGO ? "0.5" : "0.3"})`,
               overflow: "hidden"
             }}
           >
-            <img
-              src={floriaLogo}
-              alt="FlorIA"
-              width="34"
-              height="28"
-              style={{ display: "block" }}
-            />
+            {ASSISTANT_LOGO ? (
+              <img
+                src={ASSISTANT_LOGO}
+                alt={ASSISTANT_NAME}
+                width="34"
+                height="28"
+                style={{ display: "block" }}
+              />
+            ) : (
+              <span style={{ fontSize: "1.3rem" }}>{ASSISTANT_ICON}</span>
+            )}
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <h4 style={{ margin: 0, fontSize: "1.05rem", fontWeight: "700", color: "#ffffff", letterSpacing: "0.3px" }}>
-                Atención Ciudadana
+                {ASSISTANT_NAME}
               </h4>
               <StatusDot online={true} />
             </div>
-            <span style={{ fontSize: "0.78rem", color: "rgba(255, 255, 255, 0.85)" }}>Floridablanca • Gemini AI</span>
+            <span style={{ fontSize: "0.78rem", color: "rgba(255, 255, 255, 0.85)" }}>{ASSISTANT_SUBTITLE}</span>
           </div>
         </div>
 

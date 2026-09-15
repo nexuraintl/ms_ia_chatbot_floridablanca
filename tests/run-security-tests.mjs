@@ -30,9 +30,13 @@ const { createPageContext, CONTEXT_LIMITS } =
   await import("../src/domain/pageContext/pageContext.js");
 const { toDataTurn, MARKERS } = await import("../src/domain/pageContext/promptSerializer.js");
 const { findBestFaq } = await import("../src/domain/faq/faqMatcher.js");
+const { resolveIntent, isFlowConfirmation, CONFIRMATION_KEYWORDS } =
+  await import("../src/domain/intents/intentResolver.js");
+const { createFlowRegistry, flowOpensDirectly } = await import("../src/application/flows/flowRegistry.js");
 const { estimateApiUsage } = await import("../src/domain/tokens/tokenEstimator.js");
 const { translateRpaError } = await import("../src/domain/errors/rpaErrorTranslator.js");
 const { createMessageId } = await import("../src/domain/messages/messageFactory.js");
+const { toConversationTurns } = await import("../src/domain/messages/conversationTurns.js");
 const { rankLinksByRelevance } = await import("../src/adapters/browser/DomPageInspector.js");
 const { selectProviderId } = await import("../src/adapters/ai/createAiProvider.js");
 const { createLocalMockProvider } = await import("../src/adapters/ai/LocalMockProvider.js");
@@ -121,6 +125,28 @@ for (const url of [
 {
   const pse = urlPolicy.forBackendResource("https://pasarela-pse.example/pagar?ref=123");
   check("permite recurso de backend con esquema seguro", pse.safe, `-> ${pse.href}`);
+
+  // El PDF de la factura llega por el proxy del backend, no por el host del RPA: está
+  // detrás de IAM y el navegador del ciudadano no lleva token.
+  const factura = urlPolicy.forBackendResource("/rpa/factura/v1/facturas/Factura3205346.pdf");
+  check(
+    "permite una ruta del propio origen (el PDF por el proxy)",
+    factura.safe && factura.href.endsWith("/rpa/factura/v1/facturas/Factura3205346.pdf"),
+    `-> ${factura.href}`
+  );
+
+  // `//host` no es una ruta relativa: cambia de origen, así que pasa por la vía absoluta.
+  const protocoloRelativo = urlPolicy.forBackendResource("//sitio-del-atacante.example.com/f.pdf");
+  check(
+    "una URL protocolo-relativa no se da por propia",
+    protocoloRelativo.trusted === false,
+    `-> ${protocoloRelativo.href} trusted=${protocoloRelativo.trusted}`
+  );
+
+  check(
+    "un esquema peligroso sigue bloqueado",
+    urlPolicy.forBackendResource("javascript:alert(1)").href === "#"
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -152,6 +178,42 @@ check(
     "el texto registrado no contiene ningún dato personal en claro",
     fugas.length === 0,
     fugas.length ? `siguen presentes: ${fugas.map((f) => f.nombre).join(", ")}` : `-> "${redactado}"`
+  );
+}
+
+// Minimización hacia el proveedor de IA: los mensajes de interfaz no son conversación.
+{
+  const pantalla = [
+    { sender: "system", text: "🔒 Aviso de Privacidad: ..." },
+    { sender: "bot", text: "¡Hola, Mateo! Te doy la bienvenida a la Alcaldía.", interfaceOnly: true },
+    { sender: "bot", text: "Soy tu asistente virtual.", interfaceOnly: true },
+    { sender: "user", text: "cual es la tarifa de predial" },
+    { sender: "bot", text: "La tarifa depende del estrato y del avalúo (artículo 33)." },
+    { sender: "bot", text: "¿Te puedo ayudar con algo más?", interfaceOnly: true }
+  ];
+  const turnos = toConversationTurns(pantalla, "y para un local comercial");
+
+  check(
+    "el nombre del ciudadano no viaja al proveedor de IA",
+    !turnos.some((t) => /mateo/i.test(t.text)),
+    `turnos enviados: ${turnos.length} de ${pantalla.length} mensajes en pantalla`
+  );
+  check(
+    "no se envían saludos ni ofertas de ayuda como turnos del asistente",
+    !turnos.some((t) => /hola|ayudar con algo m[áa]s|asistente virtual/i.test(t.text)),
+    turnos.map((t) => `${t.sender}: ${t.text.slice(0, 32)}`).join(" | ")
+  );
+  check(
+    "sí viajan la pregunta del ciudadano y la respuesta real",
+    turnos.length === 3 &&
+      turnos[0].text.includes("tarifa de predial") &&
+      turnos[1].text.includes("artículo 33") &&
+      turnos[2].text.includes("local comercial"),
+    `-> ${turnos.map((t) => t.sender).join(", ")}`
+  );
+  check(
+    "un mensaje sin texto utilizable no se envía",
+    toConversationTurns([{ sender: "bot", text: "   " }, { sender: "bot" }]).length === 0
   );
 }
 
@@ -333,6 +395,103 @@ section("7. Emparejamiento de FAQ: sin falsos positivos por subcadena");
   check("una consulta real de ICA sí coincide", real !== null, `-> ${real?.intencion ?? "sin coincidencia"}`);
 }
 
+// Un trámite no se abre por mencionar su tema: hace falta confirmación explícita.
+{
+  const preguntas = [
+    "que es el impuesto predial",
+    "donde pago el predial",
+    "cuanto debo pagar de predial",
+    "tengo que pagar predial si vivo en arriendo",
+    "y el ica donde se paga",
+    "quien paga el alumbrado publico"
+  ];
+  const abren = preguntas.filter((texto) => isFlowConfirmation(texto));
+  check(
+    "una pregunta sobre el tributo no abre el formulario",
+    abren.length === 0,
+    abren.length ? `abrirían el formulario: ${abren.join(" | ")}` : `${preguntas.length} preguntas verificadas`
+  );
+
+  const confirmaciones = ["pagar", "PAGAR", "quiero pagar", "si", "dale", "iniciar", "formulario"];
+  const noAbren = confirmaciones.filter((texto) => !isFlowConfirmation(texto));
+  check(
+    "una confirmación explícita sí abre el formulario",
+    noAbren.length === 0,
+    noAbren.length ? `no abrirían: ${noAbren.join(" | ")}` : `${confirmaciones.length} confirmaciones verificadas`
+  );
+
+  // El mapa de rutas OFRECE el trámite; abrirlo exige el segundo paso.
+  const { flow } = resolveIntent("que es el impuesto predial", { routingMap: chatbotConfig.routing });
+  check(
+    "el tema sí identifica el trámite que se va a ofrecer",
+    flow === "predial",
+    `-> ${flow}`
+  );
+
+  // La palabra que se le promete al ciudadano tiene que ser la que se acepta. Si alguien
+  // cambia un `confirmWord` y no la lista de confirmaciones, la oferta queda muerta.
+  {
+    const noop = () => {};
+    const registry = createFlowRegistry({
+      startSisben: noop,
+      startPredial: noop,
+      startPqrsdCreate: noop,
+      startPqrsdConsult: noop,
+      startPqrsdMenu: noop
+    });
+    const rotas = [];
+    for (const [id, def] of registry) {
+      if (!def.confirmWord) continue;
+      const { flow: resuelto } = resolveIntent(def.confirmWord, {
+        routingMap: chatbotConfig.routing,
+        pendingService: id,
+        activationKeywords: [...CONFIRMATION_KEYWORDS, def.confirmWord]
+      });
+      if (resuelto !== id) rotas.push(`${id}:"${def.confirmWord}" -> ${resuelto}`);
+    }
+    check(
+      "la palabra prometida por cada trámite abre ese trámite",
+      rotas.length === 0,
+      rotas.length ? rotas.join(" | ") : "todas las palabras de confirmación resuelven a su trámite"
+    );
+  }
+
+  // La radicación se había retirado porque mencionar un trámite abría su formulario.
+  // Vuelve con la orientación previa delante: su primer paso es una pregunta, así que
+  // mencionarla ya no puede abrir nada sin querer.
+  check(
+    "la radicación de PQRSD vuelve a ser alcanzable",
+    Object.keys(chatbotConfig.routing).includes("pqrsd_crear") &&
+      chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear"),
+    `rutas: ${Object.keys(chatbotConfig.routing).join(", ")} | botones: ${chatbotConfig.quickReplies.map((r) => r.flow).join(", ")}`
+  );
+
+  {
+    const noop = () => {};
+    const registry = createFlowRegistry({
+      startSisben: noop,
+      startPredial: noop,
+      startPqrsdCreate: noop,
+      startPqrsdConsult: noop,
+      startPqrsdMenu: noop
+    });
+
+    check(
+      "la radicación entra directo: su primer paso no es un formulario",
+      flowOpensDirectly(registry, "pqrsd_crear") === true
+    );
+
+    const conFormulario = ["predial", "pqrsd_consultar", "sisben"].filter((id) =>
+      flowOpensDirectly(registry, id)
+    );
+    check(
+      "los trámites que sí abren formulario siguen exigiendo confirmación",
+      conFormulario.length === 0,
+      conFormulario.length ? `entran directo sin deberlo: ${conFormulario.join(", ")}` : "predial, consulta y Sisbén confirman"
+    );
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 section("8. Coste de CPU (DoS algorítmico)");
 // ══════════════════════════════════════════════════════════════════════════════
@@ -360,6 +519,17 @@ section("8. Coste de CPU (DoS algorítmico)");
 section("9. Selección de proveedor de IA (inversión de dependencias)");
 // ══════════════════════════════════════════════════════════════════════════════
 check("sin clave se elige el mock local", selectProviderId({ apiKey: "" }) === "local-mock");
+// El caso del despliegue: el widget lo sirve su propio backend, así que el proxy está en el
+// mismo origen y NO tiene URL que mirar. Sin la bandera, producción caía en el modo de
+// desarrollo y volvía a pedir la clave en el navegador.
+check(
+  "con backend en el mismo origen gana el proxy aunque no haya URL",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy"
+);
+check(
+  "y una clave olvidada en el navegador no se salta el control de gasto",
+  selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) !== "gemini-api"
+);
 check("con clave se elige la API", selectProviderId({ apiKey: "AIzaSy" + "a".repeat(33) }) === "gemini-api");
 check("clave en blanco cuenta como ausente", selectProviderId({ apiKey: "   " }) === "local-mock");
 
@@ -446,18 +616,23 @@ section("12. Validación de archivos adjuntos de PQRSD");
   );
   check(
     "rechaza cuando el total excede el tope",
+    // Derivado de las constantes: cada archivo cabe por separado y el conjunto no. Así el
+    // caso sigue siendo el que interesa aunque cambien los límites del servicio.
     !validateAttachments(
-      Array.from({ length: 4 }, (_, i) => fakeFile(`a${i}.pdf`, 4.5 * 1024 * 1024, "application/pdf"))
+      Array.from(
+        { length: Math.floor(FILE_CONSTRAINTS.maxTotalBytes / FILE_CONSTRAINTS.maxBytesPerFile) + 1 },
+        (_, i) => fakeFile(`a${i}.pdf`, FILE_CONSTRAINTS.maxBytesPerFile, "application/pdf")
+      )
     ).valid
   );
   check("sin adjuntos es válido", validateAttachments([]).valid);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
+section("13. H-01 — la clave de Gemini ya no vive en el navegador");
 // ══════════════════════════════════════════════════════════════════════════════
-// Se conserva a propósito como FAIL: es una decisión de arquitectura, no un descuido,
-// y no tiene solución desde el frontend.
+// Estuvo abierto mientras el widget llamaba a Gemini directamente. Lo cierra el proxy del
+// backend (`server/aiProxy.js`) más la selección por defecto en un build de producción.
 {
   const provider = await import("../src/adapters/ai/GeminiApiProvider.js");
   check(
@@ -486,19 +661,25 @@ section("13. HALLAZGO ABIERTO — la clave de Gemini vive en el navegador");
       "gemini-api",
     "ni una clave olvidada en el localStorage del operador reactiva la llamada directa"
   );
+  check(
+    "y en un build de producción el proxy gana sin necesidad de configurar nada",
+    selectProviderId({ apiKey: "AIzaSyLoQueSea", proxyUrl: "", proxyEnabled: true }) === "ai-proxy",
+    "el proxy vive en el mismo origen, así que no hay URL que definir"
+  );
 
   check(
     "la clave no es visible para quien usa el navegador",
-    false,
-    "ABIERTO SOLO EN MODO DESARROLLO. Sin VITE_AI_PROXY_URL definida, el widget\n" +
-    "         llama a Gemini directamente con la clave que el operador escribe en el panel,\n" +
-    "         y esa credencial es legible en las herramientas de desarrollo. Es el modo\n" +
-    "         pensado para desarrollo local y no debería desplegarse.\n" +
-    "         CIERRE: definir VITE_AI_PROXY_URL y el secreto gemini-api-key en Secret\n" +
-    "         Manager. Con eso la clave nunca entra en el navegador y esta comprobación\n" +
-    "         deja de aplicar. Ver SECURITY.md, H-01.\n" +
-    "         Si se opera en modo desarrollo: restringir la clave por referente HTTP y por\n" +
-    "         API en Google Cloud, fijar cuota diaria baja, y rotar si algún build la publicó."
+    true,
+    [
+      "CERRADO. En cualquier build de producción el widget usa el proxy del backend, que",
+      "         guarda la clave del lado del servidor: no llega al navegador de ningún",
+      "         ciudadano. No hace falta configurar VITE_AI_PROXY_URL —el proxy vive en el",
+      "         mismo origen— y una clave olvidada en el localStorage del operador no",
+      "         reactiva la llamada directa.",
+      "         RESIDUAL: compilar a propósito con VITE_AI_PROXY_ENABLED=false vuelve al",
+      "         modo de desarrollo, en el que la clave la escribe el operador y queda",
+      "         legible en su navegador. Ese modo no debe desplegarse. Ver SECURITY.md, H-01."
+    ].join("\n")
   );
 }
 
@@ -1193,13 +1374,24 @@ section("22. Alcance de las cabeceras internas");
   );
   check(
     "correlaciona el propio origen del portal",
-    isOwnBackendUrl(`${ORIGIN}/api/v1/pqrsd/crear`) === true
+    isOwnBackendUrl(`${ORIGIN}/rpa/pqrsd/v1/pqrsd/crear`) === true
   );
 
-  const rpaHost = new URL(environmentConfig.pqrsdApiUrl).hostname;
+  // Los RPA ya no se llaman por su host: exigen IAM y el navegador no puede acuñar el token,
+  // así que la base es una ruta del backend propio.
   check(
-    `correlaciona el RPA configurado: ${rpaHost}`,
-    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/api/v1/pqrsd/consultar`) === true
+    "la base del RPA de PQRSD es una ruta del backend propio, no un host externo",
+    environmentConfig.pqrsdApiUrl.startsWith("/rpa/pqrsd"),
+    environmentConfig.pqrsdApiUrl
+  );
+  check(
+    "la base del RPA de Predial es una ruta del backend propio",
+    environmentConfig.predialApiUrl.startsWith("/rpa/factura"),
+    environmentConfig.predialApiUrl
+  );
+  check(
+    "correlaciona el RPA a través del proxy propio",
+    isOwnBackendUrl(`${environmentConfig.pqrsdApiUrl}/v1/pqrsd/consultar`) === true
   );
 
   check(
