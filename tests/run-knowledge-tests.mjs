@@ -278,7 +278,24 @@ section("5. Reglas de fundamentación");
   );
   check(
     "prohíbe expresamente inventar cifras",
-    /Nunca las calcules, redondees, promedies ni deduzcas/.test(conContexto.text)
+    /Nunca inventes una cifra ni la deduzcas redondeando, promediando o interpolando/.test(
+      conContexto.text
+    )
+  );
+  // La Alcaldía pidió que el asistente sí pueda liquidar. El límite se mueve: deja de
+  // ser "no calcules" y pasa a ser "no inventes la tarifa con la que calculas".
+  check(
+    "permite liquidar con tarifas del bloque",
+    /Puedes liquidar el impuesto con los datos que te dé el ciudadano/.test(conContexto.text)
+  );
+  check(
+    "exige mostrar fórmula, artículo y el valor oficial de la factura",
+    /Muestra la fórmula y el artículo de cada cifra/.test(conContexto.text) &&
+      /el valor oficial es el de la factura/.test(conContexto.text)
+  );
+  check(
+    "sigue prohibiendo suponer una tarifa que falte",
+    /no la supongas para completar la cuenta/.test(conContexto.text)
   );
   check(
     "prohíbe dar fechas del calendario tributario",

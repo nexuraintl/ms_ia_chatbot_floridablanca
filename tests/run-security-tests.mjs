@@ -1405,6 +1405,13 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
 // ══════════════════════════════════════════════════════════════════════════════
 // Cada llamada arrastra prompt de sistema, FAQ y contexto de página: una consulta fuera
 // del ámbito municipal cuesta lo mismo que una legítima.
+//
+// El guardia bloquea SOLO ante evidencia de que la consulta es ajena. La primera versión
+// hacía lo contrario —exigir prueba de que era municipal— y dejaba fuera consultas
+// legítimas: "que dias hay pico y placa", "hay algun programa para adultos mayores".
+// Los asuntos de una alcaldía no caben en una lista de palabras, así que el riesgo de un
+// falso bloqueo pesa más que el de una llamada de más. La lista `dentro` es la defensa
+// contra esa regresión.
 {
   const { evaluateTopic, TOPIC_REASONS, resolveTopicGuardSettings } =
     await import("../src/domain/moderation/topicGuard.js");
@@ -1423,7 +1430,10 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
     "escribeme un poema de amor",
     "hazme un codigo en python que ordene una lista",
     "traduceme esto al ingles",
-    "cual es la capital de francia"
+    "cual es la capital de francia",
+    "cual es el animal mas veloz",
+    "quien invento la bombilla",
+    "cuentame un chiste"
   ];
   for (const texto of fuera) {
     const v = guard(texto);
@@ -1432,6 +1442,7 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
 
   const dentro = [
     "como pago el impuesto predial",
+    "como se calcula el impuesto del predial",
     "quiero radicar una peticion",
     "cuando vence el plazo del ica",
     "el alumbrado de mi barrio esta dañado",
@@ -1441,6 +1452,12 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
     "mi vecino hace mucho ruido en la noche",
     "cual es el horario de atencion de la alcaldia",
     "quiero consultar el estado de mi radicado",
+    "necesito sacar una copia de mi escritura",
+    "que dias hay pico y placa",
+    "hay algun programa para adultos mayores",
+    "mi casa se inundo con la lluvia a quien reporto",
+    "mi hijo necesita cupo en un colegio publico",
+    "se me perdio la cedula que hago",
     "hola buenos dias",
     "muchas gracias"
   ];
@@ -1449,18 +1466,27 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
     check(`deja pasar: "${texto.slice(0, 44)}"`, v.allowed === true, `motivo=${v.reason}`);
   }
 
-  // Un seguimiento corto no tiene vocabulario municipal propio: lo sostiene el contexto.
-  check(
-    "un seguimiento corto sobre el tema en curso pasa",
-    guard("y cuanto cuesta?", { activeContext: "impuesto_predial" }).allowed === true
-  );
+  // Una liquidación se conversa en varios turnos, y ninguno trae vocabulario propio.
+  const seguimientos = [
+    "si quiero que lo calcules",
+    "listo pasame los datos que necesitas",
+    "y si es residencial cuanto seria",
+    "calculalo por favor",
+    "cuanto me saldria a mi"
+  ];
+  for (const texto of seguimientos) {
+    const v = guard(texto, { activeContext: "impuesto_predial" });
+    check(`sostiene la conversación: "${texto.slice(0, 40)}"`, v.allowed === true, `motivo=${v.reason}`);
+  }
+
   check(
     "un seguimiento corto pero fuera de tema se bloquea igual",
-    guard("y el futbol?", { activeContext: "impuesto_predial" }).allowed === false
+    guard("y el futbol?", { activeContext: "impuesto_predial" }).allowed === false,
+    "un tema vetado no se salva por estar en una conversación abierta"
   );
   check(
-    "sin conversación previa, un mensaje corto y ajeno no pasa",
-    guard("dime algo curioso").allowed === false
+    "una repregunta con forma de trivia se salva dentro del tema en curso",
+    guard("cual es la mas alta?", { activeContext: "impuesto_predial" }).allowed === true
   );
 
   // Un término vetado dentro de una consulta municipal no puede tumbarla.
@@ -1486,8 +1512,20 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
     "el motivo del bloqueo es una etiqueta conocida",
     Object.values(TOPIC_REASONS).includes(guard("cuentame un chiste").reason)
   );
-}
 
+  // El prompt es la segunda línea: lo que pasa el filtro tampoco debe salirse del tema,
+  // pero sobre todo debe seguir atendiendo lo municipal que no esté documentado.
+  const prompt = buildSystemPrompt({ faqContext: "" });
+  check(
+    "el prompt obliga a orientar aunque el dato no esté en los bloques",
+    /DENTRO de ese tema ayudas SIEMPRE/.test(prompt) &&
+      /No respondas "no tengo esa información" a una consulta municipal/.test(prompt)
+  );
+  check(
+    "el prompt permite guiar un cálculo paso a paso",
+    /Puedes pedirle los datos y guiarlo paso a paso/.test(prompt)
+  );
+}
 // ══════════════════════════════════════════════════════════════════════════════
 section("24. Orientación previa a la radicación de PQRSD");
 // ══════════════════════════════════════════════════════════════════════════════
