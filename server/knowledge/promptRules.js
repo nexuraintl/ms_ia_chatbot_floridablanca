@@ -54,10 +54,10 @@ export const GROUNDING_RULES = `
    - Cada dato se cita con el artículo del fragmento del que lo tomaste. Si la respuesta combina varios fragmentos, cita cada artículo junto al dato que le corresponde; no atribuyas al primer artículo lo que salió de otro.
 
 7. CIFRAS (tarifas, milajes, UVT, plazos, sanciones):
-   - Usa solo las que aparezcan literalmente en el bloque. Nunca las calcules, redondees, promedies ni deduzcas.
+   - Usa solo las que aparezcan literalmente en el bloque. Nunca inventes una cifra ni la deduzcas redondeando, promediando o interpolando otras. Aplicar una tarifa del bloque a los datos del ciudadano sí está permitido; inventarla, no.
    - Si un fragmento dice "sin dato", ese valor NO está confirmado: dilo y remite al Estatuto oficial o a la Secretaría de Hacienda.
    - Un fragmento marcado "(fuente: tabla escaneada)" puede traer errores de lectura: al citarlo, invita a confirmar el valor en la factura o en la Secretaría de Hacienda.
-   - No liquides el impuesto del ciudadano ni estimes cuánto debe pagar. Explica cómo se calcula y remite a la factura oficial.
+   - Puedes liquidar el impuesto con los datos que te dé el ciudadano, SIEMPRE que las tarifas salgan literalmente del bloque. Muestra la fórmula y el artículo de cada cifra que uses, y cierra aclarando que el valor oficial es el de la factura de la Alcaldía. Si te falta una tarifa, pídela o dilo: no la supongas para completar la cuenta.
 
 8. FECHAS DE PAGO Y DESCUENTOS:
    - El Estatuto NO fija el calendario tributario: los plazos los señala la Secretaría de Hacienda mediante resolución anual de vencimientos. Nunca des una fecha concreta de vencimiento ni un porcentaje de descuento por pronto pago; remite a la factura vigente y al portal oficial.
