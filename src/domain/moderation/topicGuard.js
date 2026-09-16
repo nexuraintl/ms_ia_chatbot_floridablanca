@@ -3,7 +3,11 @@
  *
  * Decide si un mensaje merece una llamada a la IA. Cada llamada arrastra el prompt de
  * sistema, el bloque de FAQ y el contexto de pagina, asi que una consulta fuera del
- * ambito municipal cuesta lo mismo que una legitima. Ver docs/MANUAL.md.
+ * ambito municipal cuesta lo mismo que una legitima.
+ *
+ * Bloquea SOLO ante evidencia de que la consulta es ajena. El reves —exigir prueba de
+ * que es municipal— se probo y dejaba fuera consultas legitimas: los asuntos de una
+ * alcaldia no caben en una lista de palabras. Ver docs/MANUAL.md.
  */
 
 import { normalizeForMatching } from "../security/textSanitizer.js";
@@ -17,10 +21,10 @@ export const TOPIC_REASONS = Object.freeze({
   MUNICIPAL_TERM: "municipal_term",
   ROUTING_KEYWORD: "routing_keyword",
   FAQ_MATCH: "faq_match",
-  COURTESY: "courtesy",
   FOLLOW_UP: "follow_up",
   OFF_TOPIC_TERM: "off_topic_term",
-  NO_MUNICIPAL_SIGNAL: "no_municipal_signal"
+  TRIVIA_QUESTION: "trivia_question",
+  NO_OFF_TOPIC_SIGNAL: "no_off_topic_signal"
 });
 
 /** Tope de palabras que se consideran de un mensaje, como freno de coste de CPU. */
@@ -30,9 +34,8 @@ const MAX_WORDS = 120;
 export const FOLLOW_UP_WORD_LIMIT = 5;
 
 /**
- * Vocabulario de la administracion municipal. Se compara de forma difusa (tolera
- * erratas) porque un falso positivo aqui solo cuesta unos tokens, mientras que un
- * falso negativo deja a un ciudadano sin respuesta.
+ * Vocabulario de la administracion municipal. No es la definicion de lo municipal
+ * —seria imposible— sino un atajo: lo que caiga aqui se aprueba sin mas analisis.
  */
 export const MUNICIPAL_LEXICON = Object.freeze([
   // Entidad y gobierno
@@ -46,42 +49,33 @@ export const MUNICIPAL_LEXICON = Object.freeze([
   "tramite", "tramites", "formulario", "radicar", "radicado", "solicitud", "peticion",
   "queja", "reclamo", "sugerencia", "denuncia", "pqrsd", "pqrs", "certificado", "constancia",
   "paz y salvo", "licencia", "permiso", "matricula", "inscripcion", "requisitos", "notificacion",
-  "cita", "turno", "horario", "plazo", "ventanilla unica", "neptuno",
+  "cita", "turno", "horario", "plazo", "ventanilla unica", "neptuno", "escritura", "notaria",
   // Tributario
   "impuesto", "predial", "ica", "reteica", "rit", "factura", "recibo", "pago", "pagar",
   "deuda", "mora", "intereses", "descuento", "declaracion", "contribuyente", "tesoreria",
   "hacienda", "tarifa", "liquidacion", "acuerdo de pago", "industria y comercio", "retencion",
   // Programas sociales
-  "sisben", "subsidio", "programa social", "adulto mayor", "discapacidad", "victima",
-  "familias en accion", "puntaje", "encuesta",
+  "sisben", "subsidio", "programa", "programas", "adulto", "adultos", "discapacidad",
+  "victima", "familias en accion", "puntaje", "encuesta",
   // Servicios e infraestructura
   "alumbrado", "luminaria", "bache", "pavimento", "anden", "acueducto", "alcantarillado",
   "basura", "aseo", "residuos", "escombros", "poda", "arborizacion", "parque", "semaforo",
   "senalizacion", "obra", "construccion", "curaduria", "espacio publico", "invasion",
   "ruido", "contaminacion", "ambiental", "mascota", "zoonosis", "esterilizacion",
+  "inundacion", "inundo", "lluvia", "arroyo",
   // Seguridad y convivencia
   "policia", "comisaria", "inspeccion", "convivencia", "vecino", "seguridad", "bomberos",
   "emergencia", "gestion del riesgo", "riesgo",
   // Movilidad
   "transito", "movilidad", "multa", "comparendo", "fotomulta", "conduccion", "vehiculo",
-  "grua", "parqueo", "transporte", "prescripcion",
+  "grua", "parqueo", "transporte", "prescripcion", "pico y placa",
   // Salud, educacion, cultura y deporte
   "salud", "hospital", "vacunacion", "colegio", "institucion educativa", "docente", "beca",
-  "biblioteca", "cultura", "turismo", "deporte", "escenario deportivo", "obleas",
+  "biblioteca", "cultura", "turismo", "deporte", "escenario deportivo", "obleas", "cupo",
   // Empleo y economia
   "empleo", "vacante", "hoja de vida", "emprendimiento", "camara de comercio", "negocio",
   // Marco normativo
-  "ley", "decreto", "resolucion", "acuerdo municipal", "normativa"
-]);
-
-/**
- * Cortesia y preguntas sobre el propio asistente. Se permiten para que la conversacion
- * no se sienta hostil.
- */
-export const COURTESY_LEXICON = Object.freeze([
-  "hola", "buenas", "buenos dias", "buenas tardes", "buenas noches", "buen dia", "saludos",
-  "gracias", "adios", "hasta luego", "chao", "listo", "vale", "perfecto", "entendido",
-  "ayuda", "ayudame", "quien eres", "que puedes hacer", "que haces", "como funcionas"
+  "ley", "decreto", "resolucion", "acuerdo municipal", "normativa", "cedula"
 ]);
 
 /**
@@ -89,7 +83,7 @@ export const COURTESY_LEXICON = Object.freeze([
  * equivocado es peor que una llamada de mas.
  */
 export const OFF_TOPIC_LEXICON = Object.freeze([
-  "futbol", "mundial", "nba", "champions", "seleccion colombia",
+  "futbol", "mundial", "nba", "champions", "seleccion colombia", "partido de anoche",
   "pelicula", "peliculas", "serie", "netflix", "anime", "videojuego", "minecraft",
   "cancion", "canciones", "poema", "poesia", "ensayo", "chiste", "chistes",
   "horoscopo", "zodiaco", "tarot",
@@ -97,9 +91,22 @@ export const OFF_TOPIC_LEXICON = Object.freeze([
   "programar", "codigo fuente", "python", "javascript", "algoritmo", "ecuacion",
   "derivada", "integral", "tarea del colegio", "haz mi tarea",
   "bitcoin", "criptomoneda", "trading", "forex",
-  "mas grande del mundo", "mas pequeno del mundo", "mas rapido del mundo",
-  "capital de francia", "capital de espana", "sistema solar", "dinosaurio",
-  "traduce", "traduceme", "escribeme un", "hazme un poema", "cuentame un chiste"
+  "traduce", "traduceme", "traducir",
+  "gato", "perro mas", "dinosaurio", "planeta", "sistema solar", "universo"
+]);
+
+/**
+ * Forma de pregunta de cultura general. Es lo que distingue "¿cuál es el gato más grande
+ * del mundo?" de "¿cuál es el trámite para un certificado?": la primera pregunta por un
+ * hecho del mundo, no por algo que la Alcaldía resuelva.
+ */
+export const TRIVIA_PATTERNS = Object.freeze([
+  /\bmas\s+\w+\s+(del|de la)\s+(mundo|universo|planeta|historia|pais|galaxia)\b/,
+  /\bcual\s+(es|era|fue)\s+(el|la|los|las)\s+\w+\s+mas\s+\w+/,
+  /\b(quien|quienes)\s+(invento|inventaron|descubrio|descubrieron|creo|crearon|escribio|escribieron|pinto|compuso|fundo|gano|ganaron)\b/,
+  /\bcapital\s+de\s+\w+/,
+  /\bcuantos?\s+(habitantes|kilometros|planetas|paises|continentes|especies)\b/,
+  /\ben\s+que\s+ano\s+(se\s+)?(invento|descubrio|nacio|murio|ocurrio|fundo\s+el\s+mundo)\b/
 ]);
 
 /**
@@ -150,9 +157,8 @@ const matchesExactTerm = (normalizedText, words, terms) =>
 /**
  * Evalua si un mensaje pertenece al ambito de la Alcaldia.
  *
- * Politica: se permite ante cualquier senal municipal (lexico, ruta de tramite o FAQ),
- * ante cortesia y ante continuaciones cortas de una conversacion ya abierta. Sin ninguna
- * de esas senales se bloquea, para no pagar tokens por una consulta ajena.
+ * Politica: se permite salvo que haya evidencia de lo contrario. Un bloqueo equivocado
+ * deja a un ciudadano sin respuesta; una llamada de mas cuesta unos tokens.
  *
  * @param {string} text
  * @param {Object} [opts]
@@ -162,7 +168,6 @@ const matchesExactTerm = (normalizedText, words, terms) =>
  * @param {string[]} [opts.allowKeywords] Vocabulario adicional del tenant.
  * @param {string[]} [opts.blockKeywords] Temas vetados adicionales del tenant.
  * @param {string|null} [opts.activeContext] Intencion en curso, si la hay.
- * @param {boolean} [opts.hasPriorExchange] true si el ciudadano ya escribio antes.
  * @returns {TopicVerdict}
  */
 export const evaluateTopic = (
@@ -173,8 +178,7 @@ export const evaluateTopic = (
     routingMap = null,
     allowKeywords = [],
     blockKeywords = [],
-    activeContext = null,
-    hasPriorExchange = false
+    activeContext = null
   } = {}
 ) => {
   if (!enabled) return { allowed: true, reason: TOPIC_REASONS.DISABLED };
@@ -184,8 +188,7 @@ export const evaluateTopic = (
 
   const words = normalized.split(/\s+/).filter(Boolean).slice(0, MAX_WORDS);
 
-  // 1. Senal municipal directa. Se evalua primero para que un termino vetado dentro de
-  //    una consulta legitima ("impuesto de mi mascota") no la bloquee.
+  // 1. Señal municipal directa: aprueba sin más análisis.
   if (containsFuzzyKeyword(normalized, [...MUNICIPAL_LEXICON, ...allowKeywords])) {
     return { allowed: true, reason: TOPIC_REASONS.MUNICIPAL_TERM };
   }
@@ -202,20 +205,21 @@ export const evaluateTopic = (
     return { allowed: true, reason: TOPIC_REASONS.FAQ_MATCH };
   }
 
-  // 2. Tema vetado. Va antes de cortesia y continuacion para que un "y el gato?" tras
-  //    una respuesta valida no se cuele como seguimiento.
+  // 2. Tema vetado: ni siquiera dentro de una conversación abierta.
   if (matchesExactTerm(normalized, words, [...OFF_TOPIC_LEXICON, ...blockKeywords])) {
     return { allowed: false, reason: TOPIC_REASONS.OFF_TOPIC_TERM };
   }
 
-  if (containsFuzzyKeyword(normalized, COURTESY_LEXICON)) {
-    return { allowed: true, reason: TOPIC_REASONS.COURTESY };
+  // 3. Forma de pregunta de cultura general. Una continuación corta de un tema abierto
+  //    se salva: "¿y cuál es la más alta?" sobre el predial es una repregunta legítima.
+  if (TRIVIA_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    if (activeContext && words.length <= FOLLOW_UP_WORD_LIMIT) {
+      return { allowed: true, reason: TOPIC_REASONS.FOLLOW_UP };
+    }
+    return { allowed: false, reason: TOPIC_REASONS.TRIVIA_QUESTION };
   }
 
-  // 3. Continuacion corta de un tema ya abierto ("¿y cuánto cuesta?").
-  if (words.length <= FOLLOW_UP_WORD_LIMIT && (activeContext || hasPriorExchange)) {
-    return { allowed: true, reason: TOPIC_REASONS.FOLLOW_UP };
-  }
-
-  return { allowed: false, reason: TOPIC_REASONS.NO_MUNICIPAL_SIGNAL };
+  // 4. Sin evidencia de que sea ajena: pasa. Los asuntos de una alcaldía son demasiados
+  //    para exigirle a cada consulta que demuestre serlo.
+  return { allowed: true, reason: TOPIC_REASONS.NO_OFF_TOPIC_SIGNAL };
 };

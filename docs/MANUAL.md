@@ -97,25 +97,39 @@ página, de modo que una consulta ajena cuesta prácticamente lo mismo que una l
 La decisión vive en `src/domain/moderation/topicGuard.js` (función pura) y se aplica en
 `ChatContext.sendMessage`, después del enrutamiento de trámites y antes de `ask()`.
 
+El guardia bloquea **solo ante evidencia de que la consulta es ajena**. La primera versión
+hacía lo contrario —exigir prueba de que era municipal— y en producción dejó fuera
+consultas legítimas: "qué días hay pico y placa", "hay algún programa para adultos
+mayores", "necesito una copia de mi escritura". Los asuntos de una alcaldía no caben en
+una lista de palabras, así que el riesgo de un falso bloqueo pesa más que el de una llamada
+de más: un bloqueo equivocado deja a un ciudadano sin respuesta; una llamada de más cuesta
+unos tokens.
+
 Política, en orden de evaluación:
 
 1. **Señal municipal** — léxico de la administración municipal (comparación difusa,
    tolera erratas), palabra clave de una ruta de trámite, o coincidencia con el catálogo
-   de FAQ → **pasa**. Se evalúa primero para que un término vetado dentro de una consulta
-   legítima ("impuesto de un negocio de recetas") no la tumbe.
+   de FAQ → **pasa** sin más análisis. Se evalúa primero para que un término vetado dentro
+   de una consulta legítima ("impuesto de un negocio de recetas") no la tumbe.
 2. **Tema vetado** — lista corta de temas inequívocamente ajenos (deportes,
-   entretenimiento, recetas, programación, traducciones), comparación exacta → **bloquea**.
-   Va antes de cortesía y seguimiento para que un "¿y el fútbol?" no se cuele como
-   continuación de una conversación válida.
-3. **Cortesía** — saludos, agradecimientos, preguntas sobre el propio asistente → **pasa**.
-4. **Seguimiento corto** — hasta 5 palabras con una intención activa o conversación previa
-   ("¿y cuánto cuesta?") → **pasa**. Sin esto, cualquier repregunta quedaría bloqueada.
-5. Sin ninguna señal → **bloquea**.
+   entretenimiento, recetas, programación, traducciones) → **bloquea**, incluso dentro de
+   una conversación abierta, para que un "¿y el fútbol?" no se cuele como continuación.
+3. **Forma de pregunta de cultura general** — superlativos del mundo, "quién inventó",
+   "capital de" → **bloquea**. Es lo que separa "¿cuál es el gato más grande del mundo?"
+   de "¿cuál es el trámite para un certificado?". Una repregunta corta dentro de un tema
+   abierto se salva: "¿y cuál es la más alta?" sobre el predial es legítima.
+4. Sin ninguna de esas señales → **pasa**.
 
 El mensaje de rechazo explica el alcance y ofrece las opciones rápidas, para que un bloqueo
 equivocado no deje al ciudadano sin salida. El léxico se amplía por tenant con
 `topicGuard.allowKeywords` y `topicGuard.blockKeywords`; `topicGuard.enabled: false` lo
 desactiva por completo.
+
+La segunda línea es el prompt de sistema ("ALCANCE TEMÁTICO"), que acota el tema pero
+**obliga a orientar dentro de él aunque el dato no esté en los bloques de conocimiento**.
+Sin esa instrucción explícita, el modelo combinaba el acotamiento con las reglas de
+fundamentación del Estatuto y terminaba respondiendo "no tengo esa información" a
+consultas municipales que sí sabía atender.
 
 El prompt de sistema refuerza la misma regla (sección "ALCANCE TEMÁTICO"), de modo que lo
 que pase el filtro tampoco se salga del municipio.
