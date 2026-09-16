@@ -39,6 +39,22 @@ const CONTEXT_TOP_K = 2;
 const TOPIC_CANDIDATES = 12;
 
 /**
+ * Puntaje minimo para dar el tema por cubierto.
+ *
+ * El corpus es solo el Estatuto Tributario, pero al ciudadano se le pregunta de todo. Sin
+ * este piso, "que dias pasa el carro de la basura" recuperaba "¿Que pasa si pago mis
+ * impuestos tarde?" y "como reporto un bache en la via" recuperaba el articulo VIGENCIA.
+ * El modelo recibia cuatro articulos sin relacion mas las reglas de fundamentacion, y
+ * remitia a la Secretaria de Hacienda por un hueco en la calle.
+ *
+ * El valor sale de medir 25 consultas tributarias y 15 que no lo son: con 10 no se pierde
+ * ninguna tributaria —la mas baja puntua 11,8— y se descarta la mitad del ruido. Las
+ * distribuciones se solapan, asi que este piso reduce el ruido pero no lo elimina; lo que
+ * evita el callejon sin salida son las reglas de `promptRules.js`.
+ */
+const MIN_TOPIC_SCORE = 10;
+
+/**
  * Instruccion de sistema para una consulta concreta.
  *
  * Se recupera dos veces y se une: primero por el mensaje actual y despues por el tema de
@@ -61,6 +77,18 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
   // 1. El mensaje actual fija el tema.
   const candidates = search(index, query, { limit: TOPIC_CANDIDATES });
 
+  // Los del tema anterior se traen ya, porque el piso de relevancia mira la conversacion
+  // y no solo el mensaje: "cuales son los requisitos" no puntua por si solo, y lo que
+  // sostiene el tema es el turno de antes.
+  const contextMatches = hasContext ? search(index, contextQuery, { limit: CONTEXT_TOP_K }) : [];
+
+  // Sin nada suficientemente afin, mejor no mandar ningun fragmento: el Estatuto no cubre
+  // la consulta y sus articulos solo servirian para que el modelo se declare sin datos.
+  const bestScore = Math.max(candidates[0]?.score ?? 0, contextMatches[0]?.score ?? 0);
+  if (bestScore < MIN_TOPIC_SCORE) {
+    return { ...buildSystemInstruction({ results: [], maxChars }), coincidencias: 0 };
+  }
+
   // 2. El mensaje anterior reordena dentro de ese tema, sumando su puntaje al del tema.
   if (hasContext && candidates.length > 1) {
     const aspect = new Map(
@@ -81,9 +109,7 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
   });
 
   // 3. Y ademas se traen los del tema anterior, para no perder el hilo.
-  const fromContext = hasContext
-    ? selectByConfidence(search(index, contextQuery, { limit: CONTEXT_TOP_K }))
-    : [];
+  const fromContext = selectByConfidence(contextMatches);
 
   const results = [];
   const seen = new Set();
@@ -93,7 +119,7 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
     results.push(item);
   }
 
-  const instruction = buildSystemInstruction({ results, maxChars });
+  const instruction = buildSystemInstruction({ results, maxChars, fuente: getCorpus()?.fuente });
   return { ...instruction, coincidencias: results.length };
 };
 

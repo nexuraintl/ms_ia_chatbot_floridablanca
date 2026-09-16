@@ -77,7 +77,17 @@ const STOPWORDS = new Set([
   // Cortesia: no tienen significado tributario, y sin ellas un saludo no recupera nada.
   // No se incluyen palabras que el Estatuto sí usa, como "dia", "tarde" o "favor".
   "hola", "gracias", "buenas", "buenos", "buena", "bueno", "saludos", "saludo",
-  "chao", "adios", "bienvenido", "bienvenida", "noche", "noches"
+  "chao", "adios", "bienvenido", "bienvenida", "noche", "noches",
+  // Verbos con los que se pide algo. BM25 puntua por rareza, y estos son rarisimos en un
+  // texto juridico: "necesito" aparece en 2 fragmentos y pesa 6,24, mas que
+  // "extemporaneidad", que pesa 4,41. Sin esta lista, "necesito saber el porcentaje de
+  // sancion de extemporaneidad" recuperaba las dos FAQ que dicen "necesito" y dejaba el
+  // articulo 517 en septimo lugar. Ninguna de estas palabras aparece en un articulo del
+  // Estatuto; se comprobo antes de incluirlas.
+  "necesito", "necesita", "necesitas", "necesitamos", "necesitar",
+  "quiero", "quisiera", "queria", "deseo", "desea", "puedo", "podria", "podrias",
+  "saber", "conocer", "averiguar", "entender",
+  "dime", "digame", "cuentame", "explicame", "ayudame", "ayuda"
 ]);
 
 /** Longitud minima de un termino indexable. Las siglas cortas del dominio se salvan. */

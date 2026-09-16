@@ -32,7 +32,7 @@ const { tokenize, buildIndex, search, selectByConfidence, CONFIDENCE_BANDS } = a
 const { buildSystemInstruction, buildKnowledgeBlock, BLOCK_HEADER } = await import(
   "../server/knowledge/promptBuilder.js"
 );
-const { BASE_RULES, GROUNDING_RULES } = await import("../server/knowledge/promptRules.js");
+const { BASE_RULES, GROUNDING_RULES, NO_MATCH_NOTICE } = await import("../server/knowledge/promptRules.js");
 const { buildKnowledgePrompt } = await import("../server/knowledge/index.js");
 const { buildGeminiRequest, lastUserText, buildRetrievalQueries } = await import(
   "../server/aiProxy.js"
@@ -252,7 +252,7 @@ section("4. Presupuesto del prompt");
   );
   check(
     "sin coincidencias se instruye a no afirmar datos normativos",
-    /no tienes el dato confirmado/i.test(sinResultados.text)
+    /no afirmes tarifas, plazos, porcentajes ni sanciones concretas/i.test(sinResultados.text)
   );
 }
 
@@ -299,7 +299,7 @@ section("5. Reglas de fundamentación");
   );
   check(
     "prohíbe dar fechas del calendario tributario",
-    /Nunca des una fecha concreta de vencimiento/.test(conContexto.text)
+    /No des una fecha concreta de vencimiento/.test(conContexto.text)
   );
 }
 
@@ -481,6 +481,202 @@ section("8. Degradación sin corpus");
 {
   const ausente = loadCorpus("./server/knowledge/no-existe.json");
   check("un corpus ausente devuelve null y no lanza", ausente === null);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("9. El ciudadano no escribe como un abogado");
+// ══════════════════════════════════════════════════════════════════════════════
+// BM25 puntúa por rareza, y un verbo de cortesía es rarísimo en un texto jurídico. Con
+// "necesito" sin neutralizar, "necesito saber el porcentaje de sanción de
+// extemporaneidad" recuperaba las dos FAQ que decían "necesito" —RIT y paz y salvo— y
+// dejaba el artículo 517 en séptimo lugar. El ciudadano que pregunta con cortesía no
+// puede obtener peores resultados que el que escribe palabras sueltas.
+{
+  const { buildIndex, search, tokenize } = await import("../server/knowledge/retriever.js");
+  const corpusReal = loadCorpus("./server/knowledge/corpus.json");
+  const indice = buildIndex(corpusReal.chunks);
+
+  // Ninguna de estas debe sobrevivir a la tokenización.
+  const relleno = [
+    "necesito", "quiero", "quisiera", "deseo", "puedo", "podria",
+    "saber", "conocer", "averiguar", "entender", "dime", "digame", "ayudame"
+  ];
+  const sobreviven = relleno.filter((t) => tokenize(t).length > 0);
+  check(
+    "los verbos de petición no puntúan",
+    sobreviven.length === 0,
+    sobreviven.length ? `siguen indexándose: ${sobreviven.join(", ")}` : `${relleno.length} neutralizados`
+  );
+
+  // Y ninguna palabra con significado tributario puede caer en la lista por descuido.
+  const contenido = [
+    "pagar", "declarar", "presentar", "solicitar", "liquidar", "tarde", "dia",
+    "favor", "informacion", "sancion", "tarifa", "predial", "extemporaneidad"
+  ];
+  const perdidas = contenido.filter((t) => tokenize(t).length === 0);
+  check(
+    "el vocabulario tributario sigue indexándose",
+    perdidas.length === 0,
+    perdidas.length ? `NEUTRALIZADAS POR ERROR: ${perdidas.join(", ")}` : "ninguna se perdió"
+  );
+
+  // Una consulta escrita como habla un ciudadano debe caer en su tema. Se afirma el tema
+  // y no un fragmento concreto: cuál de los del tema queda primero puede cambiar al
+  // crecer el corpus, y eso no sería una regresión.
+  const consultasConversacionales = [
+    ["necesito saber el porcentaje de sancion de extemporaneidad", "Sanciones e Intereses"],
+    ["quiero saber como se calcula el impuesto predial", "Impuesto Predial Unificado"],
+    ["ayudame con el paz y salvo por favor", "Paz y Salvo"],
+    ["dime que necesito para inscribirme en el rit", "Registro de Información Tributaria (RIT)"],
+    ["puedo pedir un acuerdo de pago para mi deuda", "Formas de Pago y Acuerdos"]
+  ];
+  for (const [consulta, tema] of consultasConversacionales) {
+    const top = search(indice, consulta, { limit: 1 })[0];
+    check(
+      `cae en su tema: "${consulta.slice(0, 44)}"`,
+      Boolean(top) && top.chunk.tema === tema,
+      top ? `${top.chunk.id} -> ${top.chunk.tema}` : "sin resultados"
+    );
+  }
+
+  // El caso exacto que se reportó en producción.
+  const top = search(indice, "necesito saber el porcentaje de sancion de extemporaneidad", { limit: 3 });
+  check(
+    "la consulta reportada recupera sanciones, no RIT ni paz y salvo",
+    top.length > 0 && top[0].chunk.tema === "Sanciones e Intereses",
+    top.map((r) => `${r.chunk.id}(${r.chunk.tema})`).join(" | ")
+  );
+  check(
+    "y el fragmento que trae el porcentaje queda de primero",
+    top.length > 0 && /5%/.test(top[0].chunk.texto),
+    top.length ? `-> ${top[0].chunk.id}` : "sin resultados"
+  );
+
+  // "¿Cuál es el estatuto vigente?" se respondía remitiendo a la Secretaría: el corpus
+  // sabe que es el Acuerdo 020 de 2026, pero esa identidad no salía del JSON.
+  {
+    const conNorma = buildSystemInstruction({
+      results: [{ chunk: corpusReal.chunks[0] }],
+      maxChars: 12_000,
+      fuente: corpusReal.fuente
+    });
+    check(
+      "el bloque declara qué norma se está citando",
+      conNorma.text.includes(corpusReal.fuente.documento),
+      corpusReal.fuente.documento.slice(0, 60)
+    );
+    const sinNorma = buildSystemInstruction({
+      results: [{ chunk: corpusReal.chunks[0] }],
+      maxChars: 12_000
+    });
+    check(
+      "sin metadatos de fuente el bloque sigue armándose",
+      sinNorma.text.includes(BLOCK_HEADER) && !sinNorma.text.includes("Norma vigente:")
+    );
+  }
+
+  // La regla que hacía que el modelo remitiera a Hacienda teniendo el dato delante.
+  const { GROUNDING_RULES } = await import("../server/knowledge/promptRules.js");
+  check(
+    "la regla obliga a responder cuando el dato sí está en el bloque",
+    /Si el dato SÍ está en el bloque, RESPÓNDELO citando su artículo/.test(GROUNDING_RULES)
+  );
+  check(
+    "las preguntas frecuentes se declaran citables",
+    /son parte del bloque y son citables/.test(GROUNDING_RULES)
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+section("10. Responder, no remitir");
+// ══════════════════════════════════════════════════════════════════════════════
+// El corpus es solo el Estatuto Tributario, pero al ciudadano se le pregunta de todo.
+// Sin piso de relevancia, "cómo reporto un bache en la vía" recuperaba el artículo
+// VIGENCIA y "qué días pasa el carro de la basura" recuperaba "¿qué pasa si pago mis
+// impuestos tarde?". El modelo recibía cuatro artículos sin relación más las reglas de
+// fundamentación, y remitía a la Secretaría de Hacienda por un hueco en la calle.
+{
+  const tieneBloque = (query, extra = {}) => {
+    const p = buildKnowledgePrompt({ query, maxChars: 12_000, ...extra });
+    return Boolean(p) && p.text.includes(BLOCK_HEADER);
+  };
+
+  // Ninguna consulta tributaria puede perder su fundamento por el piso.
+  const tributarias = [
+    "como se calcula el impuesto predial",
+    "cuanto es la sancion por declarar tarde",
+    "necesito saber el porcentaje de sancion de extemporaneidad",
+    "como saco el paz y salvo",
+    "que tarifa de ica me aplica si tengo una tienda",
+    "cuanto vale la uvt",
+    "como reclamo si el predial esta mal liquidado",
+    "cual es el estatuto tributario vigente"
+  ];
+  const sinFundamento = tributarias.filter((q) => !tieneBloque(q));
+  check(
+    "ninguna consulta tributaria se queda sin el Estatuto",
+    sinFundamento.length === 0,
+    sinFundamento.length ? `PERDIERON EL BLOQUE: ${sinFundamento.join(" | ")}` : `${tributarias.length} conservan su fundamento`
+  );
+
+  // Y las que el Estatuto no cubre no deben arrastrar artículos de impuestos.
+  const noTributarias = [
+    "como reporto un bache en la via",
+    "cual es el telefono de la alcaldia",
+    "como denuncio ruido de un vecino",
+    "donde queda la secretaria de transito",
+    "a que hora abren las oficinas de la alcaldia",
+    "como consigo cupo escolar para mi hijo",
+    "donde vacunan mascotas gratis"
+  ];
+  const conRuido = noTributarias.filter((q) => tieneBloque(q));
+  check(
+    "las consultas que el Estatuto no cubre no reciben artículos al azar",
+    conRuido.length <= 1,
+    conRuido.length ? `siguen recibiendo bloque: ${conRuido.join(" | ")}` : "ninguna arrastra ruido"
+  );
+
+  // Un seguimiento corto no puntúa por sí solo: lo sostiene el turno anterior. El piso
+  // mira la conversación, no el mensaje, o la continuidad se rompería.
+  check(
+    "un seguimiento corto conserva el fundamento del tema en curso",
+    tieneBloque("cuales son los requisitos", { contextQuery: "como puedo hacer un acuerdo de pago" }),
+    "el piso se evalúa sobre la conversación"
+  );
+  check(
+    "pero un seguimiento sobre un tema ajeno tampoco lo inventa",
+    !tieneBloque("y a que hora abren", { contextQuery: "donde queda la secretaria de transito" })
+  );
+
+  // La redacción es lo que evita el callejón sin salida cuando no hay fundamento.
+  check(
+    "sin fragmentos se ordena responder igual, no remitir",
+    /Eso NO te exime de responder/.test(NO_MATCH_NOTICE) &&
+      /es una respuesta fallida/.test(NO_MATCH_NOTICE)
+  );
+  check(
+    "con fragmentos, el dato que falte no cancela el resto de la respuesta",
+    /TAMPOCO te detengas ahí/.test(GROUNDING_RULES) &&
+      /Remitir es el cierre de una respuesta, nunca la respuesta entera/.test(GROUNDING_RULES)
+  );
+  check(
+    "las fechas siguen acotadas, pero se explica el mecanismo",
+    /No des una fecha concreta de vencimiento/.test(GROUNDING_RULES) &&
+      /"consulta tu factura" a secas no lo es/.test(GROUNDING_RULES)
+  );
+  check(
+    "la regla base obliga a revisar la respuesta antes de enviarla",
+    /si se limita a decir dónde preguntar/.test(BASE_RULES)
+  );
+
+  // La repetición sesga: seis "remite a la Secretaría de Hacienda" empujaban al modelo
+  // hacia la salida en cada regla que leía.
+  const menciones = (GROUNDING_RULES.match(/Secretaría de Hacienda/g) || []).length;
+  check(
+    "la Secretaría de Hacienda deja de ser el estribillo de las reglas",
+    menciones <= 3,
+    `${menciones} menciones en las reglas de fundamentación (eran 6)`
+  );
 }
 
 // ── Cierre ─────────────────────────────────────────────────────────────────────
