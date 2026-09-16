@@ -483,6 +483,87 @@ section("8. Degradación sin corpus");
   check("un corpus ausente devuelve null y no lanza", ausente === null);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+section("9. El ciudadano no escribe como un abogado");
+// ══════════════════════════════════════════════════════════════════════════════
+// BM25 puntúa por rareza, y un verbo de cortesía es rarísimo en un texto jurídico. Con
+// "necesito" sin neutralizar, "necesito saber el porcentaje de sanción de
+// extemporaneidad" recuperaba las dos FAQ que decían "necesito" —RIT y paz y salvo— y
+// dejaba el artículo 517 en séptimo lugar. El ciudadano que pregunta con cortesía no
+// puede obtener peores resultados que el que escribe palabras sueltas.
+{
+  const { buildIndex, search, tokenize } = await import("../server/knowledge/retriever.js");
+  const corpusReal = loadCorpus("./server/knowledge/corpus.json");
+  const indice = buildIndex(corpusReal.chunks);
+
+  // Ninguna de estas debe sobrevivir a la tokenización.
+  const relleno = [
+    "necesito", "quiero", "quisiera", "deseo", "puedo", "podria",
+    "saber", "conocer", "averiguar", "entender", "dime", "digame", "ayudame"
+  ];
+  const sobreviven = relleno.filter((t) => tokenize(t).length > 0);
+  check(
+    "los verbos de petición no puntúan",
+    sobreviven.length === 0,
+    sobreviven.length ? `siguen indexándose: ${sobreviven.join(", ")}` : `${relleno.length} neutralizados`
+  );
+
+  // Y ninguna palabra con significado tributario puede caer en la lista por descuido.
+  const contenido = [
+    "pagar", "declarar", "presentar", "solicitar", "liquidar", "tarde", "dia",
+    "favor", "informacion", "sancion", "tarifa", "predial", "extemporaneidad"
+  ];
+  const perdidas = contenido.filter((t) => tokenize(t).length === 0);
+  check(
+    "el vocabulario tributario sigue indexándose",
+    perdidas.length === 0,
+    perdidas.length ? `NEUTRALIZADAS POR ERROR: ${perdidas.join(", ")}` : "ninguna se perdió"
+  );
+
+  // Una consulta escrita como habla un ciudadano debe caer en su tema. Se afirma el tema
+  // y no un fragmento concreto: cuál de los del tema queda primero puede cambiar al
+  // crecer el corpus, y eso no sería una regresión.
+  const consultasConversacionales = [
+    ["necesito saber el porcentaje de sancion de extemporaneidad", "Sanciones e Intereses"],
+    ["quiero saber como se calcula el impuesto predial", "Impuesto Predial Unificado"],
+    ["ayudame con el paz y salvo por favor", "Paz y Salvo"],
+    ["dime que necesito para inscribirme en el rit", "Registro de Información Tributaria (RIT)"],
+    ["puedo pedir un acuerdo de pago para mi deuda", "Formas de Pago y Acuerdos"]
+  ];
+  for (const [consulta, tema] of consultasConversacionales) {
+    const top = search(indice, consulta, { limit: 1 })[0];
+    check(
+      `cae en su tema: "${consulta.slice(0, 44)}"`,
+      Boolean(top) && top.chunk.tema === tema,
+      top ? `${top.chunk.id} -> ${top.chunk.tema}` : "sin resultados"
+    );
+  }
+
+  // El caso exacto que se reportó en producción.
+  const top = search(indice, "necesito saber el porcentaje de sancion de extemporaneidad", { limit: 3 });
+  check(
+    "la consulta reportada recupera sanciones, no RIT ni paz y salvo",
+    top.length > 0 && top[0].chunk.tema === "Sanciones e Intereses",
+    top.map((r) => `${r.chunk.id}(${r.chunk.tema})`).join(" | ")
+  );
+  check(
+    "y el fragmento que trae el porcentaje queda de primero",
+    top.length > 0 && /5%/.test(top[0].chunk.texto),
+    top.length ? `-> ${top[0].chunk.id}` : "sin resultados"
+  );
+
+  // La regla que hacía que el modelo remitiera a Hacienda teniendo el dato delante.
+  const { GROUNDING_RULES } = await import("../server/knowledge/promptRules.js");
+  check(
+    "la regla obliga a responder cuando el dato sí está en el bloque",
+    /Si el dato SÍ está en el bloque, RESPÓNDELO citando su artículo/.test(GROUNDING_RULES)
+  );
+  check(
+    "las preguntas frecuentes se declaran citables",
+    /son parte del bloque y son citables/.test(GROUNDING_RULES)
+  );
+}
+
 // ── Cierre ─────────────────────────────────────────────────────────────────────
 const fallos = results.filter((r) => !r.passed);
 console.log(`\n\x1b[1m${"═".repeat(74)}\x1b[0m`);

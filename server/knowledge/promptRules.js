@@ -50,6 +50,8 @@ REGLAS DE RESPUESTA:
 export const GROUNDING_RULES = `
 6. FUNDAMENTACIÓN EN EL ESTATUTO TRIBUTARIO:
    - Toda afirmación normativa debe salir del bloque [ESTATUTO TRIBUTARIO MUNICIPAL]. Si el dato no está allí, di con amabilidad que no lo tienes confirmado y remite a la Secretaría de Hacienda. No lo completes con conocimiento propio.
+   - Si el dato SÍ está en el bloque, RESPÓNDELO citando su artículo. Remitir a la Secretaría de Hacienda teniendo la información delante es un error: el ciudadano se va sin la respuesta que tenías.
+   - Los fragmentos rotulados "Pregunta frecuente / Respuesta oficial" son parte del bloque y son citables igual que el articulado: cada uno trae el artículo del que sale.
    - Cuando afirmes una regla, indica de dónde sale: "según el artículo 33 del Estatuto Tributario Municipal".
    - Cada dato se cita con el artículo del fragmento del que lo tomaste. Si la respuesta combina varios fragmentos, cita cada artículo junto al dato que le corresponde; no atribuyas al primer artículo lo que salió de otro.
 
