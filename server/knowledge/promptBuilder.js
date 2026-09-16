@@ -45,10 +45,15 @@ export const formatChunkHeader = (chunk) => {
  * @param {number} maxChars
  * @returns {{text: string, incluidos: string[]}}
  */
-export const buildKnowledgeBlock = (results, maxChars) => {
+export const buildKnowledgeBlock = (results, maxChars, fuente = null) => {
   const pieces = [];
   const incluidos = [];
-  let used = BLOCK_HEADER.length;
+  // Sin la identidad de la norma el modelo no puede decir qué acuerdo está citando, y a
+  // "¿cuál es el estatuto vigente?" respondía remitiendo a la Secretaría de Hacienda.
+  const encabezado = fuente?.documento
+    ? `${BLOCK_HEADER}\nNorma vigente: ${fuente.documento}${fuente.fecha ? ` (expedida el ${fuente.fecha})` : ""}`
+    : BLOCK_HEADER;
+  let used = encabezado.length;
 
   for (const { chunk } of results) {
     const entry = `${formatChunkHeader(chunk)}\n${chunk.texto}`;
@@ -59,7 +64,7 @@ export const buildKnowledgeBlock = (results, maxChars) => {
   }
 
   if (pieces.length === 0) return { text: "", incluidos: [] };
-  return { text: `${BLOCK_HEADER}\n${pieces.join("\n\n")}`, incluidos };
+  return { text: `${encabezado}\n${pieces.join("\n\n")}`, incluidos };
 };
 
 /**
@@ -68,9 +73,10 @@ export const buildKnowledgeBlock = (results, maxChars) => {
  * @param {Object} params
  * @param {{chunk: Object}[]} params.results  Fragmentos recuperados, ya ordenados.
  * @param {number} params.maxChars            Tope del proxy (`LIMITS.maxSystemChars`).
+ * @param {Object} [params.fuente]            Identidad de la norma (`corpus.fuente`).
  * @returns {{text: string, incluidos: string[]}}
  */
-export const buildSystemInstruction = ({ results = [], maxChars = 8000 } = {}) => {
+export const buildSystemInstruction = ({ results = [], maxChars = 8000, fuente = null } = {}) => {
   const withGrounding = `${BASE_RULES}\n\n${GROUNDING_RULES}`;
   const available = maxChars - withGrounding.length - SAFETY_MARGIN_CHARS;
 
@@ -78,7 +84,7 @@ export const buildSystemInstruction = ({ results = [], maxChars = 8000 } = {}) =
     return { text: `${BASE_RULES}\n\n${NO_MATCH_NOTICE}`, incluidos: [] };
   }
 
-  const block = buildKnowledgeBlock(results, available);
+  const block = buildKnowledgeBlock(results, available, fuente);
   if (block.text === "") {
     return { text: `${BASE_RULES}\n\n${NO_MATCH_NOTICE}`, incluidos: [] };
   }

@@ -93,7 +93,7 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
     results.push(item);
   }
 
-  const instruction = buildSystemInstruction({ results, maxChars });
+  const instruction = buildSystemInstruction({ results, maxChars, fuente: getCorpus()?.fuente });
   return { ...instruction, coincidencias: results.length };
 };
 

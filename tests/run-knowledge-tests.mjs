@@ -552,6 +552,29 @@ section("9. El ciudadano no escribe como un abogado");
     top.length ? `-> ${top[0].chunk.id}` : "sin resultados"
   );
 
+  // "¿Cuál es el estatuto vigente?" se respondía remitiendo a la Secretaría: el corpus
+  // sabe que es el Acuerdo 020 de 2026, pero esa identidad no salía del JSON.
+  {
+    const conNorma = buildSystemInstruction({
+      results: [{ chunk: corpusReal.chunks[0] }],
+      maxChars: 12_000,
+      fuente: corpusReal.fuente
+    });
+    check(
+      "el bloque declara qué norma se está citando",
+      conNorma.text.includes(corpusReal.fuente.documento),
+      corpusReal.fuente.documento.slice(0, 60)
+    );
+    const sinNorma = buildSystemInstruction({
+      results: [{ chunk: corpusReal.chunks[0] }],
+      maxChars: 12_000
+    });
+    check(
+      "sin metadatos de fuente el bloque sigue armándose",
+      sinNorma.text.includes(BLOCK_HEADER) && !sinNorma.text.includes("Norma vigente:")
+    );
+  }
+
   // La regla que hacía que el modelo remitiera a Hacienda teniendo el dato delante.
   const { GROUNDING_RULES } = await import("../server/knowledge/promptRules.js");
   check(
