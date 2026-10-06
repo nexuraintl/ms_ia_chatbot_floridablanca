@@ -44,12 +44,17 @@ const createMemoryStore = () => {
   return {
     isDurable: false,
     async put(item) {
+      if (items.size >= MAX_QUEUE_SIZE) throw new Error("Cola de registros llena");
       const key = item.key ?? `mem-${++seq}`;
       items.set(key, { ...item, key });
       return key;
     },
     async getBatch(limit) {
       return Array.from(items.values()).slice(0, limit);
+    },
+    async putMany(batch) {
+      if (items.size + batch.length > MAX_QUEUE_SIZE) throw new Error("Cola de registros llena");
+      for (const item of batch) await this.put(item);
     },
     async remove(keys) {
       for (const k of keys) items.delete(k);
@@ -126,11 +131,11 @@ const runTransaction = (db, mode, work) =>
     tx.onabort = () => reject(tx.error || new Error("Transacción abortada"));
     tx.onerror = () => reject(tx.error || new Error("Error de transacción"));
 
+    let result;
+    tx.oncomplete = () => resolve(result);
     if (request) {
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => { result = request.result; };
       request.onerror = () => reject(request.error);
-    } else {
-      tx.oncomplete = () => resolve(undefined);
     }
   });
 
@@ -180,6 +185,21 @@ export const createOutboxStore = async () => {
     async getBatch(limit = 50) {
       const all = await runTransaction(db, "readonly", (store) => store.getAll());
       return (all || []).slice(0, limit);
+    },
+
+    /** Una tanda se confirma completa o se aborta completa. */
+    async putMany(batch) {
+      return runTransaction(db, "readwrite", store => {
+        const count = store.count();
+        count.onsuccess = () => {
+          if (count.result + batch.length > MAX_QUEUE_SIZE) {
+            count.transaction.abort();
+            return;
+          }
+          for (const item of batch) store.add(item);
+        };
+        return null;
+      });
     },
 
     /**

@@ -2,11 +2,10 @@
  * Repositorio de conversaciones sobre HTTP. Implementa `ConversationRepositoryPort`.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * ESTADO: LISTO, PENDIENTE DE APUNTAR
+ * Servidor implementado en server/conversationApi.js sobre MySQL.
  *
- * El destino real del almacenamiento aún no está definido; solo se sabe que estará
- * alojado en Cloud Run. Este adaptador está completo y funcional: para activarlo basta
- * definir `VITE_CONVERSATION_API_URL` en el build.
+ * Para activarlo, configurar DB_* en el servidor y definir VITE_PERSISTENCE_MODE=http
+ * y VITE_CONVERSATION_API_URL en el build. El destino SQL es una fila de `chat`.
  *
  * CONTRATO QUE DEBE EXPONER EL BACKEND
  *
@@ -23,9 +22,9 @@
  * Requisitos del lado servidor que este adaptador no puede garantizar:
  *
  *   · Deduplicación por `messageId`. El cliente reintenta hasta recibir confirmación,
- *     así que sin deduplicación habrá mensajes repetidos en el historial. En Firestore:
- *     `doc(messageId).set(...)`. En Postgres: clave única y `ON CONFLICT DO NOTHING`.
- *   · Estampar `receivedAt` con el reloj del servidor. El `occurredAt` que envía el
+ *     así que sin deduplicación habrá mensajes repetidos en el historial. En MySQL,
+ *     se bloquea la fila y se comprueban los IDs dentro de la transacción.
+ *   · Estampar `at` con el reloj del servidor. El `occurredAt` que envía el
  *     cliente lo controla el usuario y no tiene valor probatorio.
  *   · Cifrado en reposo y política de retención. Los registros contienen nombre,
  *     correo y, con frecuencia, la cédula que el ciudadano escribió en el chat.
@@ -100,6 +99,12 @@ export const createHttpConversationRepository = ({ baseUrl }) => {
       // Este adaptador envía de forma sincrónica; no mantiene estado pendiente.
       // La cola y los reintentos los aporta `OutboxConversationRepository`.
       return { pending: 0 };
+    },
+
+    async closeConversation(envelope) {
+      await post(`${base}/api/v1/conversations/${encodeURIComponent(envelope.conversationId)}/close`,
+        { conversationId: envelope.conversationId, tenantId: envelope.tenantId },
+        { timeoutMs: PERSIST_TIMEOUT_MS });
     }
   };
 };

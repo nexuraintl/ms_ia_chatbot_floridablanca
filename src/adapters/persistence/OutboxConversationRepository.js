@@ -29,6 +29,7 @@ const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 
 const KIND_ENVELOPE = "envelope";
 const KIND_MESSAGE = "message";
+const KIND_CLOSE = "close";
 
 /**
  * @param {Object} deps
@@ -44,6 +45,7 @@ export const createOutboxConversationRepository = ({ delegate }) => {
   let isFlushing = false;
   let retryIndex = 0;
   let retryTimer = null;
+  let flushRequested = false;
 
   /** Obtiene la cola, creándola una sola vez. */
   const getStore = () => {
@@ -110,6 +112,7 @@ export const createOutboxConversationRepository = ({ delegate }) => {
    */
   const flush = async () => {
     if (isFlushing) {
+      flushRequested = true;
       const s = await getStore();
       return { pending: await s.count() };
     }
@@ -136,6 +139,8 @@ export const createOutboxConversationRepository = ({ delegate }) => {
         try {
           if (group.kind === KIND_ENVELOPE) {
             await delegate.openConversation(group.payloads[0]);
+          } else if (group.kind === KIND_CLOSE) {
+            await delegate.closeConversation(group.payloads[0]);
           } else {
             await delegate.appendMessages(group.payloads);
           }
@@ -160,6 +165,10 @@ export const createOutboxConversationRepository = ({ delegate }) => {
       return { pending };
     } finally {
       isFlushing = false;
+      if (flushRequested) {
+        flushRequested = false;
+        setTimeout(() => flush().catch(() => {}), 0);
+      }
     }
   };
 
@@ -191,6 +200,9 @@ export const createOutboxConversationRepository = ({ delegate }) => {
     });
   }
 
+  // Recuperar la cola de visitas anteriores aunque no se escriba un mensaje nuevo.
+  flush().catch(() => {});
+
   return {
     name: `outbox(${delegate.name})`,
 
@@ -200,11 +212,13 @@ export const createOutboxConversationRepository = ({ delegate }) => {
 
     async appendMessages(records) {
       if (!Array.isArray(records) || records.length === 0) return;
-      // Se encola uno por uno para que cada mensaje sea confirmable de forma
-      // independiente: si una tanda falla a medias, no se reenvía lo ya aceptado.
-      for (const record of records) {
-        await enqueue(KIND_MESSAGE, record);
-      }
+      const s = await getStore();
+      await s.putMany(records.map(payload => ({ kind: KIND_MESSAGE, payload, queuedAt: new Date().toISOString() })));
+      flush().catch(() => {});
+    },
+
+    async closeConversation(envelope) {
+      if (delegate.closeConversation) await enqueue(KIND_CLOSE, envelope);
     },
 
     flush

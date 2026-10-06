@@ -59,12 +59,8 @@ export const ChatWindow = () => {
       <button
         onClick={openChat}
         title="Abrir Chat de Atención Virtual"
+        aria-label="Abrir Chat de Atención Virtual"
         style={{
-          position: "fixed",
-          bottom: "24px",
-          right: "24px",
-          width: "64px",
-          height: "64px",
           borderRadius: "50%",
           backgroundColor: "#15803d",
           color: "#ffffff",
@@ -79,7 +75,7 @@ export const ChatWindow = () => {
         }}
         className="floating-chat-trigger"
       >
-        <MessageSquare size={28} />
+        <MessageSquare size={28} aria-hidden="true" />
         <span
           style={{
             position: "absolute",

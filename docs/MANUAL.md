@@ -169,7 +169,7 @@ API Gateway.
 | RPA PQRSD | Radicación y consulta de radicados. Protegido por IAM: ídem | Alta |
 | Google Gemini API | Respuesta libre conversacional | Media — degrada a catálogo local |
 | Base de conocimiento del Estatuto | Fundamenta las respuestas tributarias. Se recupera en el servidor y se inyecta en la instrucción de sistema | Media — sin ella el asistente responde sin citar el articulado. Ver `docs/BASE_CONOCIMIENTO.md` |
-| Backend de conversaciones | Registro de la atención | ⚠️ PENDIENTE — sin definir |
+| MySQL/MariaDB | Registro de la atención en `ia_chatbot_floridablanca.chat` | Implementado; verificar conexión real |
 
 ### Diagrama de flujo
 
