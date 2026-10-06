@@ -69,11 +69,13 @@ RUN apk add --no-cache dumb-init
 
 WORKDIR /app
 
-# Solo el resultado del build y el servidor. Ni node_modules, ni código fuente, ni
-# dependencias de desarrollo: el servidor usa únicamente módulos nativos de Node.
+# Instalar solo dependencias de producción, incluido el controlador MySQL.
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Resultado del build y servidor, sin dependencias de desarrollo.
 COPY --from=builder --chown=node:node /build/dist ./dist
 COPY --chown=node:node server ./server
-COPY --chown=node:node package.json ./
 
 # Usuario no-root. Las imágenes oficiales de Node ya traen el usuario `node`
 # (uid 1000), así que no hace falta crear uno.

@@ -9,12 +9,14 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start": "node server/index.js",
-    "test": "npm run test:security && npm run test:server",
+    "test": "npm run test:security && npm run test:server && npm run test:conversations",
+    "test:conversations": "node --test tests/conversations.test.mjs",
     "test:security": "node tests/run-security-tests.mjs",
     "test:server": "node tests/run-server-tests.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",
+    "mysql2": "^3.24.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
@@ -26,6 +28,7 @@
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17.6.0",
     "vite": "^8.0.12"
   }

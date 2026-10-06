@@ -31,6 +31,8 @@ import { setupLogging, info, warning, error } from "./logging.js";
 import { createAiProxyHandler, createProxyConfig, AI_CHAT_PATH } from "./aiProxy.js";
 import { createRpaProxyHandler, createRpaProxyConfig, RPA_PATH_PREFIX } from "./rpaProxy.js";
 import { describeIpResolution } from "./clientIdentity.js";
+import { createConversationConfig, createConversationStore } from "./conversationStore.js";
+import { createConversationApi, CONVERSATION_PATH_PREFIX } from "./conversationApi.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -66,6 +68,9 @@ const aiProxy = createAiProxyHandler({ config: aiProxyConfig });
  */
 const rpaProxyConfig = createRpaProxyConfig();
 const rpaProxy = createRpaProxyHandler({ config: rpaProxyConfig });
+const conversationConfig = createConversationConfig();
+const conversationStore = createConversationStore({ config: conversationConfig });
+const conversationApi = createConversationApi({ config: conversationConfig, store: conversationStore });
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -232,6 +237,14 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  if (urlPath === CONVERSATION_PATH_PREFIX || urlPath.startsWith(CONVERSATION_PATH_PREFIX + "/")) {
+    conversationApi.handle(req, res).then(complete).catch(() => {
+      if (!res.headersSent) sendJson(res, 503, { reason: "persistence_unavailable" });
+      complete(503);
+    });
+    return;
+  }
+
   if (req.method !== "GET" && req.method !== "HEAD") {
     sendJson(res, 405, { error: "Method Not Allowed" });
     complete(405);
@@ -289,7 +302,8 @@ server.on("error", (err) => {
 // cortar peticiones en curso.
 const shutdown = (signal) => {
   info("shutdown_started", { signal });
-  server.close(() => {
+  server.close(async () => {
+    await conversationStore.close().catch(() => {});
     info("shutdown_complete", { signal });
     process.exit(0);
   });
@@ -302,6 +316,12 @@ server.listen(PORT, "0.0.0.0", () => {
     port: PORT,
     static_root: STATIC_ROOT,
     node_version: process.version
+  });
+  info("conversation_api_configured", {
+    enabled: conversationConfig.enabled,
+    table: conversationConfig.table,
+    tenant_id: conversationConfig.tenantId,
+    connection_limit: conversationConfig.poolOptions.connectionLimit
   });
 
   // Se deja constancia de la configuración del control de gasto en el arranque. Una

@@ -39,6 +39,8 @@
  *           Añade mensajes. Debe ser idempotente por `messageId`.
  * @property {() => Promise<{pending: number}>} flush
  *           Fuerza el envío de lo pendiente. Devuelve cuántos quedan sin confirmar.
+ * @property {((envelope: {tenantId: string, conversationId: string}) => Promise<void>)=} closeConversation
+ *           Operación opcional: encola el cierre al reiniciar el chat.
  */
 
 const REQUIRED_METHODS = ["openConversation", "appendMessages", "flush"];

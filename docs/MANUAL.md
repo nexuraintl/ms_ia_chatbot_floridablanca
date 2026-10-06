@@ -73,7 +73,7 @@ API Gateway.
 | RPA Impuesto Predial | Consulta de predios y generación de factura | Alta |
 | RPA PQRSD | Radicación y consulta de radicados | Alta |
 | Google Gemini API | Respuesta libre conversacional | Media — degrada a catálogo local |
-| Backend de conversaciones | Registro de la atención | ⚠️ PENDIENTE — sin definir |
+| MySQL: `ia_chatbot_floridablanca.chat` | Registro de la atención mediante la API de este servidor | Backend implementado; acceso remoto pendiente |
 
 ### Diagrama de flujo
 
@@ -86,7 +86,7 @@ Navegador del ciudadano
             ├──▶ RPA Predial      (X-Correlation-ID)
             ├──▶ RPA PQRSD        (X-Correlation-ID)
             ├──▶ Gemini API       (clave en el navegador — ver SECURITY.md H-01)
-            └──▶ Backend conversaciones  ⚠️ PENDIENTE
+            └──▶ API de conversaciones de este servidor ──▶ MySQL
 ```
 
 ---
@@ -101,6 +101,9 @@ dependencias que exigen una credencial que el navegador no puede tener.
 | GET | `/health` | Estado del servicio. Devuelve `{"status": "UP"}` | No |
 | GET | `/version` | `service`, `version`, `environment` | No |
 | POST | `/api/ai/chat` | Proxy de Gemini con control de gasto | No |
+| POST | `/api/v1/conversations` | Abre o actualiza una conversación | No; CORS y límite por IP |
+| POST | `/api/v1/conversations/{id}/messages` | Añade mensajes sin duplicados | No; tenant fijado por servidor |
+| POST | `/api/v1/conversations/{id}/close` | Registra el cierre al reiniciar el chat | No |
 | GET | `/rpa/factura/v1/clientes` | Municipios y tipos de búsqueda | No |
 | GET / POST | `/rpa/factura/v1/prewarm` | Precalienta el captcha del portal | No |
 | POST | `/rpa/factura/v1/generar_factura` | Inicia la generación de factura | No |
@@ -181,6 +184,12 @@ Se incrustan **literalmente** en el bundle durante el build.
 | `VITE_RPA_PQRSD_API_URL` | URL del RPA de PQRSD | Configuración |
 | `VITE_CONVERSATION_API_URL` | Backend de conversaciones | Configuración |
 | `VITE_PERSISTENCE_MODE` | `off` / `console` / `http` | Configuración |
+
+La configuración MySQL es exclusivamente de runtime: `DB_HOST` o `DB_SOCKET_PATH`,
+`DB_PORT`, `DB_USER`, `DB_PASS`, `DB_NAME`, `DB_TABLE`, `DB_TENANT_ID`,
+`DB_CONNECTION_LIMIT`, `DB_SSL_MODE`, `DB_SSL_CA_FILE` y
+`CONVERSATION_RATE_LIMIT_PER_MINUTE`. Ver
+[configuración y pruebas del guardado](REVISION_PERSISTENCIA_MYSQL.md).
 
 ### 🔴 Regla crítica sobre secretos
 

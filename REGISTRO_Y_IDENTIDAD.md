@@ -1,13 +1,15 @@
 # Registro de conversaciones e identificación del ciudadano
 
-Estado: **implementado y probado, pendiente de apuntar al backend**.
+Estado: **frontend y backend MySQL implementados; conexión remota pendiente de configurar y verificar**.
 
-El destino del almacenamiento aún no está definido (solo se sabe que estará alojado en
-Cloud Run), así que todo está listo y desactivado por defecto. Para activarlo no hay que
-tocar código: basta configuración.
+El destino definido es `ia_chatbot_floridablanca.chat`, una fila por conversación.
+La API está en este servidor. El guardado continúa desactivado por defecto hasta
+configurar el acceso MySQL en runtime y la URL pública de la API en el build.
+Ver [configuración, esquema y límites](docs/REVISION_PERSISTENCIA_MYSQL.md).
 
 ```bash
 npm run test:security
+npm run test:conversations
 ```
 
 ---
@@ -52,7 +54,7 @@ error que en un proyecto público sale caro.
 
 ## 2. Contrato que debe exponer el backend
 
-Dos endpoints:
+Tres endpoints:
 
 ```
 POST {base}/api/v1/conversations
@@ -62,6 +64,10 @@ POST {base}/api/v1/conversations
 POST {base}/api/v1/conversations/{conversationId}/messages
      cuerpo: { messages: ConversationMessageRecord[] }
      debe DEDUPLICAR por messageId
+
+POST {base}/api/v1/conversations/{conversationId}/close
+     cuerpo: { tenantId, conversationId }
+     registra ended_at de forma idempotente al reiniciar el chat
 ```
 
 Las formas exactas están en [conversationRecord.js](src/domain/conversation/conversationRecord.js).
@@ -73,10 +79,11 @@ Para ver payloads reales, corre en modo `console` y mira `window.__aviChatbotRec
 que sin deduplicación una red inestable produce mensajes repetidos. Un registro con
 duplicados pierde valor como prueba.
 
-- Firestore: `doc(messageId).set(...)`
-- Postgres: clave única + `INSERT ... ON CONFLICT DO NOTHING`
+- MySQL: bloqueo de la fila de `chat` dentro de una transacción y deduplicación por
+  el campo `id` del arreglo `messages`. Solo se confirma después del commit.
 
-**2. Estampar `receivedAt` con el reloj del servidor.** El `occurredAt` que envía el
+**2. Estampar la recepción con el reloj del servidor.** En MySQL se guarda como `at`
+dentro de cada mensaje. El `occurredAt` que envía el
 cliente lo controla el navegador del usuario: puede ir atrasado, adelantado o cambiar a
 mitad de conversación. No tiene valor probatorio. Conserva ambos — la diferencia entre
 uno y otro es en sí misma una señal útil.
