@@ -40,3 +40,9 @@ docs
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Artefactos locales de video, adjuntos y capturas
+output
+.codex-remote-attachments
+.playwright-cli
+.agents

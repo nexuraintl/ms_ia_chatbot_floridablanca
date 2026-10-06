@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import mysql from "mysql2/promise";
+import { createConversationReadStore } from "./conversationReadStore.js";
 
 export class ConversationError extends Error {
   constructor(status, reason) {
@@ -29,6 +30,7 @@ export const createConversationConfig = (env = process.env) => {
     enabled: Boolean((env.DB_HOST || env.DB_SOCKET_PATH) && env.DB_USER && env.DB_NAME && env.DB_PASS),
     table,
     tenantId,
+    adminToken: env.CONVERSATION_ADMIN_TOKEN || "",
     ratePerMinute: integer(env.CONVERSATION_RATE_LIMIT_PER_MINUTE, 120, 1000),
     trustedProxyHops: integer(env.TRUSTED_PROXY_HOPS, 2, 10),
     allowedOrigins: String(env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim().toLowerCase()).filter(Boolean),
@@ -134,6 +136,7 @@ export const createConversationStore = ({ config, pool = config.enabled ? mysql.
   };
 
   return {
+    ...createConversationReadStore({ config, pool }),
     async openConversation(envelope) {
       return transaction(envelope.conversationId, async connection => {
         // El tiempo inicial es del servidor y no se cambia al actualizar identidad.

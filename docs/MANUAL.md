@@ -513,3 +513,11 @@ jsonPayload.correlation_id="<el identificador>"
 | `saas_architecture_guide.md` | Arquitectura multi-tenant del widget |
 | `API_GUIDE_RPA_PREDIAL.md` | Contrato del RPA de Impuesto Predial |
 | `AGENT_GUIDE_PQRSD.md` | Contrato del RPA de PQRSD |
+
+
+### Consulta administrativa de chats
+
+Panel: `/admin/chats/`. API de solo lectura: `/api/v1/admin/conversations` y
+`/{id}`; descargas `/export.csv` (resumen) y `/{id}/export.json` (chat completo).
+Exigen `CONVERSATION_ADMIN_TOKEN` en runtime mediante Secret Manager y cabecera
+Bearer. Configuración y límites: `docs/REVISION_PERSISTENCIA_MYSQL.md`.

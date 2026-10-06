@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>florIA · Registro de atención</title><link rel="stylesheet" href="app.css"><script src="app.js" defer></script></head>
+<body>
+<a class="skip" href="#main">Ir al contenido</a>
+<header><div class="brand">flor<span>IA</span></div><span class="divider"></span><p>Registro de atención <small>Floridablanca</small></p><button id="logout" class="secondary" hidden>Cerrar acceso</button></header>
+<main id="main">
+<section id="login" class="login card">
+  <p class="eyebrow">CONSULTA ADMINISTRATIVA</p><h1>La atención, en un solo lugar.</h1>
+  <p class="muted">Consulta las conversaciones de florIA y descarga los registros que necesitas.</p>
+  <form id="login-form"><label for="token">Clave de administración</label><input id="token" name="token" type="password" autocomplete="current-password" required minlength="32" maxlength="512">
+  <p class="hint">La clave se mantiene durante este acceso. Al recargar la página tendrás que ingresarla de nuevo.</p><button id="enter">Consultar conversaciones</button></form>
+</section>
+<p id="notice" role="status" aria-live="polite" hidden></p>
+<section id="workspace" hidden>
+  <div class="heading"><div><p class="eyebrow">REGISTROS DE FLORIA</p><h1>Conversaciones</h1><p class="muted">Explora la atención y sus próximos pasos.</p></div><button id="csv" class="secondary">Descargar resumen CSV</button></div>
+  <form id="filters" class="filters card">
+    <div><label for="from">Desde</label><input id="from" name="from" type="date"></div>
+    <div><label for="to">Hasta</label><input id="to" name="to" type="date"></div>
+    <div class="email"><label for="email">Correo del ciudadano</label><input id="email" name="email" type="email" placeholder="Correo exacto"></div>
+    <div><label for="rpa">Trámites iniciados</label><select id="rpa" name="usedRpa"><option value="">Todos</option><option value="true">Con trámite</option><option value="false">Sin trámite</option></select></div>
+    <button id="apply">Aplicar filtros</button><button id="clear" type="button" class="text-button">Limpiar</button>
+    <p class="hint">Los filtros de fecha usan UTC. Los horarios de los chats se muestran en hora de Colombia. Iniciar un trámite no confirma que haya terminado.</p>
+  </form>
+  <div class="columns">
+    <section class="card records" aria-labelledby="records-title"><div class="card-heading"><h2 id="records-title">Registro de chats</h2><span id="count" class="muted"></span></div>
+    <ul id="records" aria-label="Conversaciones"></ul><p id="empty" class="empty" hidden>No hay conversaciones para estos filtros.</p>
+    <div class="pagination"><button id="previous" class="secondary" disabled>Anterior</button><span id="page-label">Página 1</span><button id="next" class="secondary" disabled>Siguiente</button></div></section>
+    <section class="card conversation" aria-labelledby="detail-title"><div class="card-heading"><h2 id="detail-title">Detalle de la conversación</h2><button id="json" class="secondary" hidden>Descargar chat JSON</button></div>
+    <p id="detail-empty" class="empty">Selecciona un chat para leer sus mensajes.</p><div id="detail" hidden><dl id="metadata"></dl><ol id="messages" aria-label="Mensajes de la conversación"></ol></div></section>
+  </div>
+</section>
+</main><footer>florIA · Información de atención ciudadana · Acceso restringido</footer>
+</body></html>

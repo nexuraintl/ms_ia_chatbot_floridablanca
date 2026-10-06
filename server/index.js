@@ -37,6 +37,8 @@ import { resolveTargets } from "./rpaTargets.js";
 import { PROBE_POLICIES, describeDependencies, runStartupChecks } from "./startupChecks.js";
 import { createConversationConfig, createConversationStore } from "./conversationStore.js";
 import { createConversationApi, CONVERSATION_PATH_PREFIX } from "./conversationApi.js";
+import { createConversationAdminApi, CONVERSATION_ADMIN_PREFIX } from "./conversationAdminApi.js";
+import { serveConversationAdminPanel } from "./conversationAdminPanel.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,6 +146,7 @@ let rpaDependencies = {};
 const conversationConfig = createConversationConfig();
 const conversationStore = createConversationStore({ config: conversationConfig });
 const conversationApi = createConversationApi({ config: conversationConfig, store: conversationStore });
+const conversationAdminApi = createConversationAdminApi({ config: conversationConfig, store: conversationStore });
 
 /** Tipos MIME de los archivos que produce el build. */
 const MIME_TYPES = {
@@ -344,6 +347,17 @@ const handleRequest = (req, res) => {
     return;
   }
 
+  if (urlPath === CONVERSATION_ADMIN_PREFIX || urlPath.startsWith(CONVERSATION_ADMIN_PREFIX + "/")) {
+    conversationAdminApi.handle(req, res).then(complete).catch(() => {
+      if (!res.headersSent) sendJson(res, 503, { reason: "persistence_unavailable" });
+      complete(503);
+    });
+    return;
+  }
+  if (urlPath === "/admin/chats" || urlPath.startsWith("/admin/chats/")) {
+    serveConversationAdminPanel(req, res).then(complete);
+    return;
+  }
   if (urlPath === CONVERSATION_PATH_PREFIX || urlPath.startsWith(CONVERSATION_PATH_PREFIX + "/")) {
     conversationApi.handle(req, res).then(complete).catch(() => {
       if (!res.headersSent) sendJson(res, 503, { reason: "persistence_unavailable" });

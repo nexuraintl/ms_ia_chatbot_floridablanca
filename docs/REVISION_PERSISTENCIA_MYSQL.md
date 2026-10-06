@@ -1,6 +1,6 @@
 # Registro de chats en MySQL
 
-Actualizado el 2 de octubre de 2026.
+Actualizado el 6 de octubre de 2026.
 
 El esquema proporcionado por el usuario se obtuvo con el conector de Google Drive:
 [archivo SQL original](https://drive.google.com/file/d/1GrLP9Hp5HSELJK0AMSpPWYmZTFwCWJIo/view).
@@ -9,9 +9,10 @@ ejecutó el CREATE TABLE ni se modificó una base remota.
 
 ## Estado
 
-El servidor y el widget están adaptados al esquema. La instancia real no se ha
-conectado ni probado porque faltan los valores de acceso. La persistencia sigue
-en `off` en la configuración del widget y Cloud Build.
+El servidor y el widget están adaptados al esquema. La configuración de QA ya identifica la VM MySQL/MariaDB, el secreto DB_PASS y el
+conector VPC. Cloud Build activa `http` y el widget usa el origen de su backend si
+no hay una URL de conversaciones explícita. La conexión y escritura en la instancia
+real todavía deben verificarse; las pruebas automáticas usan un pool simulado.
 
 - Base: `ia_chatbot_floridablanca`.
 - Tabla: `chat`, una fila por conversación.
@@ -107,7 +108,7 @@ responden 503 `persistence_not_configured` y el resto del widget sigue funcionan
 
 Los POST reciben JSON y admiten preflight OPTIONS. Hay validación de tamaño,
 origen, identificadores, tenant, emisor y longitud de texto, además de límite por IP.
-No hay rutas públicas para consultar historiales. El servidor fija el tenant;
+La lectura de historiales está en la API administrativa y exige una credencial Bearer. El servidor fija el tenant;
 una fila de otro tenant no puede actualizarse. La respuesta de éxito llega tras
 el commit. Los errores SQL y los textos del ciudadano no se escriben en los logs
 de esta API.
@@ -144,3 +145,64 @@ duplica mensajes. Esto se hará cuando se configuren los accesos de la instancia
 Referencias técnicas: [pool de mysql2](https://sidorares.github.io/node-mysql2/docs/examples/connections/create-pool),
 [bloqueos de fila InnoDB](https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html),
 [variables y secretos en gcloud run deploy](https://docs.cloud.google.com/sdk/gcloud/reference/run/deploy).
+
+## Consulta y descarga administrativa
+
+Abrir `<URL-publica-del-chatbot>/admin/chats/`. El panel permite paginar los chats,
+filtrar por fechas UTC, correo exacto y uso de trámites RPA, y leer una conversación.
+Los horarios se muestran en `America/Bogota`. El panel no cambia los registros.
+
+| GET | Resultado |
+|---|---|
+| `/api/v1/admin/conversations` | JSON de resúmenes sin mensajes, con `items` y `nextCursor` |
+| `/api/v1/admin/conversations/{id}` | JSON de una conversación y sus mensajes |
+| `/api/v1/admin/conversations/export.csv` | Resúmenes para Excel; todos los chats del filtro hasta 10.000 |
+| `/api/v1/admin/conversations/{id}/export.json` | Descarga de un chat completo |
+
+Todas las rutas de datos exigen `Authorization: Bearer <clave-administrativa>`.
+El servidor toma esa clave de `CONVERSATION_ADMIN_TOKEN`, entre 32 y 512 caracteres.
+Ausente o demasiado corta: 503 `admin_not_configured`. Incorrecta: 401. No se usa
+DB_PASS como clave administrativa, ni se reciben claves en parámetros de URL.
+
+Configurar una clave aleatoria en Secret Manager y conceder a la service account
+**existente** del chatbot acceso a ese secreto. Montarla como variable runtime
+`CONVERSATION_ADMIN_TOKEN`. Se puede indicar el nombre del secreto en la sustitución
+`_CONVERSATION_ADMIN_SECRET` del activador; vacía conserva la referencia runtime ya
+configurada. El pipeline usa `--update-env-vars` y `--update-secrets` para preservar
+el resto de la configuración. La clave nunca se incluye en variables VITE_, en el
+repositorio, en el HTML o en logs. La comparte únicamente el equipo autorizado.
+Este mecanismo es una clave compartida; no ofrece usuarios, roles ni auditoría por
+persona. Para eso se requiere integrar identidad corporativa/IAP posteriormente.
+
+La página pública contiene solo la pantalla de acceso. No guarda clave ni historiales
+en localStorage o sessionStorage; al cerrar el acceso elimina la vista y cancela
+peticiones pendientes. La API administrativa no hereda los orígenes públicos del
+widget, tiene límite de 30 consultas por IP por minuto y respuestas `no-store`.
+
+Filtros: `from=YYYY-MM-DD`, `to=YYYY-MM-DD` (día final inclusive, UTC), `email` exacto,
+`usedRpa=true|false`, `limit` de 1 a 100 (50 por defecto), `cursor` devuelto en la
+página previa. El tenant lo fija el servidor; no es un filtro aceptado. El cursor
+usa fecha inicial e ID, sin OFFSET. La consulta del resumen no lee el JSON de mensajes.
+CSV exporta la selección completa, no solo la página visible. Si supera 10.000 filas,
+responde 413 `export_too_large` y pide acotar fechas; no trunca silenciosamente.
+Incluye BOM UTF-8 y neutraliza fórmulas en las celdas de texto. Los datos suprimidos
+no reaparecen en ninguna descarga. JSON incluye los mensajes del chat seleccionado.
+
+Ejemplo con cliente HTTP: GET `<base>/api/v1/admin/conversations?from=2026-10-01&to=2026-10-06`
+y cabecera `Authorization: Bearer <clave>`. Para descargar, usar las mismas cabeceras
+en `/export.csv` o `/{id}/export.json`; el navegador del panel lo hace automáticamente.
+
+### Prueba después del pipeline
+
+1. Confirmar que `/version` contiene el commit publicado.
+2. Configurar la clave administrativa y entrar al panel.
+3. Si aparece `persistence_unavailable`, revisar conectividad VPC, privilegios de
+   lectura/escritura de la tabla y TLS. `DB_SSL_MODE=required` verifica certificados
+   por defecto. No se ha confirmado si la VM lo soporta; no se desactiva automáticamente.
+4. Verificar `SHOW CREATE TABLE chat` con un cliente autorizado. No se ejecuta DDL
+   desde el servicio. Esquema esperado: `docs/sql/chat.sql`.
+5. Iniciar un chat ficticio en el widget, enviar mensajes, recargar, confirmar en el
+   panel que aparece una sola conversación sin duplicados y descargar CSV/JSON.
+
+Validación local: suites de seguridad, servidor, RPA, conocimiento y conversaciones;
+lint y build. Las pruebas del panel usan datos ficticios, no la base municipal.

@@ -189,6 +189,8 @@ export default defineConfig({
     },
     proxy: {
       // Solo `/api/ai`, no todo `/api`: `/api/log-tokens` lo atiende el plugin de abajo.
+      '/api/v1': { target: DEV_BACKEND, changeOrigin: false },
+      '/admin/chats': { target: DEV_BACKEND, changeOrigin: false },
       '/api/ai': { target: DEV_BACKEND, changeOrigin: false },
       '/rpa': { target: DEV_BACKEND, changeOrigin: false }
     }

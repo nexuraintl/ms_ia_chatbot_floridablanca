@@ -36,4 +36,8 @@ export default defineConfig([
       sourceType: 'module',
     },
   },
+  {
+    files: ['server/admin/**/*.js'],
+    languageOptions: { globals: globals.browser },
+  },
 ])

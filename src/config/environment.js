@@ -222,7 +222,7 @@ export const environment = Object.freeze({
    * persistencia queda en el modo que indique la configuración (`off` o `console`) y no
    * se envía ningún dato personal a ninguna parte.
    */
-  conversationApiUrl: safeRead(() => import.meta.env.VITE_CONVERSATION_API_URL),
+  conversationApiUrl: normalizeBaseUrl(safeRead(() => import.meta.env.VITE_CONVERSATION_API_URL)) || backendOrigin || "/",
 
   /**
    * Modo de persistencia: `off` | `console` | `http`.
