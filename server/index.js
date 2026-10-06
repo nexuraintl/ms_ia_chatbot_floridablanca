@@ -39,6 +39,7 @@ import { createConversationConfig, createConversationStore } from "./conversatio
 import { createConversationApi, CONVERSATION_PATH_PREFIX } from "./conversationApi.js";
 import { createConversationAdminApi, CONVERSATION_ADMIN_PREFIX } from "./conversationAdminApi.js";
 import { serveConversationAdminPanel } from "./conversationAdminPanel.js";
+import { reportConversationFailure } from "./conversationDiagnostics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -450,6 +451,11 @@ server.listen(PORT, "0.0.0.0", () => {
     tenant_id: conversationConfig.tenantId,
     connection_limit: conversationConfig.poolOptions.connectionLimit
   });
+  if (conversationConfig.enabled) {
+    conversationStore.verifyReadAccess()
+      .then(() => info("conversation_database_verified", { connected: true }))
+      .catch(reportConversationFailure);
+  }
 
   // Se deja constancia de la configuración del control de gasto en el arranque. Una
   // configuración errónea de `TRUSTED_PROXY_HOPS` o de `ALLOWED_ORIGINS` no produce

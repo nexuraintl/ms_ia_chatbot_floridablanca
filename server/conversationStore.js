@@ -137,6 +137,15 @@ export const createConversationStore = ({ config, pool = config.enabled ? mysql.
 
   return {
     ...createConversationReadStore({ config, pool }),
+    async verifyReadAccess() {
+      if (!pool) throw new ConversationError(503, "persistence_not_configured");
+      // Comprueba conexion y columnas sin recuperar ningun registro de ciudadanos.
+      await pool.execute({ sql: `SELECT chat_id, tenant_id, citizen_name, citizen_email,
+        consent_version, consent_at, started_at, last_message_at, ended_at, rpa_flows,
+        messages, redacted_at, created_at, updated_at, duration_seconds, used_rpa, message_count
+        FROM ${table} LIMIT 0`, timeout: 10_000 });
+      return { connected: true };
+    },
     async openConversation(envelope) {
       return transaction(envelope.conversationId, async connection => {
         // El tiempo inicial es del servidor y no se cambia al actualizar identidad.

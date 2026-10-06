@@ -2,6 +2,7 @@ import { isOriginAllowed } from "./corsPolicy.js";
 import { resolveClientIp } from "./clientIdentity.js";
 import { createRateLimiter } from "./rateLimit.js";
 import { ConversationError, validateConversationPayload } from "./conversationStore.js";
+import { reportConversationFailure } from "./conversationDiagnostics.js";
 
 export const CONVERSATION_PATH_PREFIX = "/api/v1/conversations";
 
@@ -72,6 +73,7 @@ export const createConversationApi = ({ config, store }) => {
         return respond(200, result);
       } catch (error) {
         // No registrar errores SQL: pueden incluir el texto o la identidad del ciudadano.
+        if (!(error instanceof ConversationError)) reportConversationFailure(error);
         return respond(error instanceof ConversationError ? error.status : 503,
           { reason: error instanceof ConversationError ? error.reason : "persistence_unavailable" });
       }

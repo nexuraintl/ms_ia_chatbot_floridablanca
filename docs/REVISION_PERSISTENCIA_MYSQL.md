@@ -199,6 +199,10 @@ en `/export.csv` o `/{id}/export.json`; el navegador del panel lo hace automáti
 3. Si aparece `persistence_unavailable`, revisar conectividad VPC, privilegios de
    lectura/escritura de la tabla y TLS. `DB_SSL_MODE=required` verifica certificados
    por defecto. No se ha confirmado si la VM lo soporta; no se desactiva automáticamente.
+   El arranque realiza una consulta sin filas para comprobar acceso y columnas. En
+   Cloud Logging, `conversation_database_verified` confirma esa lectura; un fallo
+   genera `conversation_persistence_unavailable` con un código conocido (por ejemplo,
+   TLS o tabla ausente), nunca con contraseña, SQL, mensajes o datos de ciudadanos.
 4. Verificar `SHOW CREATE TABLE chat` con un cliente autorizado. No se ejecuta DDL
    desde el servicio. Esquema esperado: `docs/sql/chat.sql`.
 5. Iniciar un chat ficticio en el widget, enviar mensajes, recargar, confirmar en el
