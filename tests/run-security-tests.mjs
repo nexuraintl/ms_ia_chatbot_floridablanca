@@ -456,13 +456,12 @@ section("7. Emparejamiento de FAQ: sin falsos positivos por subcadena");
     );
   }
 
-  // La radicación se había retirado porque mencionar un trámite abría su formulario.
-  // Vuelve con la orientación previa delante: su primer paso es una pregunta, así que
-  // mencionarla ya no puede abrir nada sin querer.
+  // La radicación sigue disponible por petición expresa, pero no en el menú inicial.
   check(
-    "la radicación de PQRSD vuelve a ser alcanzable",
+    "la radicación de PQRSD conserva su ruta sin botón inicial",
     Object.keys(chatbotConfig.routing).includes("pqrsd_crear") &&
-      chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear"),
+      !chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear") &&
+      resolveIntent("quiero radicar una PQRSD", { routingMap: chatbotConfig.routing }).flow === "pqrsd_crear",
     `rutas: ${Object.keys(chatbotConfig.routing).join(", ")} | botones: ${chatbotConfig.quickReplies.map((r) => r.flow).join(", ")}`
   );
 

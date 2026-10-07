@@ -46,6 +46,8 @@ Para una prueba gradual en QA: comenzar con URLs verificadas de calendario y tr�
 
 La clave `GEMINI_API_KEY` sigue siendo solo de servidor. La ruta directa con clave local es de desarrollo: aplica reglas y reformulación, pero la consulta protegida de fuentes corresponde al proxy.
 
+El catálogo local comprueba que la respuesta cubra el aspecto solicitado: una coincidencia con ICA no permite sustituir una sanción o un documento por la definición del impuesto. La aclaración del tipo de sanción también funciona sin IA. El lector distingue banners de portada y catálogos documentales de resoluciones leídas; un catálogo permite entregar su enlace y sección, pero no afirmar fechas ni vigencia anual. Si solo se pudo leer el catálogo, una petición de documento recibe ese enlace y la limitación concreta de la descarga, sin una remisión genérica.
+
 ## Diagnóstico y verificación
 
 La respuesta del proxy incluye `diagnostics`: tema/año, fragmentos recuperados, estado de fuentes, búsqueda, motivo de finalización, intentos, reformulación y fallback. El evento `ai_reply_served` registra esos campos y consumo sin el texto del ciudadano. Las métricas de sesión exponen reformulaciones, búsquedas, citas y último diagnóstico. Los códigos de error distinguen respuestas HTTP, tiempos de espera y PDFs que requieren OCR.

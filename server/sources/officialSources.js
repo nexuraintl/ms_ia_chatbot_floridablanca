@@ -5,7 +5,7 @@ import { publicSearchQuery, normalize } from '../../shared/conversationContext.j
 
 export const createSourceConfig = (env = process.env) => {
   const hosts = String(env.AI_SOURCE_HOSTS || DEFAULT_SOURCE_HOSTS.join(',')).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  const seedUrls = String(env.AI_SOURCE_URLS || 'https://www.floridablanca.gov.co/publicaciones/87/formularios-industria-y-comercio/,https://www.floridablanca.gov.co/mapa-del-sitio').split(',').map(s => officialUrl(s.trim(), hosts)).filter(Boolean);
+  const seedUrls = String(env.AI_SOURCE_URLS || 'https://portal.floridablanca.suiteneptuno.com/Documentacion/Index,https://www.floridablanca.gov.co/publicaciones/87/formularios-industria-y-comercio/,https://www.floridablanca.gov.co/mapa-del-sitio').split(',').map(s => officialUrl(s.trim(), hosts)).filter(Boolean);
   return { enabled: env.AI_WEB_ENABLED !== 'false', searchEnabled: env.AI_SEARCH_ENABLED !== 'false',
     hosts, seedUrls, portalSearchUrl: officialUrl(env.AI_PORTAL_SEARCH_URL || 'https://www.floridablanca.gov.co/buscar/', hosts), ttlMs: 60 * 60 * 1000, maxReads: 4, maxSources: 3, timeoutMs: 18_000 };
 };
@@ -53,13 +53,18 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
               if (cache.size >= 100) cache.delete(cache.keys().next().value);
               cache.set(url, doc);
             }
-            const excerpt = relevantText(doc.text, query);
+            const catalog = new URL(doc.url).hostname === 'portal.floridablanca.suiteneptuno.com' && new URL(doc.url).pathname.toLowerCase() === '/documentacion/index';
+            const excerpt = catalog ? doc.text.slice(0, 4000) : relevantText(doc.text, query);
+            const homePage = new URL(doc.url).pathname === '/';
             const yearRelevant = !context.year || !context.aspect?.includes('calendario') || excerpt.includes(String(context.year));
             const competent = !new URL(doc.url).hostname.endsWith('dian.gov.co') || /\buvt\b/.test(normalize(context.currentText));
-            if (excerpt.length > 100 && yearRelevant && competent && url !== portalUrl?.href) sources.push({
-              id: `web-${sources.length+1}`, title: doc.title, url: doc.url, text: excerpt,
+            if (excerpt.length > 100 && (yearRelevant || catalog) && competent && url !== portalUrl?.href &&
+                !(homePage && context.aspect?.includes('calendario'))) sources.push({
+              id: `web-${sources.length+1}`, title: catalog ? 'Normatividad y Formularios — Alcaldía de Floridablanca' : doc.title, url: doc.url, text: excerpt,
               fetchedAt: new Date(doc.fetchedAt).toISOString(), requestedYear: context.year,
-              confidence: 'public_text', issuer: new URL(doc.url).hostname.includes('dian.gov.co') ? 'DIAN' : 'Municipio de Floridablanca', publicationDate: doc.publicationDate || null, verification: 'Comprobar vigencia y modificaciones en el contenido; fecha de lectura no prueba vigencia.'
+              confidence: catalog ? 'official_catalog' : 'public_text', issuer: new URL(doc.url).hostname.includes('dian.gov.co') ? 'DIAN' : 'Municipio de Floridablanca', publicationDate: doc.publicationDate || null, verification: catalog
+                ? 'Catálogo oficial de documentos. Sirve para enlazar la sección y mencionar sus títulos; NO confirma el contenido, fechas ni año de aplicación de las resoluciones. La descarga requiere interacción con el portal.'
+                : 'Comprobar vigencia y modificaciones en el contenido; fecha de lectura no prueba vigencia.'
             });
             const words = normalize(query).split(/\W+/).filter(w => w.length > 3);
             const links = (doc.links || []).map(link => ({ ...link, score: words.filter(w => normalize(link.title).includes(w)).length }))
@@ -72,9 +77,13 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
         // Buscar primero las URLs específicas para no consumir el presupuesto en navegación.
         const cachedSources = [...cache.values()].filter(doc => now()-doc.fetchedAt < config.ttlMs && relevantText(doc.text, query).length > 100);
         queue = [...cachedSources.map(doc => doc.url), ...queue];
-        if (portalUrl && !cachedSources.length) { searched = true; queue.unshift(portalUrl.href); }
+        if (portalUrl && !cachedSources.length) {
+          searched = true;
+          if (context.aspect?.includes('calendario')) queue.splice(1, 0, portalUrl.href);
+          else queue.unshift(portalUrl.href);
+        }
         await inspectQueue(Math.min(2, config.maxReads));
-        if (config.searchEnabled && discover && !sources.length && !controller.signal.aborted) {
+        if (config.searchEnabled && discover && !sources.some(source => source.confidence !== 'official_catalog') && !controller.signal.aborted) {
           searched = true;
           try { queue = [...await discover(query, controller.signal), ...queue]; }
           catch { errors.push('search_unavailable'); }

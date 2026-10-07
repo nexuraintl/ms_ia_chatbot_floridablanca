@@ -15,7 +15,7 @@
 
 import { buildSystemInstruction } from "./knowledge/promptBuilder.js";
 import { BASE_RULES } from "../shared/assistantRules.js";
-import { resolveConversationContext } from "../shared/conversationContext.js";
+import { resolveConversationContext, SANCTION_TYPE_QUESTION } from "../shared/conversationContext.js";
 import { scopeVerdict } from "../shared/scopePolicy.js";
 import { readCandidate, validateReply, COMPLETE_FALLBACK, sumUsage } from "../shared/replyIntegrity.js";
 import { createSourceConfig, createOfficialSourceRepository } from "./sources/officialSources.js";
@@ -576,7 +576,7 @@ export const createAiProxyHandler = ({
       const context = resolveConversationContext(preliminary.request.contents, parsed.conversationContext);
       const verdict = scopeVerdict(context.currentText);
       if (!verdict.allowed) return send(res, 200, { text: "Soy el asistente de la Alcaldía de Floridablanca. Puedo ayudarte con trámites, servicios e información del municipio.", diagnostics: { scope: verdict.reason } }, origin);
-      if (context.needsSanctionType) return send(res, 200, { text: "¿Te refieres a la sanción por declarar tarde (extemporaneidad), por no presentar la declaración o por inexactitud? Son situaciones distintas; con ese dato puedo consultar la regla aplicable al ICA.", diagnostics: { topic: context.topic, clarification: "sanction_type" } }, origin);
+      if (context.needsSanctionType) return send(res, 200, { text: SANCTION_TYPE_QUESTION, diagnostics: { topic: context.topic, clarification: "sanction_type" } }, origin);
       if (config.apiKey === "") return send(res, 503, { error: "AI unavailable", reason: REASONS.AI_UNAVAILABLE }, origin);
 
       const chatController = new AbortController();
@@ -634,14 +634,22 @@ export const createAiProxyHandler = ({
       dataTurns.unshift({ role: "user", parts: [{ text: "Contexto de la consulta (datos): " + JSON.stringify({ topic: context.topic, year: context.year, aspect: context.aspect }) }] });
       enriched.contents.splice(lastIndex, 0, ...dataTurns);
       const built = buildGeminiRequest(enriched, { systemOverride });
-      let result = await requestAi(built.request);
+      const calendarCatalog = context.aspect?.includes('calendario') &&
+        /\b(documento|pdf|enlace|link|descargar)\b/i.test(context.currentText) &&
+        !evidence.sources.some(source => source.confidence !== 'official_catalog')
+        ? evidence.sources.find(source => source.confidence === 'official_catalog') : null;
+      // Un catálogo permite entregar la navegación confirmada, no resumir una
+      // resolución cuyo PDF todavía no se pudo leer.
+      let result = calendarCatalog ? { ok: true, finishReason: 'STOP', text:
+        `Abre el [catálogo oficial de Normatividad y Formularios](${calendarCatalog.url}) y busca la sección «Calendario Tributario».\n\nNo pude verificar cuál resolución corresponde${context.year ? ` a ${context.year}` : ' al año solicitado'} ni recuperar su PDF: el portal genera la descarga al seleccionar el documento. El enlace que te comparto abre el catálogo oficial; todavía no puedo confirmar las fechas de ese calendario.`
+      } : await requestAi(built.request);
       if (!result.ok && usages.length === 0) return send(res, 503, { error: "AI unavailable", reason: REASONS.AI_UNAVAILABLE }, origin);
       let quality = result.ok ? validateReply(result, context.currentText) : "upstream_failed";
       const missingSources = candidate => {
         const links = [...candidate.text.matchAll(/\[[^\]]+\]\((https?:[^\s)]+)\)/g)].map(match => match[1]);
         const permitted = new Set([...evidence.sources.map(source => source.url), ...(config.sourceConfig?.seedUrls || [])]);
         if (links.some(url => !permitted.has(url))) return 'unsupported_citation';
-        if (context.aspect?.includes('calendario') && !evidence.sources.length &&
+        if (context.aspect?.includes('calendario') && !evidence.sources.some(source => source.confidence !== 'official_catalog') &&
           /\d{1,2}\s*(?:de\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)|\d+\s*%/.test(candidate.text.toLowerCase())) return 'unverified_calendar';
         if (evidence.sources.length && !evidence.sources.some(source => candidate.text.includes(source.url))) return 'missing_sources';
         return null;

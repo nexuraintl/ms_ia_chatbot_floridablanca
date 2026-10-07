@@ -17,6 +17,7 @@ const ASPECTS = [
   ['tarifas', /tarifa|por mil|milaje/]
 ];
 export const topicIn = (text) => TOPICS.find(([, re]) => re.test(normalize(text)))?.[0] || null;
+export const SANCTION_TYPE_QUESTION = "¿Te refieres a la sanción por declarar tarde (extemporaneidad), por no presentar la declaración o por inexactitud? El porcentaje depende del tipo de sanción; dime cuál aplica a tu caso para revisar la regla del ICA.";
 
 export const resolveConversationContext = (turns = [], hints = {}) => {
   let topic = TOPICS.some(([name]) => name === hints?.topic) ? hints.topic : null;
