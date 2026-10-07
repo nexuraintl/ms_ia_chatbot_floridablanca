@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
-import { resolveConversationContext, publicSearchQuery } from '../shared/conversationContext.js';
+import { resolveConversationContext, publicSearchQuery, SANCTION_TYPE_QUESTION } from '../shared/conversationContext.js';
 import { scopeVerdict } from '../shared/scopePolicy.js';
 import { validateReply, readCandidate } from '../shared/replyIntegrity.js';
 import { BASE_RULES } from '../shared/assistantRules.js';
@@ -110,6 +110,45 @@ test('sanción ambigua pide el tipo; no declarar y extemporaneidad se distinguen
   assert.equal(resolveConversationContext([{ sender:'user', text:'sancion por no declarar ICA' }]).needsSanctionType, false);
   assert.equal(resolveConversationContext([{ sender:'user', text:'sancion por declarar ICA tarde' }]).aspect, 'sancion extemporaneidad');
 });
+
+test('aclaración de sanción conserva ICA y reconoce la respuesta de la conversación reportada', () => {
+  const initial = {sender:'user',text:'cual es el porcentaje de sancion de industria y comercio'};
+  const replies = [
+    ['por no presentar la declaracion','sancion no declarar'],
+    ['no presenté la declaración','sancion no declarar'],
+    ['no la presenté','sancion no declarar'],
+    ['por no presentarla','sancion no declarar'],
+    ['no la he presentado','sancion no declarar'],
+    ['por omisión','sancion no declarar'],
+    ['la segunda','sancion no declarar'],
+    ['la presenté tarde','sancion extemporaneidad'],
+    ['fuera del plazo','sancion extemporaneidad'],
+    ['la primera','sancion extemporaneidad'],
+    ['por inexactitud','sancion inexactitud'],
+    ['datos incorrectos','sancion inexactitud'],
+    ['la tercera','sancion inexactitud']
+  ];
+  for (const [text,aspect] of replies) {
+    const history=[initial,{sender:'bot',text:'¿Te refieres a declarar tarde, no presentar la declaración o inexactitud?'},{sender:'user',text}];
+    const {payload}=buildGeminiPayload({history,pageContext:null});
+    const context=resolveConversationContext(payload.contents,payload.conversationContext);
+    assert.equal(context.topic,'ica',text);assert.equal(context.aspect,aspect,text);
+    assert.equal(context.needsSanctionType,false,text);
+  }
+  assert.equal(resolveConversationContext([{sender:'user',text:'la segunda'}]).aspect,null);
+});
+
+test('repreguntas conservan el tipo aclarado; un nuevo tema explícito lo reemplaza', () => {
+  const history=['porcentaje de sancion de ICA','por no presentar la declaracion','y cual es el porcentaje de esa sancion'].map(text=>({sender:'user',text}));
+  let context=resolveConversationContext(history);
+  assert.equal(context.aspect,'sancion no declarar');assert.equal(context.needsSanctionType,false);
+  context=resolveConversationContext([...history,{sender:'user',text:'¿y si la presenté tarde?'}]);
+  assert.equal(context.aspect,'sancion extemporaneidad');
+  context=resolveConversationContext([...history,{sender:'user',text:'que es el predial'}]);
+  assert.equal(context.topic,'predial');assert.equal(context.aspect,null);
+  context=resolveConversationContext([...history,{sender:'user',text:'y de reteica'}]);
+  assert.equal(context.topic,'reteica');assert.equal(context.aspect,'sancion no declarar');
+});
 test('recuperación ICA no requiere decir «según el estatuto»', () => {
   for (const query of ['cual es el porcentaje de sancion de industria y comercio',
     'sancion por no declarar ICA', 'sancion de extemporaneidad ICA']) {
@@ -164,6 +203,41 @@ test('preguntas ajenas y aclaraciones no consumen una llamada remota', async () 
   const handler=createAiProxyHandler({config:testConfig(),fetchImpl:()=>{throw new Error('unexpected_call');}});
   assert.equal((await ask(handler,'cual es el perro mas grande del mundo')).status,200);
   assert.equal((await ask(handler,'porcentaje de sancion de ICA')).json.diagnostics.clarification,'sanction_type');
+});
+
+test('proxy responde la aclaración y la repregunta de ICA sin repetir la pregunta inicial', async () => {
+  const requests=[];
+  const handler=createAiProxyHandler({config:testConfig(),
+    sourceRepository:{retrieve:async()=>({sources:[],searched:false,status:'not_needed'})},
+    fetchImpl:async(_url,options)=>{
+      requests.push(JSON.parse(options.body));
+      return aiResponse('La consulta corresponde a la sanción por no declarar ICA.');
+    }});
+  const history=[{sender:'user',text:'cual es el porcentaje de sancion de industria y comercio'}];
+  const sendHistory=async()=>{
+    const {payload}=buildGeminiPayload({history,pageContext:null});
+    return ask(handler,history.at(-1).text,payload);
+  };
+  const initial=await sendHistory();
+  assert.equal(initial.json.text,SANCTION_TYPE_QUESTION);
+  assert.equal(requests.length,0);
+  history.push({sender:'bot',text:initial.json.text},{sender:'user',text:'por no presentar la declaracion'});
+  for (const followup of [null,'y cual es el porcentaje de esa sancion']) {
+    if (followup) history.push({sender:'user',text:followup});
+    const response=await sendHistory();
+    assert.equal(response.status,200);
+    assert.equal(response.json.diagnostics.clarification,undefined);
+    assert.equal(response.json.text,'La consulta corresponde a la sanción por no declarar ICA.');
+    const contextTurn=requests.at(-1).contents.find(turn=>turn.parts?.[0]?.text?.startsWith('Contexto de la consulta (datos): '));
+    const context=JSON.parse(contextTurn.parts[0].text.split(': ').slice(1).join(': '));
+    assert.equal(context.topic,'ica');assert.equal(context.aspect,'sancion no declarar');
+    history.push({sender:'bot',text:response.json.text});
+  }
+  assert.equal(requests.length,2);
+  const local=createLocalMockProvider({faqCatalog,latencyMs:0});
+  const fallback=await local.generateReply({history});
+  assert.match(fallback.text,/No tengo información verificada/);
+  assert.ok(!fallback.text.includes(SANCTION_TYPE_QUESTION));
 });
 test('evidencia se envía como datos y conserva las citas; no publica enlaces inventados', async () => {
   const url='https://www.floridablanca.gov.co/calendario-2026.pdf';
