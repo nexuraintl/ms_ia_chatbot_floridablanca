@@ -9,6 +9,7 @@
  * nunca en `systemInstruction`. El contexto de FAQ sí es confiable y sí entra ahí.
  */
 
+import { resolveConversationContext } from "../../../shared/conversationContext.js";
 import { buildSystemPrompt } from "./systemPrompt.js";
 import { toDataTurn } from "../../domain/pageContext/promptSerializer.js";
 import { findBestFaq, formatFaqAsContext } from "../../domain/faq/faqMatcher.js";
@@ -26,7 +27,7 @@ export const MAX_TURN_CHARS = 4000;
  * cliente modificado podría pedir más.
  */
 export const DEFAULT_GENERATION_CONFIG = Object.freeze({
-  maxOutputTokens: 200,
+  maxOutputTokens: 768,
   temperature: 0.6
 });
 
@@ -62,6 +63,7 @@ export const buildGeminiPayload = ({ history, pageContext, faqCatalog = [] }) =>
   });
 
   const contents = toGeminiContents(history);
+  const { topic, year, aspect } = resolveConversationContext(history);
 
   // Contexto de página: NO CONFIABLE. Turno de datos delimitado, antes del último mensaje
   // del ciudadano y explícitamente fuera de `systemInstruction`.
@@ -74,6 +76,7 @@ export const buildGeminiPayload = ({ history, pageContext, faqCatalog = [] }) =>
     faqMatch,
     payload: {
       contents,
+      conversationContext: { topic, year, aspect },
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: { ...DEFAULT_GENERATION_CONFIG }
     }

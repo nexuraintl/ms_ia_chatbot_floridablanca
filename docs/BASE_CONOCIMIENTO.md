@@ -313,35 +313,34 @@ Son la parte de seguridad de la función. El modelo sabe de impuestos colombiano
 entrenamiento y responderá sin fuente si no se le prohíbe expresamente. En materia
 tributaria una cifra inventada es una liquidación mal informada. Las reglas exigen:
 
-- Toda afirmación normativa debe salir del bloque; si el dato no está, decirlo y remitir a
-  la Secretaría de Hacienda.
+- Toda afirmación normativa debe salir del bloque; si el dato no está, consultar fuentes oficiales adicionales y explicar lo que quede sin verificar. Remitir solo cuando la consulta no pueda resolverse con información pública.
 - Citar el artículo del que sale la regla.
-- Nunca calcular, redondear ni deducir cifras; nunca liquidar el impuesto del ciudadano.
+- Los cálculos orientativos requieren tarifas verificadas, fórmula y citas. No inventar ni interpolar tarifas; el valor oficial corresponde a la factura.
 - Un fragmento marcado `sin dato` no se completa. Uno marcado «tabla escaneada» se cita
   invitando a confirmarlo en la factura.
-- **Nunca dar fechas de vencimiento ni porcentajes de descuento por pronto pago**: el
+- **No dar fechas de vencimiento ni descuentos sin resolución oficial aplicable**: el
   Estatuto no fija el calendario tributario, lo fija la Secretaría de Hacienda por
   resolución anual (artículos 18 y 35).
 - No dar el valor de la UVT en pesos si no aparece en el bloque: lo reajusta la DIAN cada
   año (artículos 13 y 14).
 
 Cuando el corpus está cargado pero la consulta no casa con nada, se envían las reglas base
-más un aviso explícito de que no hay información oficial para esa consulta y que no debe
-afirmar datos normativos. Es el caso que evita que un «no encontré nada» se convierta en
+más un aviso explícito de que no hay fragmentos del Estatuto para esa consulta; puede recuperarse evidencia web oficial y no debe
+afirmar datos normativos sin una fuente verificada. Es el caso que evita que un «no encontré nada» se convierta en
 una respuesta inventada con aire de oficial.
 
-### Duplicación de `BASE_RULES`
+### Reglas de comportamiento compartidas
 
-El texto de comportamiento está en dos sitios: `server/knowledge/promptRules.js` (la ruta
+El texto de comportamiento se comparte en `shared/assistantRules.js`, importado por: `server/knowledge/promptRules.js` (la ruta
 de producción) y `src/adapters/ai/systemPrompt.js` (la ruta de desarrollo con clave local,
-donde el navegador llama a Gemini directamente). No se comparte un módulo porque la imagen
-de Docker solo copia `dist/` y `server/`: un `import` desde `server/` hacia afuera rompería
-el contenedor.
+donde el navegador llama a Gemini directamente). Docker incluye ahora `shared/` junto al servidor y el bundle. Las reglas no dependen de que haya corpus.
 
 La divergencia se evita con una prueba: `tests/run-knowledge-tests.mjs` compara los dos
 textos y falla si dejan de ser idénticos.
 
 ---
+
+Consultar también [ASISTENTE_FUENTES.md](ASISTENTE_FUENTES.md) para lectura web, citas y reformulación de respuestas incompletas.
 
 ## 8. Preguntas y respuestas curadas
 

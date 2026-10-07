@@ -276,7 +276,10 @@ export const ChatProvider = ({ children }) => {
           : CONFIRMATION_KEYWORDS
       });
 
-      if (!flow) return { handled: false, offeredFlow: null };
+      if (!flow) {
+        setLastServiceMentioned(null);
+        return { handled: false, offeredFlow: null };
+      }
 
       const confirmed =
         direct ||

@@ -29,6 +29,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { readCandidate, validateReply, COMPLETE_FALLBACK, sumUsage } from "../../../shared/replyIntegrity.js";
 import { post, HttpError } from "../http/httpClient.js";
 import { degradedReply } from "../../ports/AiProviderPort.js";
 import { buildGeminiPayload } from "./geminiRequest.js";
@@ -60,9 +61,11 @@ export const createGeminiApiProvider = ({ getApiKey, faqCatalog = [], model = DE
     // La construcción del cuerpo —y con ella el aislamiento del contexto de página— vive
     // en `geminiRequest.js`, compartida con el proveedor que pasa por el proxy.
     const { payload, faqMatch } = buildGeminiPayload({ history, pageContext, faqCatalog });
+    // El resumen semántico es contrato del proxy, no un campo de la API de Google.
+    delete payload.conversationContext;
 
     try {
-      const data = await post(
+      let data = await post(
         `${API_BASE}/${encodeURIComponent(model)}:generateContent`,
         payload,
         {
@@ -73,15 +76,25 @@ export const createGeminiApiProvider = ({ getApiKey, faqCatalog = [], model = DE
         }
       );
 
-      const replyText = String(data?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
-      if (!replyText) return degradedReply();
-
-      // Preferir el consumo real que reporta la API sobre nuestra estimación.
-      const usage = readActualUsage(data) ?? estimateApiUsage(history, replyText);
+      const usages = [data.usageMetadata];
+      let candidate = readCandidate(data);
+      let quality = validateReply(candidate, history.at(-1)?.text || '');
+      if (quality && quality !== 'blocked') {
+        payload.systemInstruction.parts[0].text += '\nRedacta de nuevo una respuesta completa en máximo 120 palabras. Responde todos los componentes sin inventar información.';
+        try { data = await post(          `${API_BASE}/${encodeURIComponent(model)}:generateContent`, payload,
+          { headers: { 'x-goog-api-key': apiKey } });
+        usages.push(data.usageMetadata);
+        candidate = readCandidate(data);
+        quality = validateReply(candidate, history.at(-1)?.text || '');
+        } catch { quality = 'repair_unavailable'; }
+      }
+      const replyText = quality ? COMPLETE_FALLBACK : candidate.text;
+      const usage = readActualUsage({ usageMetadata: sumUsage(usages) }) ?? estimateApiUsage(history, replyText);
 
       return {
         text: replyText,
         contextIntent: faqMatch?.intencion ?? null,
+        diagnostics: { finishReason: candidate.finishReason, servedByFallback: Boolean(quality), fallbackReason: quality },
         // Esta llamada sí gastó cuota de Google: la consola puede contarla.
         billable: true,
         ...usage

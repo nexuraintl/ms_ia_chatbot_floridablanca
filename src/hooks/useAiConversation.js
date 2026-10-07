@@ -94,7 +94,8 @@ export const useAiConversation = ({ apiKey, sitemapLinks }) => {
         // Cuando el backend corta la IA por cuota, esto es lo único que lo delata: el
         // ciudadano no ve ningún aviso, así que el operador necesita verlo en el panel.
         servedByFallback: reply.servedByFallback === true,
-        fallbackReason: reply.fallbackReason
+        fallbackReason: reply.fallbackReason,
+        diagnostics: reply.diagnostics
       });
 
       if (reply.tokensUsed > 0) {

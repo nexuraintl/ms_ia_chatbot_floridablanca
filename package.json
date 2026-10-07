@@ -10,18 +10,21 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "start:local": "node --env-file-if-exists=.env server/index.js",
-    "test": "npm run test:security && npm run test:server && npm run test:rpa && npm run test:knowledge && npm run test:conversations",
+    "test": "npm run test:security && npm run test:server && npm run test:rpa && npm run test:knowledge && npm run test:conversations && npm run test:quality",
     "test:security": "node tests/run-security-tests.mjs",
     "test:server": "node tests/run-server-tests.mjs",
     "test:rpa": "node tests/run-rpa-tests.mjs",
     "test:knowledge": "node tests/run-knowledge-tests.mjs",
-    "test:conversations": "node --test tests/conversations*.test.mjs"
+    "test:conversations": "node --test tests/conversations*.test.mjs",
+    "test:quality": "node --test tests/assistant-quality.test.mjs"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "lucide-react": "^1.16.0",
     "mysql2": "^3.24.5",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

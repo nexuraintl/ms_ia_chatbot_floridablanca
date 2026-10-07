@@ -85,7 +85,8 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
   // Sin nada suficientemente afin, mejor no mandar ningun fragmento: el Estatuto no cubre
   // la consulta y sus articulos solo servirian para que el modelo se declare sin datos.
   const bestScore = Math.max(candidates[0]?.score ?? 0, contextMatches[0]?.score ?? 0);
-  if (bestScore < MIN_TOPIC_SCORE) {
+  const fiscalQuery = /\b(ica|reteica|predial|uvt|rit)\b|industria y comercio|estatuto tributario/i.test(query);
+  if (bestScore < MIN_TOPIC_SCORE && !(fiscalQuery && bestScore >= 2)) {
     return { ...buildSystemInstruction({ results: [], maxChars }), coincidencias: 0 };
   }
 
@@ -120,7 +121,7 @@ export const buildKnowledgePrompt = ({ query, contextQuery = "", maxChars, topK 
   }
 
   const instruction = buildSystemInstruction({ results, maxChars, fuente: getCorpus()?.fuente });
-  return { ...instruction, coincidencias: results.length };
+  return { ...instruction, coincidencias: results.length, results, coverage: queryCoverage(index, query) };
 };
 
 /** Reinicia el indice. Existe para las pruebas. */

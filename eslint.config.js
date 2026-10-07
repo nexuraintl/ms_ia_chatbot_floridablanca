@@ -26,6 +26,7 @@ export default defineConfig([
   {
     files: [
       'server/**/*.js',
+      'shared/**/*.js',
       'tests/**/*.mjs',
       'vite.config.js',
       'eslint.config.js',

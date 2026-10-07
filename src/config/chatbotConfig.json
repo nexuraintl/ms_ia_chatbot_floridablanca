@@ -78,7 +78,8 @@
       ".gov.co",
       ".floridablanca.gov.co",
       ".sisben.gov.co",
-      ".dnp.gov.co"
+      ".dnp.gov.co",
+      "portal.floridablanca.suiteneptuno.com"
     ]
   },
   "_routing_comment": "Las palabras de 'routing' OFRECEN un trámite, no lo abren: la IA responde la duda y al final invita a escribir la palabra de confirmación del trámite (ver confirmWord en application/flows/flowRegistry.js). El formulario se abre en el turno siguiente, o de inmediato si el ciudadano pulsa una respuesta rápida. La radicación de PQRSD es la excepción: entra directo porque su primer paso es la pregunta de orientación, no un formulario (opensDirectly en flowRegistry.js). Este comentario va FUERA de 'routing' porque sus claves se recorren como identificadores de trámite.",

@@ -78,7 +78,8 @@ export const isFlowConfirmation = (text, keywords = CONFIRMATION_KEYWORDS) => {
   const words = normalized.split(/\s+/).filter(Boolean);
   if (words.length === 0 || words.length > MAX_CONFIRMATION_WORDS) return false;
 
-  return containsFuzzyKeyword(normalized, keywords);
+  return keywords.some(keyword => normalized === normalizeForMatching(keyword)) ||
+    ['quiero pagar', 'quiero iniciar', 'quiero abrir el formulario', 'abrir formulario'].includes(normalized);
 };
 
 /**
@@ -114,7 +115,7 @@ export const resolveIntent = (
   }
 
   // 2. Palabra de activación sobre un trámite mencionado antes.
-  if (pendingService && containsFuzzyKeyword(normalized, activationKeywords)) {
+  if (pendingService && isFlowConfirmation(text, activationKeywords)) {
     return { flow: pendingService, viaActivation: true };
   }
 

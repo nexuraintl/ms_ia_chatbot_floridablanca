@@ -413,7 +413,7 @@ section("7. Proxy de IA: acotado del gasto y degradación");
     });
 
   const baseConfig = {
-    ...createProxyConfig({ ENVIRONMENT: "local" }),
+    ...createProxyConfig({ ENVIRONMENT: "local", AI_WEB_ENABLED: "false" }),
     apiKey: "AIzaSyPRUEBA",
     ratePerMinute: 50,
     dailyQuotaPerSession: 2,
@@ -434,7 +434,7 @@ section("7. Proxy de IA: acotado del gasto y degradación");
 
   check(
     "maxOutputTokens pedido por el cliente se acota al máximo del servidor",
-    abusive.ok && abusive.request.generationConfig.maxOutputTokens === 200,
+    abusive.ok && abusive.request.generationConfig.maxOutputTokens === 768,
     `pedidos=100000 enviados=${abusive.request?.generationConfig?.maxOutputTokens}`
   );
   check(
