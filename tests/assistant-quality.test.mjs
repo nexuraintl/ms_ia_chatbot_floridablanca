@@ -19,6 +19,8 @@ import config from '../src/config/chatbotConfig.json' with { type: 'json' };
 import faqCatalog from '../src/config/NewFaqConfig.json' with { type: 'json' };
 import { createLocalMockProvider } from '../src/adapters/ai/LocalMockProvider.js';
 import { createQuotaAwareProvider } from '../src/adapters/ai/QuotaAwareProvider.js';
+import { readPortalCatalog, calendarDocumentCandidates, downloadPortalDocument, DOCUMENT_CATALOG_URL } from '../server/sources/portalDocuments.js';
+import { createDocumentStore } from '../server/sources/documentStore.js';
 
 test('fallback local no sustituye sanciones y calendario por la definición de ICA', async () => {
   const local = createLocalMockProvider({ faqCatalog, latencyMs: 0 });
@@ -310,4 +312,89 @@ test('extrae texto de un PDF real en worker; PDF corrupto falla explícitamente'
   const doc=await extractDocument({url:'https://www.floridablanca.gov.co/2026.pdf',contentType:'application/pdf',body:simplePdf()},DEFAULT_SOURCE_HOSTS);
   assert.match(doc.text,/Calendario tributario 2026/); assert.match(doc.text,/Página 1/);
   await assert.rejects(extractDocument({url:'https://www.floridablanca.gov.co/bad.pdf',contentType:'application/pdf',body:Buffer.from('%PDF-bad')},DEFAULT_SOURCE_HOSTS),/pdf_/);
+});
+
+test('catálogo dinámico solo reconoce IDs numéricos de la función conocida y conserva la sesión pública de descarga', async () => {
+  const catalog = readPortalCatalog({url:DOCUMENT_CATALOG_URL,contentType:'text/html',publicCookies:['.AspNetCore.Antiforgery.test=public'],
+    body:Buffer.from('<input name="__RequestVerificationToken" value="csrf"><a onclick="descargarArchivo(15825)">Resolución No. 6059 del 2025 - Presentación y Pagos de Impuestos</a><a onclick="fetch(123)">Otro</a><a onclick="descargarArchivo(1); alert(1)">Malicioso</a>')});
+  assert.equal(catalog.documents.length,1);
+  assert.equal(calendarDocumentCandidates(catalog.documents,2026)[0].id,'15825');
+  const calls=[];
+  const downloaded=await downloadPortalDocument({catalog,document:catalog.documents[0],read:async(url,options)=>{
+    calls.push({url,options});
+    return calls.length===1 ? {contentType:'application/json',publicCookies:['.AspNetCore.Session=session'],body:Buffer.from(JSON.stringify({estado:'1',handle:'public-handle',fileName:'calendar.pdf'}))}
+      : {url,contentType:'application/pdf',body:simplePdf()};
+  }});
+  assert.match(calls[1].options.portalSession.cookie,/Antiforgery.*Session/);
+  assert.equal(calls[0].options.publicDocumentId,'15825');
+  assert.equal(new URL(calls[1].url).origin,new URL(DOCUMENT_CATALOG_URL).origin);
+  assert.ok(downloaded.response.body.subarray(0,5).toString()==='%PDF-');
+});
+
+test('sesión del portal nunca se envía a otro host ni sigue redirecciones de preparación', async () => {
+  let calls=0;
+  const reader=createSafeReader({lookupImpl:async()=>[{address:'8.8.8.8',family:4}],requestImpl:(_url,_options,callback)=>{
+    calls++; const req=new EventEmitter();req.setTimeout=()=>{};req.destroy=()=>{};
+    req.end=()=>{const res=Readable.from([]);res.statusCode=302;res.headers={location:'https://www.floridablanca.gov.co/'};callback(res);req.emit('close');};return req;
+  }});
+  const portalSession={csrfToken:'public-csrf',cookie:'.AspNetCore.Antiforgery.test=public'};
+  await assert.rejects(reader('https://www.floridablanca.gov.co/',{portalSession}),/source_session_target_rejected/);
+  assert.equal(calls,0);
+  await assert.rejects(reader(DOCUMENT_CATALOG_URL+'?handler=MenuById',{portalSession,publicDocumentId:'15825'}),/source_document_redirect_rejected/);
+  assert.equal(calls,1);
+});
+
+test('repositorio recupera PDF escaneado, verifica encabezado y reutiliza documento sin contaminarlo con caché de navegación', async () => {
+  let reads=0,ocrCalls=0;
+  const config={...createSourceConfig({}),seedUrls:[DOCUMENT_CATALOG_URL],portalSearchUrl:null,maxReads:4};
+  const repository=createOfficialSourceRepository({config,readImpl:async url=>{
+    reads++;
+    if(url===DOCUMENT_CATALOG_URL)return {url,contentType:'text/html',publicCookies:['.AspNetCore.Antiforgery.test=public'],body:Buffer.from('<input name="__RequestVerificationToken" value="csrf"><a onclick="descargarArchivo(15825)">Resolución No. 6059 del 2025 - Presentación y Pagos de Impuestos</a>')};
+    if(url.includes('MenuById'))return {url,contentType:'application/json',publicCookies:['.AspNetCore.Session=session'],body:Buffer.from(JSON.stringify({estado:'1',handle:'public-handle',fileName:'calendar.pdf'}))};
+    return {url,contentType:'application/pdf',body:simplePdf()};
+  },extractImpl:async response=>{
+    if(response.contentType==='application/pdf')throw new Error('pdf_requires_ocr');
+    return {title:'Normatividad',links:[],text:'Calendario Tributario. Resolución No. 6059 del 2025 Presentación y Pagos de Impuestos. '.repeat(2)};
+  }});
+  const inspectScannedDocument=async()=>{ocrCalls++;return {year:2026,resolution:'6059',text:'Plazos de impuestos de Floridablanca para la vigencia 2026.'};};
+  const context=resolveConversationContext([{sender:'user',text:'necesito el calendario tributario 2026 el documento'}]);
+  for(let i=0;i<2;i++){
+    const evidence=await repository.retrieve(context,{inspectScannedDocument});
+    assert.equal(evidence.document.year,2026);
+    assert.ok(evidence.document.body.subarray(0,5).toString()==='%PDF-');
+    assert.ok(evidence.sources.some(source=>source.confidence==='document_header_ocr'));
+  }
+  assert.equal(reads,3);assert.equal(ocrCalls,1);
+});
+
+test('PDF adjunto viene del archivo verificado, se sirve sin sesión del portal y expira', async () => {
+  let now=0;
+  const store=createDocumentStore({now:()=>now,ttlMs:10,maxDocuments:1});
+  const body=simplePdf();const path=store.put(body,{fileName:'calendar.pdf'});
+  assert.equal(store.get(path).body,body);
+  assert.equal(store.get('/api/ai/documents/../../secret.pdf'),null);
+  now=11;assert.equal(store.get(path),null);
+  const handler=createAiProxyHandler({config:testConfig(),sourceRepository:{retrieve:async()=>({sources:[{id:'web-document',title:'Resolución',url:DOCUMENT_CATALOG_URL,confidence:'document_header_ocr',text:'Vigencia 2026.'}],document:{body,year:2026,resolution:'6059',sourceUrl:DOCUMENT_CATALOG_URL},searched:true,status:'found'})},fetchImpl:async()=>{throw new Error('no se necesita generación');}});
+  const response=await ask(handler,'necesito el calendario tributario 2026 el documento');
+  assert.equal(response.status,200);assert.match(response.json.text,/calendario tributario 2026 en PDF/);
+  assert.equal(handler.readDocument(response.json.attachment.fileUrl).body,body);
+  assert.ok(!JSON.stringify(response.json).includes('csrf'));
+});
+
+test('OCR admite año numérico como texto, verifica resolución y contabiliza la lectura', async () => {
+  const body=simplePdf();let request;
+  const handler=createAiProxyHandler({config:testConfig(),sourceRepository:{retrieve:async(context,{inspectScannedDocument})=>{
+    const header=await inspectScannedDocument(body,{title:'Resolución No. 6059 del 2025 - Presentación y Pagos de Impuestos'});
+    assert.equal(header.year,2026);
+    return {sources:[{id:'web-document',url:DOCUMENT_CATALOG_URL,title:'Resolución',confidence:'document_header_ocr',text:header.text}],document:{body,year:header.year,resolution:header.resolution,sourceUrl:DOCUMENT_CATALOG_URL},searched:true,status:'found'};
+  }},fetchImpl:async(_url,options)=>{
+    request=JSON.parse(options.body);
+    return aiResponse(JSON.stringify({year:'2026',resolution:'6059',text:'Plazos para impuestos de Floridablanca para la vigencia 2026.'}),'STOP',2300);
+  }});
+  const response=await ask(handler,'necesito el calendario tributario 2026 el documento');
+  assert.equal(response.status,200);assert.ok(response.json.attachment);
+  assert.equal(response.json.usageMetadata.totalTokenCount,2300);
+  assert.equal(response.json.quota.used,1);
+  assert.equal(request.contents[0].parts[1].inlineData.mimeType,'application/pdf');
+  assert.equal(request.generationConfig.responseMimeType,'application/json');
 });

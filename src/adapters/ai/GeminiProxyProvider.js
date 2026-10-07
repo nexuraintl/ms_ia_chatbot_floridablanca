@@ -84,12 +84,16 @@ export const createGeminiProxyProvider = ({ proxyUrl = "", faqCatalog = [] } = {
       // El proxy reenvía `usageMetadata` íntegro, así que el consumo que muestra el panel
       // sigue siendo el que reporta Google y no una estimación.
       const usage = readActualUsage(data) ?? (data.diagnostics ? { tokensUsed: 0, savedTokens: 0, isEstimate: false } : estimateApiUsage(history, text));
+      const attachment = data.attachment?.type === 'file' &&
+        /^\/api\/ai\/documents\/[a-f0-9]{64}\.pdf$/.test(data.attachment.fileUrl || '')
+        ? { ...data.attachment, fileUrl: `${normalizeBase(proxyUrl)}${data.attachment.fileUrl}` } : null;
 
       return {
         text,
         contextIntent: data.diagnostics?.topic ?? faqMatch?.intencion ?? null,
         diagnostics: data.diagnostics,
         sources: data.sources || [],
+        ...(attachment ? { attachment } : {}),
         servedByFallback: data.diagnostics?.servedByFallback === true,
         fallbackReason: data.diagnostics?.fallbackReason,
         billable: Number(data.usageMetadata?.totalTokenCount) > 0,

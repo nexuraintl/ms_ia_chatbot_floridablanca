@@ -421,7 +421,7 @@ export const ChatProvider = ({ children }) => {
             `Escribe **${palabra}** y te abro el formulario.`;
         }
 
-        addMessage({ sender: "bot", text: replyText });
+        addMessage({ sender: "bot", text: replyText, ...(reply.attachment ? { attachment: reply.attachment } : {}) });
       } catch (error) {
         // El detalle técnico no se muestra al ciudadano.
         console.error("❌ [Chat] Error procesando el mensaje:", error?.message);

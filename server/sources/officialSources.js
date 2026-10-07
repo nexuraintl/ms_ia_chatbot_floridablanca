@@ -2,6 +2,7 @@ import { createSafeReader } from './safeRead.js';
 import { officialUrl, DEFAULT_SOURCE_HOSTS } from './sourcePolicy.js';
 import { extractDocument } from './extractDocument.js';
 import { publicSearchQuery, normalize } from '../../shared/conversationContext.js';
+import { readPortalCatalog, calendarDocumentCandidates, downloadPortalDocument, DOCUMENT_CATALOG_URL } from './portalDocuments.js';
 
 export const createSourceConfig = (env = process.env) => {
   const hosts = String(env.AI_SOURCE_HOSTS || DEFAULT_SOURCE_HOSTS.join(',')).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -23,8 +24,9 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
   extractImpl = extractDocument, now = () => Date.now() } = {}) => {
   const read = readImpl || createSafeReader({ hosts: config.hosts });
   const cache = new Map();
+  const documentCache = new Map();
   return {
-    async retrieve(context, { discover, signal } = {}) {
+    async retrieve(context, { discover, inspectScannedDocument, signal } = {}) {
       if (!config.enabled) return { sources: [], searched: false, status: 'disabled', errors: [] };
       const query = publicSearchQuery(context);
       const controller = new AbortController();
@@ -33,6 +35,7 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
       if (signal?.aborted) abort();
       const timer = setTimeout(abort, config.timeoutMs);
       const sources = [], errors = [], visited = new Set();
+      let document = null;
       let searched = false, reads = 0;
       const portalUrl = config.portalSearchUrl ? new URL(config.portalSearchUrl) : null;
       if (portalUrl) portalUrl.searchParams.set("q", query);
@@ -52,11 +55,51 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
               doc = { ...await extractImpl(response, config.hosts, { signal: controller.signal }), url: finalUrl, fetchedAt: now() };
               if (cache.size >= 100) cache.delete(cache.keys().next().value);
               cache.set(url, doc);
+              if (context.aspect?.includes('calendario') && url === DOCUMENT_CATALOG_URL) {
+                const catalog = readPortalCatalog(response);
+                const candidates = catalog ? calendarDocumentCandidates(catalog.documents, context.year) : [];
+                for (const candidate of candidates) {
+                  if (document || reads + 2 > config.maxReads) break;
+                  try {
+                    let downloaded = documentCache.get(candidate.id);
+                    if (!downloaded || now() - downloaded.fetchedAt > 30 * 60 * 1000) {
+                      const file = await downloadPortalDocument({ read, catalog, document: candidate, signal: controller.signal,
+                        onRead: () => { if (reads >= config.maxReads) throw new Error('source_read_limit'); reads++; } });
+                      let extracted;
+                      try { extracted = await extractImpl(file.response, config.hosts, { signal: controller.signal }); }
+                      catch (err) {
+                        if (err.message !== 'pdf_requires_ocr' || !inspectScannedDocument) throw err;
+                        extracted = await inspectScannedDocument(file.response.body, candidate, controller.signal);
+                      }
+                      if (!extracted.year) {
+                        const headerText = normalize(extracted.text.slice(0, 2500));
+                        const headerYear = Number(headerText.match(/(?:vigencia|ano\s+gravable)[^\d]{0,30}(20\d{2})/)?.[1]);
+                        const resolution = candidate.title.match(/(?:No\.?\s*)?(\d{3,6})\b/)?.[1];
+                        if (headerYear && /floridablanca/.test(headerText) && resolution &&
+                            new RegExp(`resolucion[^\\d]{0,30}${resolution}\\b`).test(headerText)) {
+                          extracted.year = headerYear; extracted.resolution = resolution;
+                        }
+                      }
+                      downloaded = { ...file, text: extracted.text, year: extracted.year, resolution: extracted.resolution, fetchedAt: now() };
+                      if (documentCache.size >= 8) documentCache.delete(documentCache.keys().next().value);
+                      documentCache.set(candidate.id, downloaded);
+                    }
+                    if (downloaded.year === context.year) {
+                      document = { body: downloaded.response.body, title: downloaded.title, year: downloaded.year,
+                        resolution: downloaded.resolution, sourceUrl: DOCUMENT_CATALOG_URL };
+                      sources.push({ id: 'web-document', title: downloaded.title, url: DOCUMENT_CATALOG_URL,
+                        text: downloaded.text, confidence: 'document_header_ocr', fetchedAt: new Date(downloaded.fetchedAt).toISOString(),
+                        requestedYear: context.year, issuer: 'Municipio de Floridablanca', verification: 'Encabezado del PDF descargado; confirma vigencia y título, no transcribe todas las fechas ni modificaciones.' });
+                    }
+                  } catch (err) { errors.push(/^(source_|pdf_)[a-z0-9_]+$/.test(err.message) ? err.message : 'source_document_failed'); }
+                }
+              }
             }
             const catalog = new URL(doc.url).hostname === 'portal.floridablanca.suiteneptuno.com' && new URL(doc.url).pathname.toLowerCase() === '/documentacion/index';
             const excerpt = catalog ? doc.text.slice(0, 4000) : relevantText(doc.text, query);
             const homePage = new URL(doc.url).pathname === '/';
-            const yearRelevant = !context.year || !context.aspect?.includes('calendario') || excerpt.includes(String(context.year));
+            const yearRelevant = !context.year || !context.aspect?.includes('calendario') ||
+              new RegExp(`(?:calendario\\s+tributario|vigencia|año\\s+gravable)[^\\n]{0,100}\\b${context.year}\\b`, 'i').test(normalize(excerpt));
             const competent = !new URL(doc.url).hostname.endsWith('dian.gov.co') || /\buvt\b/.test(normalize(context.currentText));
             if (excerpt.length > 100 && (yearRelevant || catalog) && competent && url !== portalUrl?.href &&
                 !(homePage && context.aspect?.includes('calendario'))) sources.push({
@@ -76,20 +119,29 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
       try {
         // Buscar primero las URLs específicas para no consumir el presupuesto en navegación.
         const cachedSources = [...cache.values()].filter(doc => now()-doc.fetchedAt < config.ttlMs && relevantText(doc.text, query).length > 100);
-        queue = [...cachedSources.map(doc => doc.url), ...queue];
+        // Las consultas documentales empiezan siempre por el catálogo, aunque haya
+        // páginas genéricas de una consulta anterior guardadas en caché.
+        queue = context.aspect?.includes('calendario') ? [...config.seedUrls] : [...cachedSources.map(doc => doc.url), ...queue];
+        const cachedDocument = [...documentCache.values()].find(doc => doc.year === context.year && now() - doc.fetchedAt < 30 * 60 * 1000);
+        if (context.aspect?.includes('calendario') && cachedDocument) {
+          document = { body: cachedDocument.response.body, title: cachedDocument.title, year: cachedDocument.year,
+            resolution: cachedDocument.resolution, sourceUrl: DOCUMENT_CATALOG_URL };
+          sources.push({ id: 'web-document', title: cachedDocument.title, url: DOCUMENT_CATALOG_URL, text: cachedDocument.text,
+            confidence: 'document_header_ocr', fetchedAt: new Date(cachedDocument.fetchedAt).toISOString(), requestedYear: context.year });
+        } else if (context.aspect?.includes('calendario')) cache.delete(DOCUMENT_CATALOG_URL);
         if (portalUrl && !cachedSources.length) {
           searched = true;
           if (context.aspect?.includes('calendario')) queue.splice(1, 0, portalUrl.href);
           else queue.unshift(portalUrl.href);
         }
-        await inspectQueue(Math.min(2, config.maxReads));
+        if (!document) await inspectQueue(Math.min(2, config.maxReads));
         if (config.searchEnabled && discover && !sources.some(source => source.confidence !== 'official_catalog') && !controller.signal.aborted) {
           searched = true;
           try { queue = [...await discover(query, controller.signal), ...queue]; }
           catch { errors.push('search_unavailable'); }
         }
-        await inspectQueue();
-        return { sources, searched, status: sources.length ? 'found' : controller.signal.aborted ? 'timeout' : errors.length ? 'unavailable' : 'no_results', errors };
+        if (!document) await inspectQueue();
+        return { sources, document, searched, status: sources.length ? 'found' : controller.signal.aborted ? 'timeout' : errors.length ? 'unavailable' : 'no_results', errors };
       } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
     }
   };
