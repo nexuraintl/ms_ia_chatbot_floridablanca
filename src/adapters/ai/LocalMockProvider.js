@@ -6,7 +6,8 @@
  * como texto que haya que volver a parsear.
  */
 
-import { findBestFaq, selectBestAnswer } from "../../domain/faq/faqMatcher.js";
+import { findBestFaq, selectBestAnswer, answerSupportsRequest } from "../../domain/faq/faqMatcher.js";
+import { resolveConversationContext, topicIn, SANCTION_TYPE_QUESTION } from "../../../shared/conversationContext.js";
 import { SUBKEY_KEYWORDS } from "../../domain/faq/subKeywords.js";
 import { normalizeForMatching } from "../../domain/security/textSanitizer.js";
 import { estimateLocalUsage } from "../../domain/tokens/tokenEstimator.js";
@@ -89,12 +90,18 @@ export const createLocalMockProvider = ({ faqCatalog = [], latencyMs = SIMULATED
     const contextSuffix = activeContext ? ` ${activeContext.replace(/_/g, " ")}` : "";
     const normalized = normalizeForMatching(userMessage + contextSuffix);
     const normalizedQuery = normalizeForMatching(userMessage);
+    const conversation = resolveConversationContext(history, { topic: topicIn(contextSuffix) });
 
     let reply;
     let matchedIntent = null;
 
+    if (conversation.needsSanctionType) {
+      reply = SANCTION_TYPE_QUESTION;
+      matchedIntent = conversation.topic === "reteica" ? "retencion_reteica" : "impuesto_ica";
+    }
+
     // 1. Saludo
-    if (includesAny(normalized, GREETINGS)) {
+    else if (includesAny(normalized, GREETINGS)) {
       reply = REPLY_GREETING;
     }
 
@@ -131,7 +138,14 @@ export const createLocalMockProvider = ({ faqCatalog = [], latencyMs = SIMULATED
       const faqMatch = findBestFaq(userMessage + contextSuffix, faqCatalog);
       if (faqMatch) {
         matchedIntent = faqMatch.intencion;
-        reply = selectBestAnswer(faqMatch.item, normalized, SUBKEY_KEYWORDS).text;
+        const answer = selectBestAnswer(faqMatch.item, normalized, SUBKEY_KEYWORDS);
+        reply = answerSupportsRequest(answer, conversation.query)
+          ? answer.text
+          : conversation.aspect?.includes("calendario")
+            ? `No pude verificar el documento oficial del calendario tributario${conversation.year ? ` de ${conversation.year}` : ""}. La consulta de fuentes no está disponible en este momento, así que no puedo confirmar el PDF ni sus fechas.`
+            : "No tengo información verificada que responda esa consulta en el catálogo local y la consulta de fuentes no está disponible en este momento. No puedo confirmar los requisitos, porcentajes o documentos solicitados.";
+      } else if (conversation.aspect?.includes("calendario")) {
+        reply = `No pude verificar el documento oficial del calendario tributario${conversation.year ? ` de ${conversation.year}` : ""}. La consulta de fuentes no está disponible en este momento, así que no puedo confirmar el PDF ni sus fechas.`;
       } else if (includesAny(normalized, REGIONAL_WORDS)) {
         reply = REPLY_REGIONAL;
       } else {

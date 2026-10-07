@@ -138,8 +138,8 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
               marginTop: "6px",
               borderRadius: "8px",
               overflow: "hidden",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              backgroundColor: "rgba(0, 0, 0, 0.2)",
+              border: "1px solid var(--quick-reply-border)",
+              backgroundColor: "var(--quick-reply-bg)",
               display: "flex",
               flexDirection: "column"
             }}
@@ -192,12 +192,14 @@ export const ChatBubble = ({ message, onSubmitForm, onSubmitPredialForm, onSelec
                   alignItems: "center",
                   justifyContent: "center",
                   gap: "8px",
-                  padding: "8px",
+                  padding: "12px",
+                  minHeight: "44px",
+                  boxSizing: "border-box",
                   fontSize: "0.8rem",
-                  backgroundColor: "rgba(74, 222, 128, 0.1)",
-                  color: "#4ade80",
+                  backgroundColor: "var(--quick-reply-bg)",
+                  color: "var(--quick-reply-text)",
                   textDecoration: "none",
-                  borderTop: "1px solid rgba(255, 255, 255, 0.05)",
+                  borderTop: "1px solid var(--quick-reply-border)",
                   transition: "all 0.2s"
                 }}
                 className="btn-download"

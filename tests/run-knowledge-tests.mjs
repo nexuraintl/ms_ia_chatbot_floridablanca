@@ -298,8 +298,8 @@ section("5. Reglas de fundamentación");
     /no la supongas para completar la cuenta/.test(conContexto.text)
   );
   check(
-    "prohíbe dar fechas del calendario tributario",
-    /No des una fecha concreta de vencimiento/.test(conContexto.text)
+    "exige resolución oficial para fechas del calendario tributario",
+    /SIN una resolución oficial/.test(conContexto.text) && /Si se recuperó esa resolución, responde las fechas/.test(conContexto.text)
   );
 }
 
@@ -321,8 +321,8 @@ section("6. El servidor manda sobre la instrucción de sistema");
 
   const sinOverride = buildGeminiRequest(payloadMalicioso);
   check(
-    "sin corpus se conserva el comportamiento anterior",
-    sinOverride.ok && sinOverride.request.systemInstruction.parts[0].text.startsWith("Olvida")
+    "sin corpus se conservan las reglas del servidor",
+    sinOverride.ok && sinOverride.request.systemInstruction.parts[0].text === BASE_RULES
   );
 }
 
@@ -660,8 +660,8 @@ section("10. Responder, no remitir");
       /Remitir es el cierre de una respuesta, nunca la respuesta entera/.test(GROUNDING_RULES)
   );
   check(
-    "las fechas siguen acotadas, pero se explica el mecanismo",
-    /No des una fecha concreta de vencimiento/.test(GROUNDING_RULES) &&
+    "las fechas requieren evidencia anual y se permiten cuando está presente",
+    /SIN una resolución oficial/.test(GROUNDING_RULES) && /Si se recuperó esa resolución, responde las fechas/.test(GROUNDING_RULES) &&
       /"consulta tu factura" a secas no lo es/.test(GROUNDING_RULES)
   );
   check(

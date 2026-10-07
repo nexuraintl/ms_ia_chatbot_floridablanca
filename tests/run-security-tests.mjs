@@ -456,13 +456,12 @@ section("7. Emparejamiento de FAQ: sin falsos positivos por subcadena");
     );
   }
 
-  // La radicación se había retirado porque mencionar un trámite abría su formulario.
-  // Vuelve con la orientación previa delante: su primer paso es una pregunta, así que
-  // mencionarla ya no puede abrir nada sin querer.
+  // La radicación sigue disponible por petición expresa, pero no en el menú inicial.
   check(
-    "la radicación de PQRSD vuelve a ser alcanzable",
+    "la radicación de PQRSD conserva su ruta sin botón inicial",
     Object.keys(chatbotConfig.routing).includes("pqrsd_crear") &&
-      chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear"),
+      !chatbotConfig.quickReplies.some((r) => r.flow === "pqrsd_crear") &&
+      resolveIntent("quiero radicar una PQRSD", { routingMap: chatbotConfig.routing }).flow === "pqrsd_crear",
     `rutas: ${Object.keys(chatbotConfig.routing).join(", ")} | botones: ${chatbotConfig.quickReplies.map((r) => r.flow).join(", ")}`
   );
 
@@ -1518,12 +1517,12 @@ section("23. Guardia de alcance: la IA no se paga por consultas ajenas");
   const prompt = buildSystemPrompt({ faqContext: "" });
   check(
     "el prompt obliga a orientar aunque el dato no esté en los bloques",
-    /DENTRO de ese tema ayudas SIEMPRE/.test(prompt) &&
-      /No respondas "no tengo esa información" a una consulta municipal/.test(prompt)
+    /Una consulta municipal sin evidencia merece búsqueda o aclaración/.test(prompt) &&
+      /Remitir es el último recurso/.test(prompt)
   );
   check(
     "el prompt permite guiar un cálculo paso a paso",
-    /Puedes pedirle los datos y guiarlo paso a paso/.test(prompt)
+    /puedes pedirle los datos y guiarlo paso a paso/i.test(prompt)
   );
 }
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1628,8 +1627,8 @@ section("25. El buscador del portal ya no se ofrece");
 
   const prompt = buildSystemPrompt({ faqContext: "" });
   check(
-    "el prompt de sistema prohibe improvisar buscadores",
-    prompt.includes("ni ofrezcas buscadores del portal")
+    "el prompt de sistema exige URLs entregadas por fuentes verificables",
+    prompt.includes("Solo usa URLs entregadas como fuentes o datos de referencia")
   );
   check("el prompt de sistema acota el alcance al municipio", prompt.includes("ALCANCE TEMÁTICO"));
 }
@@ -1651,3 +1650,6 @@ if (fallos.length) {
   }
   console.log("");
 }
+
+// Un fallo debe detener npm test y el pipeline, no solo colorear la consola.
+if (fallos.length) process.exitCode = 1;

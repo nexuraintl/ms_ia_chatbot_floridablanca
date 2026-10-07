@@ -209,7 +209,8 @@ export const search = (
 ) => {
   if (!index || index.total === 0) return [];
 
-  const terms = tokenize(query);
+  const expandedQuery = String(query).replace(/industria\s+y\s+comercio/gi, 'ICA industria y comercio').replace(/declar(ar|acion).*tarde/gi, 'extemporaneidad');
+  const terms = tokenize(expandedQuery);
   const pinnedArticles = citedArticles(query);
   if (terms.length === 0 && pinnedArticles.size === 0) return [];
 

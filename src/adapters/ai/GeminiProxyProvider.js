@@ -76,19 +76,27 @@ export const createGeminiProxyProvider = ({ proxyUrl = "", faqCatalog = [] } = {
     try {
       // `post` ya aporta timeout, cabeceras de correlación —de las que el servidor saca el
       // identificador de sesión— y errores tipados que no arrastran el cuerpo al chat.
-      const data = await post(`${normalizeBase(proxyUrl)}${CHAT_PATH}`, payload);
+      const data = await post(`${normalizeBase(proxyUrl)}${CHAT_PATH}`, payload, { timeoutMs: 60_000 });
 
       const text = String(data?.text || "").trim();
       if (text === "") return degradedReply();
 
       // El proxy reenvía `usageMetadata` íntegro, así que el consumo que muestra el panel
       // sigue siendo el que reporta Google y no una estimación.
-      const usage = readActualUsage(data) ?? estimateApiUsage(history, text);
+      const usage = readActualUsage(data) ?? (data.diagnostics ? { tokensUsed: 0, savedTokens: 0, isEstimate: false } : estimateApiUsage(history, text));
+      const attachment = data.attachment?.type === 'file' &&
+        /^\/api\/ai\/documents\/[a-f0-9]{64}\.pdf$/.test(data.attachment.fileUrl || '')
+        ? { ...data.attachment, fileUrl: `${normalizeBase(proxyUrl)}${data.attachment.fileUrl}` } : null;
 
       return {
         text,
-        contextIntent: faqMatch?.intencion ?? null,
-        billable: true,
+        contextIntent: data.diagnostics?.topic ?? faqMatch?.intencion ?? null,
+        diagnostics: data.diagnostics,
+        sources: data.sources || [],
+        ...(attachment ? { attachment } : {}),
+        servedByFallback: data.diagnostics?.servedByFallback === true,
+        fallbackReason: data.diagnostics?.fallbackReason,
+        billable: Number(data.usageMetadata?.totalTokenCount) > 0,
         ...usage
       };
     } catch (error) {

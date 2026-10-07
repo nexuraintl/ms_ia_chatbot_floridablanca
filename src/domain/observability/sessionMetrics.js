@@ -68,6 +68,10 @@ const createEmptyState = (startedAt) => ({
   lastLatencyMs: null,
   tokensReported: 0,
   tokensReportedCalls: 0,
+  qualityRepairs: 0,
+  sourceSearches: 0,
+  citedSources: 0,
+  lastAiDiagnostics: null,
   tokensEstimated: 0,
   tokensEstimatedCalls: 0,
   /** @type {Map<string, FlowCounters>} */
@@ -188,9 +192,18 @@ export const createSessionMetrics = ({
       tokensUsed,
       isEstimate,
       servedByFallback,
-      fallbackReason
+      fallbackReason,
+      diagnostics
     }) {
       state.replies += 1;
+      if (diagnostics) {
+        state.qualityRepairs += diagnostics.repaired === true ? 1 : 0;
+        state.sourceSearches += diagnostics.searched === true ? 1 : 0;
+        state.citedSources += toCount(diagnostics.sources);
+        state.lastAiDiagnostics = Object.freeze({ topic: toDetail(diagnostics.topic), year: Number.isInteger(diagnostics.year) ? diagnostics.year : null,
+          finishReason: toDetail(diagnostics.finishReason), sourceStatus: toDetail(diagnostics.sourceStatus),
+          repaired: diagnostics.repaired === true, attempts: toCount(diagnostics.attempts) });
+      }
       if (provider) state.provider = String(provider);
       if (degraded) state.degraded += 1;
 
@@ -307,6 +320,10 @@ export const createSessionMetrics = ({
           lastFallbackReason: state.lastFallbackReason,
           fallbackActive: state.fallbackActive,
           offTopicBlocked: state.offTopicBlocked,
+          qualityRepairs: state.qualityRepairs,
+          sourceSearches: state.sourceSearches,
+          citedSources: state.citedSources,
+          lastAiDiagnostics: state.lastAiDiagnostics,
           lastLatencyMs: state.lastLatencyMs,
           p50LatencyMs: percentile(sorted, 50),
           p95LatencyMs: percentile(sorted, 95),

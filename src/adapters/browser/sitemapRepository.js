@@ -32,7 +32,7 @@ const MAX_FALLBACK_LINKS = 50;
 const MIN_SITEMAP_HTML_LENGTH = 500;
 
 /** Extensiones que no son secciones navegables. */
-const ASSET_EXTENSIONS = /\.(png|jpe?g|gif|svg|webp|pdf|zip|docx?|xlsx?)$/i;
+const ASSET_EXTENSIONS = /\.(png|jpe?g|gif|svg|webp|zip)$/i;
 
 /**
  * ¿Es un enlace utilizable como sección del portal?

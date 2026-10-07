@@ -39,6 +39,7 @@ import { createConversationConfig, createConversationStore } from "./conversatio
 import { createConversationApi, CONVERSATION_PATH_PREFIX } from "./conversationApi.js";
 import { createConversationAdminApi, CONVERSATION_ADMIN_PREFIX } from "./conversationAdminApi.js";
 import { serveConversationAdminPanel } from "./conversationAdminPanel.js";
+import { AI_DOCUMENT_PATH } from "./sources/documentStore.js";
 import { reportConversationFailure } from "./conversationDiagnostics.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -314,6 +315,17 @@ const handleRequest = (req, res) => {
   };
 
   // ── Proxy de IA ───────────────────────────────────────────────────────────
+  if (urlPath.startsWith(AI_DOCUMENT_PATH)) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      sendJson(res, 405, { error: 'Method Not Allowed' }); complete(405); return;
+    }
+    const document = aiProxy.readDocument(urlPath);
+    if (!document) { sendJson(res, 404, { error: 'Document expired or unavailable' }); complete(404); return; }
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': document.body.length,
+      'Content-Disposition': `inline; filename="${document.fileName}"`, 'Cache-Control': 'public, max-age=300',
+      ...SECURITY_HEADERS, ...staticCorsHeaders(req.headers.origin, req.headers.host) });
+    res.end(req.method === 'HEAD' ? undefined : document.body); complete(200); return;
+  }
   // Se atiende antes de la comprobación de método, porque es la ÚNICA ruta que admite
   // POST y OPTIONS. El resto del servidor sigue sirviendo solo lectura.
   if (urlPath === AI_CHAT_PATH) {

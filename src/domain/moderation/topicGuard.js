@@ -10,6 +10,7 @@
  * alcaldia no caben en una lista de palabras. Ver docs/MANUAL.md.
  */
 
+import { scopeVerdict } from "../../../shared/scopePolicy.js";
 import { normalizeForMatching } from "../security/textSanitizer.js";
 import { containsFuzzyKeyword } from "../matching/fuzzyMatcher.js";
 import { findBestFaq } from "../faq/faqMatcher.js";
@@ -185,6 +186,10 @@ export const evaluateTopic = (
 
   const normalized = normalizeForMatching(text);
   if (!normalized) return { allowed: true, reason: TOPIC_REASONS.EMPTY };
+
+  const semantic = scopeVerdict(text);
+  if (!semantic.allowed) return semantic;
+  if (/esteriliz|zoonosis|vacun/i.test(normalized)) return { allowed: true, reason: TOPIC_REASONS.MUNICIPAL_TERM };
 
   const words = normalized.split(/\s+/).filter(Boolean).slice(0, MAX_WORDS);
 

@@ -163,6 +163,22 @@ export const selectBestAnswer = (item, query, subKeywords) => {
   return { key: bestKey, text: answers[bestKey] };
 };
 
+/** El tema por sí solo no demuestra que una FAQ cubra lo solicitado. */
+export const answerSupportsRequest = (answer, query) => {
+  const normalized = normalizeForMatching(query);
+  const key = answer?.key || "";
+  const requested = [
+    [/sancion|\bmultas?\b/, /sancion|multa/],
+    [/calendario|vencimiento|\bfechas?\b/, /calendario|fecha|plazo/],
+    [/tarifa|por mil|milaje/, /tarifa/],
+    [/\brequisitos?\b|\bdocumentos?\b/, /requisito|documento/],
+    [/\bbeneficios?\b|\bdescuentos?\b/, /beneficio|descuento/]
+  ];
+  // El catálogo estático no confirma calendarios anuales ni entrega documentos.
+  if (/calendario/.test(normalized) || /\b(pdf|documento|enlace|link|url)\b/.test(normalized)) return false;
+  return requested.every(([request, supported]) => !request.test(normalized) || supported.test(key));
+};
+
 /**
  * Formatea una FAQ como bloque de contexto autoritativo para el prompt.
  * A diferencia del contexto de página, esta información SÍ es de confianza: proviene
