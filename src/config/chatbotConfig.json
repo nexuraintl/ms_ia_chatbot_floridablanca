@@ -42,10 +42,6 @@
       "flow": "predial"
     },
     {
-      "label": "📑 Radicar PQRSD",
-      "flow": "pqrsd_crear"
-    },
-    {
       "label": "🔍 Consultar PQRSD",
       "flow": "pqrsd_consultar"
     }

@@ -58,13 +58,13 @@ export const ChatWindow = () => {
     return (
       <button
         onClick={openChat}
-        title="Abrir Chat de Atención Virtual"
-        aria-label="Abrir Chat de Atención Virtual"
+        title={`Abrir chat de ${ASSISTANT_NAME}`}
+        aria-label={`Abrir chat de ${ASSISTANT_NAME}`}
         style={{
           borderRadius: "50%",
-          backgroundColor: "#15803d",
+          backgroundColor: ASSISTANT_LOGO ? "#ffffff" : "#15803d",
           color: "#ffffff",
-          border: "2px solid rgba(255, 255, 255, 0.4)",
+          border: ASSISTANT_LOGO ? "2px solid #15803d" : "2px solid rgba(255, 255, 255, 0.4)",
           cursor: "pointer",
           boxShadow: "0 10px 30px rgba(21, 128, 61, 0.4)",
           display: "flex",
@@ -75,7 +75,19 @@ export const ChatWindow = () => {
         }}
         className="floating-chat-trigger"
       >
-        <MessageSquare size={28} aria-hidden="true" />
+        {ASSISTANT_LOGO ? (
+          <img
+            className="floating-chat-trigger-logo"
+            src={ASSISTANT_LOGO}
+            alt=""
+            aria-hidden="true"
+            width={800}
+            height={660}
+            draggable={false}
+          />
+        ) : (
+          <MessageSquare size={28} aria-hidden="true" />
+        )}
         <span
           style={{
             position: "absolute",

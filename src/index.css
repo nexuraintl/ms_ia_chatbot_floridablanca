@@ -383,6 +383,17 @@
   width: 24px;
   height: 24px;
 }
+.antigravity-chatbot-root .floating-chat-trigger-logo {
+  display: block;
+  width: 78%;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+}
+.antigravity-chatbot-root .floating-chat-trigger:focus-visible {
+  outline: 3px solid #15803d;
+  outline-offset: 4px;
+}
 .floating-chat-trigger:hover {
   transform: scale(1.08);
   box-shadow: 0 10px 35px rgba(21, 128, 61, 0.45);
