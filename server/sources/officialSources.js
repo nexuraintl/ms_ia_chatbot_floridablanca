@@ -45,6 +45,12 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
           const url = officialUrl(queue.shift(), config.hosts);
           if (!url || visited.has(url)) continue;
           visited.add(url);
+          const host = new URL(url).hostname;
+          const question = normalize(context.currentText);
+          // El horario de otra entidad oficial no responde al de la Alcaldía.
+          if (context.aspect === 'horario atencion' &&
+              ((host.includes('transitofloridablanca.gov.co') && !/transito|dttf/.test(question)) ||
+               (host.includes('concejomunicipalfloridablanca.gov.co') && !/concejo/.test(question)))) continue;
           try {
             let doc = cache.get(url);
             if (!doc || now() - doc.fetchedAt > config.ttlMs) {
@@ -96,12 +102,14 @@ export const createOfficialSourceRepository = ({ config = createSourceConfig(), 
               }
             }
             const catalog = new URL(doc.url).hostname === 'portal.floridablanca.suiteneptuno.com' && new URL(doc.url).pathname.toLowerCase() === '/documentacion/index';
-            const excerpt = catalog ? doc.text.slice(0, 4000) : relevantText(doc.text, query);
+            const excerpt = catalog ? doc.text.slice(0, 4000) : relevantText(
+              context.aspect === 'horario atencion' ? `${doc.text}\n${doc.contactText || ''}` : doc.text, query);
             const homePage = new URL(doc.url).pathname === '/';
             const yearRelevant = !context.year || !context.aspect?.includes('calendario') ||
               new RegExp(`(?:calendario\\s+tributario|vigencia|año\\s+gravable)[^\\n]{0,100}\\b${context.year}\\b`, 'i').test(normalize(excerpt));
             const competent = !new URL(doc.url).hostname.endsWith('dian.gov.co') || /\buvt\b/.test(normalize(context.currentText));
             if (excerpt.length > 100 && (yearRelevant || catalog) && competent && url !== portalUrl?.href &&
+                (!catalog || context.aspect?.includes('calendario')) &&
                 !(homePage && context.aspect?.includes('calendario'))) sources.push({
               id: `web-${sources.length+1}`, title: catalog ? 'Normatividad y Formularios — Alcaldía de Floridablanca' : doc.title, url: doc.url, text: excerpt,
               fetchedAt: new Date(doc.fetchedAt).toISOString(), requestedYear: context.year,

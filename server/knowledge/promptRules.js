@@ -44,6 +44,6 @@ export const GROUNDING_RULES = `
 export const NO_MATCH_NOTICE = `
 6. SIN FRAGMENTOS DEL ESTATUTO PARA ESTA CONSULTA:
    - No tienes material del Estatuto Tributario para este mensaje, así que no afirmes tarifas, plazos, porcentajes ni sanciones concretas.
-   - Eso NO te exime de responder. La consulta es del municipio y la atiendes con lo que sabes: en qué consiste el trámite, quién puede hacerlo, qué documentos están confirmados en fuentes oficiales, los pasos y la dependencia competente.
+   - Eso NO te exime de responder. Atiende la consulta municipal con la evidencia pública recuperada. Si no hay evidencia, puedes explicar el trámite en términos generales, pero no afirmar horarios, documentos exigidos, requisitos o pasos específicos como confirmados. Explica el dato que falta verificar; no lo completes con conocimiento propio.
    - Cerrar con "acércate a la Alcaldía" sin haber explicado nada es una respuesta fallida. Si al final queda un dato puntual por confirmar, dilo en UNA frase y señala dónde: no conviertas eso en toda la respuesta.
 `.trim();

@@ -10,6 +10,9 @@ const TOPICS = [
 const ASPECTS = [
   ['calendario tributario vencimientos fechas', /calendario|vencimiento|\bfechas?\b|cuando.*declar/],
   ['acuerdo de pago requisitos documentos beneficios', /acuerdo de pago|facilidad de pago/],
+  ['medios de pago', /(?:como|donde|por donde|quiero|necesito|pasos para)\b.{0,50}\bpag(?:o|ar|arlo|arla)\b|\b(?:medios|formas|canales) de pago\b/],
+  ['horario atencion', /\bhorarios?\b/],
+  ['requisitos documentos', /\brequisitos\b|\bdocumentos\b/],
   ['sancion no declarar', /no declar|sin declar|(?:no|sin)\s+(?:haber\s+)?present\w*\b.{0,45}\bdeclaracion\b/],
   ['sancion extemporaneidad', /extempor|(?:declar|present).*tarde|declaracion.*fuera.*plazo/],
   ['sancion inexactitud', /inexact/],
@@ -32,6 +35,8 @@ const sanctionChoice = (text, aspect) => {
   return null;
 };
 const isTopicSubstitution = text => /^(?:y\s+)?(?:(?:de|del|para|sobre|en)\s+)?(?:(?:el|la)\s+)?(?:ica|reteica|predial|industria\s+y\s+comercio)[?.!]*$/.test(text.trim());
+// Temas municipales nombrados expresamente que no pertenecen al impuesto anterior.
+const isOtherMunicipalSubject = text => /\b(?:biblioteca|adulto mayor|esterilizacion|vacunacion|mascotas|turismo|alumbrado|basuras?|residuos|empleo|vacantes|vivienda|comisaria|transito|pico y placa)\b/.test(text);
 
 export const resolveConversationContext = (turns = [], hints = {}) => {
   let topic = TOPICS.some(([name]) => name === hints?.topic) ? hints.topic : null;
@@ -44,12 +49,16 @@ export const resolveConversationContext = (turns = [], hints = {}) => {
     const nextTopic = topicIn(text);
     let nextAspect = ASPECTS.find(([, re]) => re.test(text))?.[0];
     const explicitYear = text.match(/\b(20\d{2})\b/)?.[1];
+    const otherSubject = isOtherMunicipalSubject(text) || (nextAspect === 'horario atencion' && /\balcaldia\b/.test(text));
+    if (!nextTopic && otherSubject && !/\b(?:ese|esa|eso|esos|esas|dicho|dicha)\b/.test(text)) {
+      topic = null; aspect = null; year = null;
+    }
     if (nextTopic && nextTopic !== topic) {
       // Una petición autónoma cambia el tema; «y de ICA» conserva el aspecto anterior.
       if (!isTopicSubstitution(text)) { aspect = null; year = null; }
       topic = nextTopic;
     }
-    if (/^(?:que es|que significa|en que consiste|que actividades|cuales son las actividades)\b/.test(text)) { aspect = null; year = null; }
+    if (/^[¿¡\s]*(?:que es|que significa|en que consiste|que actividades|cuales son las actividades)\b/.test(text)) { aspect = null; year = null; }
     nextAspect = sanctionChoice(text, aspect) || nextAspect;
     if (nextAspect) {
       if (aspect?.includes('calendario') && !nextAspect.includes('calendario') && !explicitYear) year = null;

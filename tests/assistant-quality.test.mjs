@@ -119,6 +119,7 @@ test('aclaración de sanción conserva ICA y reconoce la respuesta de la convers
     ['no la presenté','sancion no declarar'],
     ['por no presentarla','sancion no declarar'],
     ['no la he presentado','sancion no declarar'],
+    ['no la presenté en la Alcaldía','sancion no declarar'],
     ['por omisión','sancion no declarar'],
     ['la segunda','sancion no declarar'],
     ['la presenté tarde','sancion extemporaneidad'],
@@ -148,6 +149,26 @@ test('repreguntas conservan el tipo aclarado; un nuevo tema explícito lo reempl
   assert.equal(context.topic,'predial');assert.equal(context.aspect,null);
   context=resolveConversationContext([...history,{sender:'user',text:'y de reteica'}]);
   assert.equal(context.topic,'reteica');assert.equal(context.aspect,'sancion no declarar');
+});
+
+test('pagar Predial y otras consultas nuevas dejan atrás el calendario de la sesión', () => {
+  const initial={sender:'user',text:'calendario tributario predial 2026'};
+  for (const text of ['como pago mi predial','¿Dónde puedo pagar mi predial?','y como lo pago','quiero pagar mi predial','¿Y dónde puedo pagar en la Alcaldía?']) {
+    const {payload}=buildGeminiPayload({history:[initial,{sender:'user',text}],pageContext:null});
+    const context=resolveConversationContext(payload.contents,payload.conversationContext);
+    assert.equal(context.topic,'predial',text);assert.equal(context.aspect,'medios de pago',text);
+    assert.equal(context.year,null,text);assert.equal(context.needsFreshSource,false,text);
+  }
+  for (const text of ['horario de atencion de la alcaldia','¿Cuál es el horario de la biblioteca?','necesito información de adulto mayor']) {
+    const context=resolveConversationContext([initial,{sender:'user',text}]);
+    assert.equal(context.topic,null,text);assert.equal(context.year,null,text);
+    assert.ok(!context.aspect?.includes('calendario'),text);
+  }
+  const definition=resolveConversationContext([initial,{sender:'user',text:'¿Qué es el predial?'}]);
+  assert.equal(definition.topic,'predial');assert.equal(definition.aspect,null);
+  const followup=resolveConversationContext([initial,{sender:'user',text:'y cuáles son esas fechas'}]);
+  assert.equal(followup.topic,'predial');assert.equal(followup.year,2026);
+  assert.ok(followup.aspect.includes('calendario'));
 });
 test('recuperación ICA no requiere decir «según el estatuto»', () => {
   for (const query of ['cual es el porcentaje de sancion de industria y comercio',
@@ -239,6 +260,31 @@ test('proxy responde la aclaración y la repregunta de ICA sin repetir la pregun
   assert.match(fallback.text,/No tengo información verificada/);
   assert.ok(!fallback.text.includes(SANCTION_TYPE_QUESTION));
 });
+
+test('proxy responde «como pago mi predial» después del calendario sin exigir la cita anterior', async () => {
+  let sourceCalls=0;let request;
+  const handler=createAiProxyHandler({config:testConfig(),
+    sourceRepository:{retrieve:async context=>{
+      sourceCalls++;assert.equal(context.aspect,'medios de pago');
+      return {sources:[],searched:false,status:'not_needed'};
+    }},fetchImpl:async(_url,options)=>{
+      request=JSON.parse(options.body);
+      return aiResponse('El pago del impuesto predial se realiza mediante los canales de recaudo autorizados. Puedes iniciar la consulta de tu factura aquí.');
+    }});
+  const history=[{sender:'user',text:'calendario tributario predial 2026'},
+    {sender:'bot',text:'No pude completar una respuesta verificada en este momento.'},
+    {sender:'user',text:'como pago mi predial'}];
+  const {payload}=buildGeminiPayload({history,pageContext:null});
+  const response=await ask(handler,history.at(-1).text,payload);
+  assert.equal(response.status,200);assert.equal(response.json.diagnostics.servedByFallback,false);
+  assert.equal(response.json.diagnostics.aspect,'medios de pago');assert.equal(response.json.diagnostics.year,null);
+  assert.equal(response.json.attachment,undefined);
+  assert.ok(!response.json.text.includes('No pude completar'));
+  assert.equal(response.json.diagnostics.attempts,1);
+  assert.ok(sourceCalls<=1);
+  const context=request.contents.find(turn=>turn.parts[0].text.startsWith('Contexto de la consulta (datos): '));
+  assert.ok(!context.parts[0].text.includes('calendario'));
+});
 test('evidencia se envía como datos y conserva las citas; no publica enlaces inventados', async () => {
   const url='https://www.floridablanca.gov.co/calendario-2026.pdf';
   let payload;
@@ -273,6 +319,48 @@ test('HTML conserva tablas y PDFs; ignora scripts y enlaces ajenos', async () =>
   const doc=await extractDocument({url:'https://www.floridablanca.gov.co/',contentType:'text/html',body:Buffer.from('<html><title>Calendario</title><nav><a href="/2026.pdf">Calendario tributario 2026</a></nav><main><script>alert(1)</script><table><tr><td>ICA</td><td>15 de marzo</td></tr></table><a href="https://evil.test/">Malo</a></main></html>')},DEFAULT_SOURCE_HOSTS);
   assert.match(doc.text,/ICA \| 15 de marzo/); assert.ok(!doc.text.includes('alert'));
   assert.equal(doc.links.length,1); assert.match(doc.links[0].url,/2026.pdf/);
+});
+
+test('extracción conserva por separado los horarios del pie oficial', async () => {
+  const doc=await extractDocument({url:'https://www.floridablanca.gov.co/',contentType:'text/html',
+    body:Buffer.from('<main>Servicios municipales</main><footer>Alcaldía de Floridablanca. Horario de atención: lunes a jueves. <script>no ejecutar</script></footer>')},DEFAULT_SOURCE_HOSTS);
+  assert.match(doc.contactText,/Horario de atención: lunes a jueves/);
+  assert.ok(!doc.contactText.includes('no ejecutar'));
+  assert.ok(!doc.text.includes('Horario'));
+});
+
+test('horario de Alcaldía usa el pie del portal y excluye horarios de Tránsito y Concejo', async () => {
+  const readUrls=[];
+  const url='https://www.floridablanca.gov.co/atencion/';
+  const repo=createOfficialSourceRepository({
+    config:{...createSourceConfig({AI_SEARCH_ENABLED:'false'}),portalSearchUrl:null,
+      seedUrls:['https://transitofloridablanca.gov.co/horarios/','https://concejomunicipalfloridablanca.gov.co/horarios/',url]},
+    readImpl:async target=>{readUrls.push(target);return {url:target};},
+    extractImpl:async()=>({title:'Alcaldía',text:'Servicios municipales.',links:[],
+      contactText:'Alcaldía de Floridablanca. Horario de atención: lunes a jueves. Consulta los servicios de atención al ciudadano en nuestra sede municipal.'})
+  });
+  const result=await repo.retrieve(resolveConversationContext([{sender:'user',text:'horario de atencion de la alcaldia'}]));
+  assert.deepEqual(readUrls,[url]);assert.equal(result.sources.length,1);
+  assert.equal(result.sources[0].url,url);assert.match(result.sources[0].text,/Horario de atención/);
+});
+
+test('consulta de horario después de calendario no lleva artículos fiscales y exige la URL exacta', async () => {
+  const url='https://www.floridablanca.gov.co/atencion/';let request;
+  const handler=createAiProxyHandler({config:testConfig(),sourceRepository:{retrieve:async context=>{
+    assert.equal(context.topic,null);assert.equal(context.aspect,'horario atencion');
+    return {sources:[{id:'web-1',url,title:'Atención',confidence:'public_text',text:'Horario de atención publicado en el portal.'}],searched:true,status:'found'};
+  }},fetchImpl:async(_url,options)=>{
+    request=JSON.parse(options.body);
+    return aiResponse(`Puedes revisar el horario de atención publicado en el [portal oficial](${url}).`);
+  }});
+  const {payload}=buildGeminiPayload({history:[{sender:'user',text:'calendario tributario predial 2026'},
+    {sender:'user',text:'horario de atencion de la alcaldia'}],pageContext:null});
+  const response=await ask(handler,'horario de atencion de la alcaldia',payload);
+  assert.equal(response.json.diagnostics.servedByFallback,false);
+  assert.equal(response.json.diagnostics.matches,0);
+  assert.deepEqual(response.json.diagnostics.chunks,[]);
+  assert.equal(response.json.sources[0].url,url);
+  assert.ok(request.systemInstruction.parts[0].text.startsWith('CITAS DE LAS FUENTES WEB:'));
 });
 test('repositorio sigue a la fuente, excluye buscador y año distinto; cache y flags funcionan', async () => {
   let reads=0;
@@ -319,13 +407,30 @@ test('un banner de calendario no sustituye el documento; el catálogo permite co
   assert.match(evidence.sources[0].text,/6059/);
 });
 
-test('un catálogo sin lectura de la resolución no autoriza fechas de calendario', async () => {
+test('catálogo de resoluciones no impone citas a consultas de horario o pago', async () => {
+  const repository=createOfficialSourceRepository({
+    config:{...createSourceConfig({AI_SEARCH_ENABLED:'false'}),seedUrls:[DOCUMENT_CATALOG_URL],portalSearchUrl:null},
+    readImpl:async url=>({url}),extractImpl:async()=>({title:'Normatividad',links:[],text:'Calendario Tributario\nResolución No. 6059 del 2025 - Presentación y Pagos de Impuestos. '.repeat(3)})
+  });
+  for(const text of ['horario de atencion de la alcaldia','como pago mi predial']) {
+    const evidence=await repository.retrieve(resolveConversationContext([{sender:'user',text}]));
+    assert.equal(evidence.sources.length,0,text);
+  }
+  const evidence=await repository.retrieve(resolveConversationContext([{sender:'user',text:'calendario tributario 2026'}]));
+  assert.equal(evidence.sources.length,1);
+  assert.equal(evidence.sources[0].confidence,'official_catalog');
+});
+
+test('un catálogo sin lectura de la resolución entrega navegación sin inventar fechas', async () => {
   const url='https://portal.floridablanca.suiteneptuno.com/Documentacion/Index';
   const handler=createAiProxyHandler({config:testConfig(),sourceRepository:{retrieve:async()=>({sources:[{id:'web-1',url,title:'Normatividad',confidence:'official_catalog',text:'Calendario tributario. Resolución No. 6059 del 2025.'}],searched:true,status:'found'})},
     fetchImpl:async()=>aiResponse(`El plazo es el 15 de marzo. [Normatividad](${url}).`)});
   const res=await ask(handler,'calendario tributario ICA 2026');
   assert.ok(!res.json.text.includes('15 de marzo'));
-  assert.equal(res.json.diagnostics.servedByFallback,true);
+  assert.equal(res.json.diagnostics.servedByFallback,false);
+  assert.equal(res.json.diagnostics.attempts,0);
+  assert.ok(res.json.text.includes(url));
+  assert.match(res.json.text,/no puedo confirmar las fechas/);
 });
 
 test('petición de documento entrega el catálogo confirmado sin reemplazarla por concepto o remisión', async () => {
@@ -347,6 +452,7 @@ test('citas inventadas se reparan y el calendario sin resolución no admite fech
   const res=await ask(handler,'calendario tributario ICA 2026');
   assert.equal(calls,2); assert.ok(!res.json.text.includes('15 de marzo'));
   assert.ok(!res.json.text.includes('inventada.pdf')); assert.equal(res.json.diagnostics.servedByFallback,true);
+  assert.equal(res.json.diagnostics.fallbackReason,'unsupported_citation');
 });
 test('la búsqueda usa datos públicos y cuenta coste de búsqueda más respuesta', async () => {
   let calls=0;
@@ -453,6 +559,29 @@ test('PDF adjunto viene del archivo verificado, se sirve sin sesión del portal 
   assert.equal(response.status,200);assert.match(response.json.text,/calendario tributario 2026 en PDF/);
   assert.equal(handler.readDocument(response.json.attachment.fileUrl).body,body);
   assert.ok(!JSON.stringify(response.json).includes('csrf'));
+});
+
+test('calendario sin la palabra documento y repreguntas entregan el PDF verificado sin generar fechas', async () => {
+  const body=simplePdf();
+  const handler=createAiProxyHandler({config:testConfig(),sourceRepository:{retrieve:async()=>({
+    sources:[{id:'web-document',title:'Resolución',url:DOCUMENT_CATALOG_URL,confidence:'document_header_ocr',text:'Encabezado: vigencia 2026, resolución 6059. Las tablas no se transcribieron.'}],
+    document:{body,year:2026,resolution:'6059',sourceUrl:DOCUMENT_CATALOG_URL},searched:false,status:'found'})},
+    fetchImpl:async()=>{throw new Error('el encabezado no permite generar fechas');}});
+  const history=[];
+  for(const text of ['calendario tributario predial 2026','y cuáles son esas fechas']) {
+    history.push({sender:'user',text});
+    const {payload}=buildGeminiPayload({history,pageContext:null});
+    const response=await ask(handler,text,payload);
+    assert.equal(response.status,200);assert.equal(response.json.diagnostics.servedByFallback,false);
+    assert.equal(response.json.diagnostics.documentAvailable,true);
+    assert.equal(response.json.diagnostics.documentDelivered,true);
+    assert.equal(response.json.diagnostics.retrievedSources,1);
+    assert.equal(response.json.diagnostics.attempts,0);
+    assert.equal(handler.readDocument(response.json.attachment.fileUrl).body,body);
+    assert.ok(response.json.text.includes(DOCUMENT_CATALOG_URL));
+    if (text.includes('fechas')) assert.match(response.json.text,/no extraer con certeza las fechas/);
+    history.push({sender:'bot',text:response.json.text});
+  }
 });
 
 test('OCR admite año numérico como texto, verifica resolución y contabiliza la lectura', async () => {

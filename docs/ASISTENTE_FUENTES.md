@@ -52,11 +52,17 @@ La descarga dinámica del catálogo oficial usa únicamente `MenuById` con ID nu
 
 Para PDFs escaneados, una llamada a Gemini transcribe únicamente el encabezado. Se comprueba municipio, resolución y año de vigencia, y se contabilizan sus tokens y cuota. Esto permite entregar el documento sin afirmar fechas de tablas que todavía no se transcribieron. El chatbot conserva una copia pública y la sirve desde `/api/ai/documents/<sha256>.pdf`; el adaptador y la burbuja propagan el adjunto hasta el botón de descarga. El enlace temporal del portal no se entrega al ciudadano.
 
+Una consulta de calendario entrega el PDF verificado aunque no contenga las palabras «documento» o «PDF». Si pide fechas o descuentos y solo se pudo transcribir el encabezado, la respuesta explica esa limitación y adjunta el archivo; no genera datos de las tablas. Si solo se leyó el catálogo, entrega su navegación confirmada.
+
+Las preguntas de pago, requisitos, horario o definición sustituyen el aspecto anterior cuando corresponde. Por ejemplo, «calendario tributario predial 2026» seguido de «cómo pago mi predial» conserva Predial, cambia a medios de pago y deja de exigir la cita del calendario. Una consulta explícita de horario de la Alcaldía abandona el tema tributario anterior. La recuperación no agrega el turno anterior si cambió el tema o aspecto, ni envía artículos del Estatuto para consultas ajenas a impuestos.
+
+El catálogo de resoluciones no se utiliza como evidencia para preguntas de horario o pago. Los horarios publicados en el pie del portal se conservan como datos de contacto; los de Tránsito o Concejo no sustituyen a los de la Alcaldía. Cuando hay evidencia web, la instrucción de incluir su URL exacta precede al bloque de conocimiento y la validación de citas sigue activa.
+
 Las copias caducan a los 30 minutos y están limitadas a 12 archivos y 64 MiB por proceso. Actualmente la caché vive en cada instancia: un reinicio, la caducidad o un GET que alcance otra instancia puede requerir pedir de nuevo el archivo. Antes de habilitar adjuntos en un despliegue con varias instancias, utilizar almacenamiento compartido o un mecanismo de descarga reproducible; no asumir persistencia de esta caché local.
 
 ## Diagnóstico y verificación
 
-La respuesta del proxy incluye `diagnostics`: tema/año, fragmentos recuperados, estado de fuentes, búsqueda, motivo de finalización, intentos, reformulación y fallback. El evento `ai_reply_served` registra esos campos y consumo sin el texto del ciudadano. Las métricas de sesión exponen reformulaciones, búsquedas, citas y último diagnóstico. Los códigos de error distinguen respuestas HTTP, tiempos de espera y PDFs que requieren OCR.
+La respuesta del proxy incluye `diagnostics`: tema/año/aspecto, fragmentos recuperados, estado de fuentes, búsqueda, motivo de finalización, intentos, reformulación y fallback. `retrievedSources` distingue las fuentes recuperadas de `sources` (citadas); `documentAvailable` y `documentDelivered` distinguen recuperación y entrega del PDF. El evento `ai_reply_served` registra esos campos y consumo sin el texto del ciudadano. Las métricas de sesión exponen reformulaciones, búsquedas, citas y último diagnóstico. Los códigos de error distinguen respuestas HTTP, tiempos de espera y PDFs que requieren OCR. Un HTTP 200 con `servedByFallback=true` y `fallbackReason=missing_sources` indica rechazo de la respuesta por citas, no una caída de la API. Tras una reformulación se conserva el motivo preciso de rechazo.
 
 Ejecutar:
 
@@ -68,4 +74,4 @@ npm run build
 
 `test:quality` incluye 48 consultas de alcance y pruebas de la conversación reportada, memoria, recuperación, cortes, fallbacks, citas, coste, HTML, PDF y protección de red. Las pruebas de Gemini usan respuestas simuladas. El lector se comprobó adicionalmente contra el portal público real.
 
-Las pruebas locales no equivalen a validar respuestas reales del modelo ni a comprobar jurídicamente la vigencia de las resoluciones. La evaluación del proveedor real requiere una clave válida; el entorno local revisado no la tiene. Antes de desplegar, repetir las consultas con el modelo configurado y fuentes oficiales vigentes, y medir resolución sin remisión, coste y latencia.
+Las pruebas automáticas no equivalen a validar respuestas reales del modelo ni a comprobar jurídicamente la vigencia de las resoluciones. La evaluación del proveedor real requiere una clave válida de servidor. Antes de desplegar, repetir las consultas con el modelo configurado y fuentes oficiales vigentes, incluyendo secuencias con historial y cambios de tema, y medir resolución sin remisión, coste y latencia.
