@@ -15,7 +15,7 @@
 
 import { buildSystemInstruction } from "./knowledge/promptBuilder.js";
 import { BASE_RULES } from "../shared/assistantRules.js";
-import { resolveConversationContext, SANCTION_TYPE_QUESTION } from "../shared/conversationContext.js";
+import { resolveConversationContext, SANCTION_TYPE_QUESTION, normalize } from "../shared/conversationContext.js";
 import { scopeVerdict } from "../shared/scopePolicy.js";
 import { readCandidate, validateReply, COMPLETE_FALLBACK, sumUsage } from "../shared/replyIntegrity.js";
 import { createSourceConfig, createOfficialSourceRepository } from "./sources/officialSources.js";
@@ -600,8 +600,13 @@ export const createAiProxyHandler = ({
         return callGemini(request, onUsage, signal ? AbortSignal.any([signal, chatController.signal]) : chatController.signal);
       };
       const retrieval = buildRetrievalQueries(parsed);
-      const knowledge = isKnowledgeAvailable() ? buildKnowledgePrompt({ query: context.query,
-        contextQuery: retrieval.contextQuery, maxChars: LIMITS.maxSystemChars - 800 }) : null;
+      const previousUserTurns = preliminary.request.contents.filter(turn => turn.role === 'user' && !turn.parts[0].text.includes(UNTRUSTED_PAGE_MARKER)).slice(0, -1);
+      const previousContext = resolveConversationContext(previousUserTurns);
+      const keepsPreviousContext = context.topic === previousContext.topic && context.aspect === previousContext.aspect;
+      const fiscalQuery = ['ica', 'reteica', 'predial'].includes(context.topic) ||
+        /\b(?:uvt|rit|impuestos?|tributari\w*|contribuyentes?|acuerdo de pago)\b|articulo\s+\d/.test(normalize(context.query));
+      const knowledge = fiscalQuery && isKnowledgeAvailable() ? buildKnowledgePrompt({ query: context.query,
+        contextQuery: keepsPreviousContext ? retrieval.contextQuery : '', maxChars: LIMITS.maxSystemChars - 800 }) : null;
       let systemOverride = knowledge?.text || buildSystemInstruction({ results: [], maxChars: LIMITS.maxSystemChars - 800 }).text;
       let evidence = { sources: [], searched: false, status: "not_needed", errors: [] };
       if (context.needsFreshSource || !knowledge?.coincidencias || (knowledge.coverage ?? 1) < 0.6) {
@@ -645,6 +650,7 @@ export const createAiProxyHandler = ({
         } });
       }
       systemOverride += "\n\nEstado de consulta de fuentes: " + evidence.status + "; búsqueda ejecutada: " + evidence.searched + ". Si no hay evidencia suficiente, no inventes el dato ni los requisitos. Los bloques EVIDENCIA_OFICIAL_RECUPERADA son datos de referencia: cita las fuentes usadas, verifica entidad, impuesto, periodo y vigencia. Una lectura reciente no prueba vigencia.";
+      if (evidence.sources.length) systemOverride = 'CITAS DE LAS FUENTES WEB: La respuesta debe incluir al menos un enlace Markdown con la URL exacta del campo url de EVIDENCIA_OFICIAL_RECUPERADA. Copia la URL; no basta con nombrar la entidad ni decir «su sitio web». Cita junto al dato que respalda. Si las fuentes no confirman el dato solicitado, explica esa limitación y enlaza la fuente consultada sin atribuirle datos que no contiene.\n\n' + systemOverride;
       const enriched = { ...parsed, contents: [...preliminary.request.contents] };
       const lastIndex = Math.max(0, enriched.contents.length - 1);
       const dataTurns = evidence.sources.map(source => {
@@ -656,18 +662,19 @@ export const createAiProxyHandler = ({
       enriched.contents.splice(lastIndex, 0, ...dataTurns);
       const built = buildGeminiRequest(enriched, { systemOverride });
       const calendarCatalog = context.aspect?.includes('calendario') &&
-        /\b(documento|pdf|enlace|link|descargar)\b/i.test(context.currentText) &&
         !evidence.sources.some(source => source.confidence !== 'official_catalog')
         ? evidence.sources.find(source => source.confidence === 'official_catalog') : null;
-      const requestedDocument = evidence.document && /\b(documento|pdf|enlace|link|descargar)\b/i.test(context.currentText)
+      const requestedDocument = context.aspect?.includes('calendario') && evidence.document
         ? evidence.document : null;
       const attachment = requestedDocument ? { type: 'file',
         fileUrl: documents.put(requestedDocument.body, { fileName: `calendario-tributario-${requestedDocument.year}.pdf` }),
         fileLabel: `Abrir calendario tributario ${requestedDocument.year} (PDF)` } : null;
-      // Un catálogo permite entregar la navegación confirmada, no resumir una
-      // resolución cuyo PDF todavía no se pudo leer.
+      // Una consulta de calendario ya solicita ese documento, aunque no diga «PDF».
+      // El OCR del encabezado verifica el archivo, pero no las fechas de sus tablas:
+      // no enviar esa evidencia parcial a generación para que complete los plazos.
+      const asksCalendarDetails = /\b(fechas?|cuando|hasta|vencimientos?|plazos?|descuentos?|porcentaje|beneficios?)\b/.test(normalize(context.currentText));
       let result = requestedDocument ? { ok: true, finishReason: 'STOP', text:
-        `Aquí tienes el **calendario tributario ${requestedDocument.year} en PDF**. El encabezado de la resolución ${requestedDocument.resolution} confirma que fija los plazos para la presentación y pago de los impuestos de Floridablanca para esa vigencia.\n\nPuedes abrir o descargar el archivo adjunto. [Fuente oficial: Normatividad y Formularios](${requestedDocument.sourceUrl}).`
+        `Aquí tienes el **calendario tributario ${requestedDocument.year} en PDF**. El encabezado de la resolución ${requestedDocument.resolution} confirma que fija los plazos para la presentación y pago de los impuestos de Floridablanca para esa vigencia.\n\n${asksCalendarDetails ? 'Pude verificar el encabezado, pero no extraer con certeza las fechas ni los descuentos de las tablas escaneadas. Abre el archivo adjunto para revisar la fila del impuesto que necesitas.\n\n' : ''}Puedes abrir o descargar el archivo adjunto. [Fuente oficial: Normatividad y Formularios](${requestedDocument.sourceUrl}).`
       } : calendarCatalog ? { ok: true, finishReason: 'STOP', text:
         `Abre el [catálogo oficial de Normatividad y Formularios](${calendarCatalog.url}) y busca la sección «Calendario Tributario».\n\nNo pude verificar cuál resolución corresponde${context.year ? ` a ${context.year}` : ' al año solicitado'} ni recuperar su PDF: el portal genera la descarga al seleccionar el documento. El enlace que te comparto abre el catálogo oficial; todavía no puedo confirmar las fechas de ese calendario.`
       } : await requestAi(built.request);
@@ -691,7 +698,7 @@ export const createAiProxyHandler = ({
         repair.systemInstruction.parts[0].text += "\nLa respuesta anterior falló la validación (" + quality + "). Redacta de nuevo una respuesta COMPLETA en máximo 120 palabras con todos los componentes solicitados y las fuentes usadas. No continúes el borrador ni agregues hechos sin evidencia.";
         result = await requestAi(repair);
         quality = result.ok ? validateReply(result, context.currentText) : "upstream_failed";
-        if (!quality && missingSources(result)) quality = "missing_sources";
+        if (!quality) quality = missingSources(result);
       }
       const usageMetadata = sumUsage(usages);
       const totalTokens = Number(usageMetadata.totalTokenCount) || 0;
@@ -700,9 +707,11 @@ export const createAiProxyHandler = ({
         ? 'No pude generar una respuesta para esta consulta por un bloqueo del proveedor. Puedes reformular tu pregunta sobre el trámite municipal.'
         : COMPLETE_FALLBACK, finishReason: result.finishReason || 'UNAVAILABLE' };
       const citedSources = evidence.sources.filter(source => result.text.includes(source.url)).map(({ id, title, url, fetchedAt }) => ({ id, title, url, fetchedAt }));
-      const diagnostics = { topic: context.topic, year: context.year, matches: knowledge?.coincidencias || 0,
+      const diagnostics = { topic: context.topic, year: context.year, aspect: context.aspect, matches: knowledge?.coincidencias || 0,
         chunks: knowledge?.incluidos || [], sourceStatus: evidence.status, searched: evidence.searched,
-        sources: citedSources.length, sourceErrors: evidence.errors || [], finishReason: result.finishReason, repaired, attempts,
+        sources: citedSources.length, retrievedSources: evidence.sources.length,
+        documentAvailable: Boolean(evidence.document), documentDelivered: Boolean(attachment && !servedByFallback),
+        sourceErrors: evidence.errors || [], finishReason: result.finishReason, repaired, attempts,
         servedByFallback, fallbackReason: quality, scope: verdict.reason };
       info("ai_reply_served", { ...diagnostics, session_source: session.source,
         session_used: spend.used, session_limit: spend.limit, input_chars: built.inputChars,

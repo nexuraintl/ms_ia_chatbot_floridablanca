@@ -24,10 +24,12 @@ export const extractDocument = async ({ url, body, contentType }, hosts, { signa
     try { return { title: ($(node).text().trim() || $(node).attr('title') || $(node).find('img').attr('alt') || '').slice(0,160), url: officialUrl(new URL($(node).attr('href'), url).href, hosts) }; }
     catch { return null; }
   }).get().filter(link => link?.url && link.title).slice(0,1000);
+  // Los horarios y canales de atención suelen estar en el pie oficial del portal.
+  const contactText = $('footer').text().replace(/\s+/g, ' ').trim().slice(0,4000);
   $('nav,header,footer,form').remove();
   $('tr').each((_, row) => $(row).replaceWith($(row).find('th,td').map((_, cell) => $(cell).text().trim()).get().join(' | ') + '\n'));
   $('p,h1,h2,h3,li,br').each((_, node) => $(node).append('\n'));
   const publicationDate = $('meta[property="article:published_time"],meta[name="DC.date"],meta[name="date"]').first().attr('content') || null;
-  return { publicationDate, title: $('title').text().trim().slice(0,160) || 'Página oficial',
+  return { publicationDate, contactText, title: $('title').text().trim().slice(0,160) || 'Página oficial',
     text: ($('main').text() || $('body').text() || $.root().text()).replace(/[ \t]+/g,' ').replace(/\n\s*\n/g,'\n').trim().slice(0,60_000), links };
 };
